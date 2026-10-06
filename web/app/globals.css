@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+/*
+ * PayOnce design system. White paper, black ink, one electric blue. Everything is a rectangle or a 45-degree cut:
+ * no radii anywhere. Typography follows the same logic: a wide geometric display face, a quiet grotesque for text,
+ * and small tracked capitals for labels.
+ */
+@theme {
+  --color-ink: #0b0d12;
+  --color-paper: #ffffff;
+  --color-blue: #1f4dff;
+  --color-blue-deep: #0a2bd6;
+  --color-wash: #f3f5ff;
+  --color-rule: #e4e5e7;
+  --color-muted: #5c5e62;
+  --color-disabled: #c9cbd0;
+
+  --font-display: var(--font-zen), var(--font-archivo), system-ui, sans-serif;
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+  }
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    min-height: 100vh;
+  }
+  ::selection {
+    background: var(--color-blue);
+    color: var(--color-paper);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-blue);
+    outline-offset: 3px;
+  }
+  button,
+  select,
+  textarea,
+  input {
+    border-radius: 0;
+  }
+}
+
+/* A rectangle with its top-right and bottom-left corners cut at 45 degrees. */
+@utility chamfer {
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+}
+@utility chamfer-sm {
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 9px 100%, 0 calc(100% - 9px));
+}
+
+/* Diagonal hairlines: the "not available" texture. */
+@utility hatch {
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgb(11 13 18 / 0.09) 6px 7px);
+}
+
+/* Small tracked capitals. */
+@utility label {
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes beat {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@utility beat {
+  animation: beat 1.6s steps(2, jump-none) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beat {
+    animation: none;
+  }
+}

@@ -6,12 +6,12 @@ import type { Attempt, Ledger, Obligation } from "../ledger/ledger";
 import { toMinor } from "../money";
 import {
   SignedCertificateSchema,
-  signCertificateHash,
   type ClosureCertificateBody,
   type SignedCertificate,
   type Totals,
   type WalletLines,
 } from "./certificate";
+import { signCertificateHash } from "./signing";
 
 export interface AttemptReconciliation {
   attemptId: string;

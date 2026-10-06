@@ -6,7 +6,7 @@
  */
 import { AirwallexClient } from "../src/airwallex/client";
 import { issueApproval, newNonce, type Approval, type ApprovalPayload } from "../src/approval/approval";
-import { verifyCertificate } from "../src/closer/certificate";
+import { verifyCertificate } from "../src/closer/signing";
 import { Closer } from "../src/closer/closer";
 import { DuplicateLockError, NotClosable, ReplacementDenied } from "../src/errors";
 import { PayoutGateway } from "../src/gateway/gateway";

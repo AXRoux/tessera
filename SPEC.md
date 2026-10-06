@@ -31,15 +31,21 @@ Success criteria (all demonstrated against the real sandbox):
 
 ## Tech stack
 
-Bun 1.4, TypeScript (tsc 7), `bun:sqlite`, `zod` 4, `bun test`. No other runtime dependencies in slice 1.
+Core (repo root): Bun 1.4, TypeScript (tsc 7), `bun:sqlite`, `zod` 4, `bun test`.
+Web (`web/`): Next.js 16 (App Router, Turbopack), React 19, Tailwind 4, Zen Dots + Archivo + JetBrains Mono via `next/font`.
+The web app never holds a credential beyond the operator token; it parses every API response with `src/server/wire.ts`.
 
 ## Commands
 
 ```
 bun test                 # unit + integration tests (in-memory SQLite, fake Airwallex)
-bun run typecheck        # tsc --noEmit
-bun run smoke            # real sandbox: pay, fail, deny replacement, human-approved replacement
+bun run typecheck        # tsc --noEmit (core)
+bun run smoke            # real sandbox: pay, fail, deny replacement, human-approved replacement, certify
 bun run chaos            # real sandbox: kill -9 mid-create, recover, assert one transfer
+bun run commander        # real sandbox: wait / auto-replace / escalate decided by policy
+bun run evidence:live    # real Claude reads four supplier messages
+bun run api              # PayOnce API on 127.0.0.1:4010
+cd web && bun run dev    # Next.js on 127.0.0.1:3100   (bun run build && bun run start for production)
 ```
 
 ## Structure
@@ -50,11 +56,15 @@ src/canonical.ts         canonical JSON + sha256
 src/errors.ts            domain errors
 src/airwallex/           zod schemas, PayoutApi interface, REST client
 src/domain/playbook.ts   failure code -> class -> replacement policy
-src/ledger/ledger.ts     SQLite obligations/attempts/events, one-open-attempt index, hash chain
+src/ledger/ledger.ts     SQLite obligations/attempts/events/certificates, one-open-attempt index, hash chain
 src/approval/approval.ts HMAC approvals
 src/gateway/gateway.ts   exactly-once submit / recover / sync
+src/closer/              reconciliation, certificate schemas (pure) and signing
+src/commander/           decision policy, evidence reader, Anthropic transport, approvals
+src/server/              HTTP API (api.ts), process entry (main.ts), wire contract (wire.ts, pure zod)
+web/                     Next.js war-room app (board, incident page, same-origin proxy)
 tests/                   behavior tests + FakePayoutApi
-scripts/                 smoke + chaos against the sandbox
+scripts/                 sandbox smoke, chaos, commander demo, live evidence reader
 fixtures/                failure-codes.json (captured from the sandbox)
 ```
 

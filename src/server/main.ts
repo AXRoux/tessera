@@ -8,6 +8,7 @@ import { AirwallexClient } from "../airwallex/client";
 import { Closer } from "../closer/closer";
 import { AnthropicModel } from "../commander/anthropic";
 import { Commander } from "../commander/commander";
+import { DEFAULT_POLICY } from "../commander/policy";
 import { PayoutGateway } from "../gateway/gateway";
 import { Ledger } from "../ledger/ledger";
 import { createApi, type Simulator } from "./api";
@@ -29,7 +30,8 @@ mkdirSync(dirname(dbPath), { recursive: true });
 const client = AirwallexClient.fromEnv();
 const ledger = new Ledger(dbPath);
 const gateway = new PayoutGateway({ ledger, api: client, approvalSecret });
-const commander = new Commander({ ledger, gateway, balances: client, secret: approvalSecret });
+// One hold window for both: what the Commander tells the operator to wait for is what the Closer enforces.
+const commander = new Commander({ ledger, gateway, balances: client, secret: approvalSecret, policy: { ...DEFAULT_POLICY, paidHoldMs } });
 const closer = new Closer({ ledger, api: client, secret: approvalSecret, paidHoldMs });
 
 const sandbox = (process.env.AWX_BASE_URL ?? "https://api.sandbox.airwallex.com").includes("sandbox");

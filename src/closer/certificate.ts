@@ -1,6 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { canonicalJson, sha256Hex } from "../canonical";
 
 /** Signed minor-unit effects on the wallet: payouts and fees are negative, reversals positive. */
 export const WalletLinesSchema = z.object({
@@ -56,13 +54,3 @@ export const SignedCertificateSchema = z.object({
   signature: z.string(),
 });
 export type SignedCertificate = z.infer<typeof SignedCertificateSchema>;
-
-export const signCertificateHash = (hash: string, secret: string): string =>
-  createHmac("sha256", secret).update(`payonce-certificate-v1|${hash}`).digest("hex");
-
-export function verifyCertificate(certificate: SignedCertificate, secret: string): boolean {
-  if (sha256Hex(canonicalJson(certificate.body)) !== certificate.hash) return false;
-  const expected = Buffer.from(signCertificateHash(certificate.hash, secret), "hex");
-  const actual = Buffer.from(certificate.signature, "hex");
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
-}
