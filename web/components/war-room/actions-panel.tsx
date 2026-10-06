@@ -19,9 +19,9 @@ interface Props {
 
 export function ActionsPanel({ view, operator, busy, run }: Props) {
   const noteId = useId();
-  const beneficiaryId = useId();
+  const payeeId = useId();
   const [note, setNote] = useState("");
-  const [beneficiary, setBeneficiary] = useState("");
+  const [payee, setPayee] = useState("");
 
   const id = view.obligation.id;
   const latest = view.attempts.at(-1);
@@ -44,15 +44,15 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
             busy={busy === "replace"}
             onClick={() =>
               run("replace", async () => {
-                const result = await api(`obligations/${id}/replace`, Acknowledged, { method: "POST" });
-                return { tone: "ok", title: "Replacement sent", lines: [`Outcome ${String(result.outcome)} under a new request_id.`] };
+                await api(`obligations/${id}/replace`, Acknowledged, { method: "POST" });
+                return { tone: "ok", title: "Replacement sent", lines: ["A new payment was created under a fresh request ID. The original stays cancelled."] };
               })
             }
           >
-            Replace automatically
+            Replace the payment
           </Button>
           {!canReplaceAuto ? (
-            <p className="text-xs leading-relaxed text-muted">{refusedReplace ?? "Automatic replacement does not apply to this state."}</p>
+            <p className="text-xs leading-relaxed text-muted">{refusedReplace ?? "An automatic replacement does not apply in this state."}</p>
           ) : null}
 
           {canRecover ? (
@@ -63,11 +63,11 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
               onClick={() =>
                 run("recover", async () => {
                   await api(`obligations/${id}/recover`, Acknowledged, { method: "POST" });
-                  return { tone: "ok", title: "Intent resolved", lines: ["Looked the attempt up by its request_id. No second payment was created."] };
+                  return { tone: "ok", title: "Request resolved", lines: ["PayOnce looked the attempt up by its original request ID. No second payment was created."] };
                 })
               }
             >
-              Resolve pending intent
+              Resolve the open request
             </Button>
           ) : null}
 
@@ -83,27 +83,28 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
               })
             }
           >
-            Close and certify
+            Reconcile and certify
           </Button>
         </div>
 
         <div className="border-t border-rule pt-6">
-          <Label className="text-ink">Human approval</Label>
+          <Label className="text-ink">Release a payment yourself</Label>
           <p className="mb-4 mt-3 text-xs leading-relaxed text-muted">
-            A named person can release a replacement the code will not. The note is recorded with your name and must say why.
+            Some replacements the code will never make on its own. A named person can release one, in writing. Your reason is
+            recorded under your name.
           </p>
           <div className="space-y-4">
-            <Field label="Why is this safe?" htmlFor={noteId}>
+            <Field label="Why is it safe to pay again?" htmlFor={noteId}>
               <TextArea
                 id={noteId}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Supplier's bank confirmed no credit, by callback to the number on file."
+                placeholder="The supplier's bank confirmed by phone that no credit arrived."
                 maxLength={500}
               />
             </Field>
-            <Field label="Corrected beneficiary id (optional)" htmlFor={beneficiaryId}>
-              <TextInput id={beneficiaryId} value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder="Leave empty to keep the account" />
+            <Field label="Corrected payee ID, if the details changed" htmlFor={payeeId}>
+              <TextInput id={payeeId} value={payee} onChange={(e) => setPayee(e.target.value)} placeholder="Leave empty to keep the same account" />
             </Field>
             <Button
               variant="secondary"
@@ -112,13 +113,13 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
               busy={busy === "approve"}
               onClick={() =>
                 run("approve", async () => {
-                  const result = await api(`obligations/${id}/approve`, Acknowledged, {
+                  await api(`obligations/${id}/approve`, Acknowledged, {
                     method: "POST",
-                    body: { note: note.trim(), ...(beneficiary.trim() ? { beneficiaryId: beneficiary.trim() } : {}) },
+                    body: { note: note.trim(), ...(payee.trim() ? { beneficiaryId: payee.trim() } : {}) },
                   });
                   setNote("");
-                  setBeneficiary("");
-                  return { tone: "ok", title: "Approved and sent", lines: [`Outcome ${String(result.outcome)}. Recorded as ${operator}.`] };
+                  setPayee("");
+                  return { tone: "ok", title: "Released and sent", lines: [`Approved by ${operator}. A new payment was created.`] };
                 })
               }
             >

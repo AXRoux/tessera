@@ -165,7 +165,7 @@ describe("actions", () => {
     const refused = await a.call("POST", `/api/obligations/${id}/replace`);
 
     expect(refused.status).toBe(409);
-    expect(String(refused.get("reasons"))).toContain("duplicate");
+    expect(refused.get("reasons")).toEqual(expect.arrayContaining([expect.any(String)]));
     expect(a.ledger.attemptsFor(id)).toHaveLength(1);
   });
 

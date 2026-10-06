@@ -29,14 +29,21 @@ export interface PlaybookEntry {
 }
 
 const GUIDANCE: Record<FailureClass, string> = {
-  FIX_DETAILS: "Our payout details were rejected. Get corrected details from the supplier (verify out of band), then replace.",
-  SUPPLIER_ACCOUNT: "The supplier's account refused the funds. Ask the supplier for a working account (verify out of band), then replace.",
-  TRANSIENT: "Infrastructure failure. Once the original is CANCELLED and funds are returned, replace.",
-  FUNDING_OR_LIMITS: "Funding, limit or fee problem. Fix the cause (top up, change rail), then replace.",
-  POSSIBLE_DUPLICATE: "A bank flagged this as a duplicate: the supplier may already hold the money. Do not replace without proof of non-receipt.",
-  COMPLIANCE_OR_RECALL: "A compliance hold or a recall request. A replacement could hit the same block or defeat a legitimate recall. Escalate.",
-  CORRIDOR_UNSUPPORTED: "Failure from a corridor this flow does not support. Escalate.",
-  UNKNOWN: "Unclassified failure. Escalate.",
+  FIX_DETAILS:
+    "Airwallex rejected the payout details. Get corrected details from the supplier, confirm them by phone, then send a replacement.",
+  SUPPLIER_ACCOUNT:
+    "The supplier's bank would not accept the funds. Ask the supplier for a working account, confirm it by phone, then send a replacement.",
+  TRANSIENT:
+    "A temporary fault on the payment rails. Once the original is cancelled and the money is back in the wallet, it is safe to send again.",
+  FUNDING_OR_LIMITS:
+    "The payment hit a balance, limit or fee problem. Fix the cause, whether that is a top-up or a different payment method, then send a replacement.",
+  POSSIBLE_DUPLICATE:
+    "A bank flagged this as a duplicate, so the supplier may already hold the money. Do not replace it without proof that nothing arrived.",
+  COMPLIANCE_OR_RECALL:
+    "A compliance hold or a recall request. A replacement could run into the same block, or undo a legitimate recall. A person has to decide.",
+  CORRIDOR_UNSUPPORTED:
+    "This failure comes from a payment corridor PayOnce does not handle for supplier payouts. A person should take over.",
+  UNKNOWN: "Airwallex reported a failure PayOnce cannot classify. A person should take over.",
 };
 
 const row = (

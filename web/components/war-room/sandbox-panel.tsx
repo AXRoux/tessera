@@ -19,7 +19,7 @@ const FAILURES = [
   "INSUFFICIENT_FUNDS",
 ];
 
-/** Drives Airwallex's simulator so the whole incident can be played without waiting on a bank. Sandbox only. */
+/** Drives Airwallex's simulator so a whole incident can be played without waiting on a bank. Sandbox only. */
 export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: string | null; run: RunAction }) {
   const selectId = useId();
   const [failure, setFailure] = useState(FAILURES[0]!);
@@ -35,17 +35,20 @@ export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: st
 
   return (
     <Frame tone="rule">
-      <PanelHeader title="Sandbox controls" right={<Label>Airwallex simulator</Label>} />
+      <PanelHeader title="Play the incident" right={<Label>Sandbox only</Label>} />
       <div className="space-y-5 p-5">
+        <p className="text-sm leading-relaxed text-muted">
+          Moves the transfer through Airwallex's simulator, so you can play out an incident without waiting on a bank.
+        </p>
         <div className="grid grid-cols-2 gap-3">
-          <Button variant="secondary" disabled={!movable} busy={busy === "sent"} onClick={() => simulate("sent", { status: "SENT" }, "Marked SENT")}>
+          <Button variant="secondary" disabled={!movable} busy={busy === "sent"} onClick={() => simulate("sent", { status: "SENT" }, "Marked as sent")}>
             Mark sent
           </Button>
-          <Button variant="secondary" disabled={!movable} busy={busy === "paid"} onClick={() => simulate("paid", { status: "PAID" }, "Marked PAID")}>
+          <Button variant="secondary" disabled={!movable} busy={busy === "paid"} onClick={() => simulate("paid", { status: "PAID" }, "Marked as paid")}>
             Mark paid
           </Button>
         </div>
-        <Field label="Bank failure" htmlFor={selectId}>
+        <Field label="Simulate a bank failure" htmlFor={selectId}>
           <Select id={selectId} value={failure} onChange={(e) => setFailure(e.target.value)}>
             {FAILURES.map((f) => (
               <option key={f} value={f}>
@@ -54,7 +57,7 @@ export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: st
             ))}
           </Select>
         </Field>
-        <Button variant="secondary" className="w-full" disabled={!movable} busy={busy === "fail"} onClick={() => simulate("fail", { status: "FAILED", failureType: failure }, `Failed with ${titleCase(failure)}`)}>
+        <Button variant="secondary" className="w-full" disabled={!movable} busy={busy === "fail"} onClick={() => simulate("fail", { status: "FAILED", failureType: failure }, `Failed: ${titleCase(failure)}`)}>
           Fail the transfer
         </Button>
       </div>

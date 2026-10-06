@@ -1,5 +1,6 @@
 import { lookupFailure, type FailureClass, type ReplacePolicy } from "../domain/playbook";
 import type { Attempt, Method, Obligation } from "../ledger/ledger";
+import { formatMinor } from "../money";
 import type { ActionKind, Severity } from "./actions";
 import type { SupplierEvidence } from "./evidence";
 
@@ -79,11 +80,11 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
   };
 
   if (obligation.status === "CLOSED") {
-    reasons.push("The obligation is closed and certified.");
+    reasons.push("This invoice is settled and certified.");
     return finish();
   }
   if (!latest) {
-    reasons.push("No payment has been attempted, so there is no incident to command.");
+    reasons.push("No payment has been attempted yet, so there is nothing to command.");
     return finish();
   }
 
@@ -92,15 +93,15 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
     forced = "ESCALATE";
     raise("CRITICAL");
     candidates.push("ESCALATE");
-    reasons.push(`Already escalated: ${obligation.escalationReason ?? "no reason recorded"}.`);
-    refuse("REPLACE", "Escalated obligations are released only by a named human approval.");
+    reasons.push(`Already with a person: ${obligation.escalationReason ?? "no reason recorded"}.`);
+    refuse("REPLACE", "Only a named person can release an escalated invoice.");
   }
   if (evidence?.requestsDetailChange) {
     forced = "ESCALATE";
     raise("CRITICAL");
     candidates.push("ESCALATE");
-    reasons.push("The supplier's message asks to change bank details. Verify by calling a number already on file; an emailed change is the classic payment-fraud pattern.");
-    refuse("REPLACE", "New bank details arrived by message and are unverified.");
+    reasons.push("The supplier's message asks to change bank details. Confirm by calling a number you already hold. A bank-detail change by message is the classic payment-fraud pattern.");
+    refuse("REPLACE", "New bank details arrived by message and have not been verified.");
   }
   if (evidence?.containsEmbeddedInstructions) {
     raise("ATTENTION");
@@ -108,7 +109,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
   }
   if (evidence && !evidence.referencesObligation) {
     raise("ATTENTION");
-    reasons.push("The message does not cite this obligation's reference; treat its claims as unmatched.");
+    reasons.push("The message does not cite this invoice's reference, so its claims are treated as unmatched.");
   }
   const statementShowsCredit =
     evidence?.statementCredit != null &&
@@ -121,17 +122,17 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
       fromState = "RECOVER_INTENT";
       candidates.push("RECOVER_INTENT", "ESCALATE");
       raise("ATTENTION");
-      reasons.push("A payout intent was written but its outcome is unknown. Look it up by its request_id before anything else.");
-      refuse("REPLACE", "The unresolved intent holds the lock; a second payment could duplicate it.");
+      reasons.push("A payment was recorded but its outcome is unknown. PayOnce will look it up by its request ID before doing anything else.");
+      refuse("REPLACE", "The unresolved request still holds the lock, and a second payment could duplicate it.");
       break;
 
     case "LIVE": {
-      refuse("REPLACE", "The original may still settle; replacing it could pay the supplier twice.");
+      refuse("REPLACE", "The original payment may still arrive. Replacing it could pay the supplier twice.");
       if (latest.awxStatus === "FAILED") {
         fromState = "WAIT";
         candidates.push("WAIT");
         recheckAt = new Date(now.getTime() + 5 * 60_000).toISOString();
-        reasons.push("Airwallex marked the transfer FAILED. The funds are returned only at CANCELLED, so the lock holds until then.");
+        reasons.push("Airwallex has marked the transfer as failed. The money returns to the wallet only once it is cancelled, so the lock holds until then.");
         break;
       }
       const slaMs = policy.settlementSlaHours[latest.method] * HOUR_MS;
@@ -140,47 +141,47 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         fromState = "WAIT";
         candidates.push("WAIT", "SEND_STATUS_TO_SUPPLIER");
         recheckAt = new Date(Date.parse(latest.createdAt) + slaMs).toISOString();
-        reasons.push(`In flight ${Math.floor(ageMs / HOUR_MS)}h of an expected ${policy.settlementSlaHours[latest.method]}h (${latest.method}). Waiting is correct.`);
+        reasons.push(`In flight for ${Math.floor(ageMs / HOUR_MS)}h of an expected ${policy.settlementSlaHours[latest.method]}h (${latest.method}). Waiting is the right call.`);
         if (evidence?.claimsNonReceipt) {
           raise("ATTENTION");
-          reasons.push("The supplier reports non-receipt, but the transfer is still inside its settlement window.");
+          reasons.push("The supplier reports non-receipt, but the transfer is still inside its normal settlement window.");
         }
       } else {
         fromState = "ESCALATE";
         candidates.push("ESCALATE", "WAIT");
         raise("ATTENTION");
-        reasons.push(`In flight ${Math.floor(ageMs / HOUR_MS)}h, past the expected ${policy.settlementSlaHours[latest.method]}h. Non-delivery cannot be proven from here; ask Airwallex to trace it.`);
+        reasons.push(`In flight for ${Math.floor(ageMs / HOUR_MS)}h, beyond the expected ${policy.settlementSlaHours[latest.method]}h. Non-delivery cannot be proven from here, so ask Airwallex to trace the payment.`);
       }
       break;
     }
 
     case "PAID": {
-      refuse("REPLACE", "PAID holds the lock: the money left our account and may be sitting at the supplier's bank.");
+      refuse("REPLACE", "The money has left your account and may be sitting at the supplier's bank.");
       if (evidence?.claimsNonReceipt && !statementShowsCredit) {
         fromState = "SEND_PROOF_TO_SUPPLIER";
         candidates.push("SEND_PROOF_TO_SUPPLIER", "ESCALATE", "WAIT");
         raise("ATTENTION");
-        reasons.push("Airwallex reports PAID while the supplier says nothing arrived. Send proof of payment and ask their bank to trace; do not pay again.");
+        reasons.push("Airwallex reports the payment as made, yet the supplier says nothing arrived. Send proof of payment and ask their bank to trace it. Do not pay again.");
         break;
       }
-      if (statementShowsCredit) reasons.push("The supplier's own statement shows the credit, confirming receipt.");
+      if (statementShowsCredit) reasons.push("The supplier's own statement shows the credit, which confirms receipt.");
       const heldMs = facts.paidObservedAt ? now.getTime() - Date.parse(facts.paidObservedAt) : 0;
       if (facts.paidObservedAt && heldMs >= policy.paidHoldMs) {
         fromState = "CLOSE";
         candidates.push("CLOSE");
-        reasons.push("PAID has held past the hold window with no return. The Closer can now reconcile and certify.");
+        reasons.push("The payment has stayed paid through the hold window with no return. It can now be reconciled and certified.");
       } else {
         fromState = "WAIT";
         candidates.push("WAIT");
         recheckAt = facts.paidObservedAt ? new Date(Date.parse(facts.paidObservedAt) + policy.paidHoldMs).toISOString() : null;
-        reasons.push("PAID is not final: a bank can still return it. Hold before closing.");
+        reasons.push("Paid is not final: a bank can still return a payment. Wait out the hold before closing.");
       }
       break;
     }
 
     case "DEAD": {
       const entry = lookupFailure(latest.failureCode);
-      reasons.push(`Attempt #${latest.seq} ended CANCELLED with ${latest.failureCode ?? "no failure code"}. ${entry.guidance}`);
+      reasons.push(`Attempt ${latest.seq} was cancelled with failure ${latest.failureCode ?? "(no code)"}. ${entry.guidance}`);
       replacement = {
         failureClass: entry.class,
         policy: entry.replace,
@@ -192,7 +193,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         forced = "ESCALATE";
         raise("CRITICAL");
         candidates.push("ESCALATE");
-        reasons.push("The supplier's statement shows a credit of the full amount even though Airwallex cancelled the transfer. The supplier may already hold the money.");
+        reasons.push("The supplier's statement shows the full amount, yet Airwallex cancelled the transfer. The supplier may already hold the money.");
         refuse("REPLACE", "A replacement could pay the supplier twice.");
         break;
       }
@@ -200,14 +201,14 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         fromState = "ESCALATE";
         candidates.push("ESCALATE");
         raise(entry.class === "POSSIBLE_DUPLICATE" || entry.class === "COMPLIANCE_OR_RECALL" ? "CRITICAL" : "ATTENTION");
-        refuse("REPLACE", "This failure class never replaces automatically; a named human must vouch in writing.");
+        refuse("REPLACE", "This kind of failure is never replaced automatically. A named person must approve it, in writing.");
         break;
       }
       if (entry.replace === "AFTER_CHANGE") {
         fromState = "REQUEST_CORRECTION";
         candidates.push("REQUEST_CORRECTION", "ESCALATE");
         raise("ATTENTION");
-        refuse("REPLACE", `Needs a changed ${replacement.needsChange} first, or a human approval with a written note.`);
+        refuse("REPLACE", `Needs a changed ${replacement.needsChange} first, or an approval from a person with a written reason.`);
         break;
       }
 
@@ -217,18 +218,18 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         fromState = "ESCALATE";
         candidates.push("ESCALATE");
         raise("ATTENTION");
-        reasons.push(`The wallet holds ${facts.walletAvailableMinor} minor units but a replacement needs ${neededMinor}. Top up first.`);
-        refuse("REPLACE", "Insufficient wallet balance.");
+        reasons.push(`The wallet holds ${formatMinor(facts.walletAvailableMinor, obligation.currency)} but a replacement needs ${formatMinor(neededMinor, obligation.currency)}. Top up first.`);
+        refuse("REPLACE", "The wallet balance is too low.");
       } else if (limit !== undefined && latest.amountMinor <= limit) {
         fromState = "REPLACE";
         candidates.push("REPLACE", "ESCALATE");
         replacement.autoApprovable = true;
-        reasons.push("Transient failure and the original is cancelled with funds returned. A replacement is within the automatic limit.");
+        reasons.push("A temporary fault: the original is cancelled and the money is back in the wallet. A replacement is within the automatic limit.");
       } else {
         fromState = "REPLACE";
         candidates.push("REPLACE", "ESCALATE");
         raise("ATTENTION");
-        reasons.push("Replacement is allowed but exceeds the automatic limit; a human must approve it.");
+        reasons.push("A replacement is allowed but exceeds the automatic limit, so a person must approve it.");
       }
       break;
     }
@@ -237,7 +238,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
       fromState = "REQUEST_CORRECTION";
       candidates.push("REQUEST_CORRECTION", "REPLACE", "ESCALATE");
       raise("ATTENTION");
-      reasons.push(`Airwallex rejected the create outright (${latest.lastError ?? "no detail"}); nothing was sent. Fix the terms and retry.`);
+      reasons.push(`Airwallex rejected the request outright (${latest.lastError ?? "no detail"}), so nothing was sent. Correct the terms and try again.`);
       break;
   }
 

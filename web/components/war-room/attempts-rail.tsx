@@ -12,11 +12,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-/** Attempts left to right, joined by a line and a square: the lock allows only the last one to be open. */
+/** Attempts left to right, joined by a line and a square. Only the last one is ever allowed to be open. */
 export function AttemptsRail({ attempts }: { attempts: IncidentView["attempts"] }) {
   return (
     <Frame tone="rule">
-      <PanelHeader title="Payout attempts" right={<Label>{attempts.length} total</Label>} />
+      <PanelHeader title="Payment attempts" right={<Label>{attempts.length === 1 ? "1 attempt" : `${attempts.length} attempts`}</Label>} />
       <ol className="flex items-stretch overflow-x-auto p-5">
         {attempts.map((a, i) => {
           const look = ATTEMPT[a.state];
@@ -31,21 +31,21 @@ export function AttemptsRail({ attempts }: { attempts: IncidentView["attempts"] 
                 </div>
                 <p className="tnum mt-5 text-2xl font-semibold">{money(a.amountMinor, a.currency)}</p>
                 <div className="mt-4">
-                  <Row label="Airwallex">{a.awxStatus ?? "none yet"}</Row>
+                  <Row label="Airwallex says">{a.awxStatus ?? "Nothing yet"}</Row>
                   <Row label="Method">{a.method}</Row>
-                  <Row label="Fee kept">{a.feeMinor === null ? "unknown" : money(a.feeMinor, a.currency)}</Row>
+                  <Row label="Fee">{a.feeMinor === null ? "Unknown" : money(a.feeMinor, a.currency)}</Row>
                   {a.failureCode ? (
                     <Row label="Failure">
                       <span className="font-mono text-[13px] font-medium">{a.failureCode}</span>
                       <span className="block text-xs text-muted">{a.failureMessage}</span>
                     </Row>
                   ) : null}
-                  <Row label="Request">
+                  <Row label="Request ID">
                     <span className="font-mono text-[12px]">{shortHash(a.requestId, 8)}</span>
                   </Row>
                   <Row label="Started">{ago(a.createdAt)}</Row>
                 </div>
-                {a.lastError ? <p className="hatch mt-3 px-3 py-2 text-xs">{a.lastError}</p> : null}
+                {a.lastError ? <p className="hatch mt-3 px-3 py-2 text-xs leading-relaxed">{a.lastError}</p> : null}
               </article>
               {i < attempts.length - 1 ? (
                 <div aria-hidden className="flex w-12 shrink-0 items-center">

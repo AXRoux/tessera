@@ -54,7 +54,7 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
       if (id) router.push(`/incidents/${id}`);
       else await refresh();
     } catch (e) {
-      setError(e instanceof ApiProblem ? e.problem.message : "Could not create the incident.");
+      setError(e instanceof ApiProblem ? e.problem.message : "The test invoice could not be created.");
     } finally {
       setCreating(false);
     }
@@ -62,14 +62,14 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
 
   const inFlight = items.filter((i) => i.status === "PAYING").length;
   const certified = items.filter((i) => i.status === "CLOSED").length;
-  const human = items.filter((i) => i.status === "ESCALATED" || i.status === "NEEDS_ACTION").length;
+  const withPerson = items.filter((i) => i.status === "ESCALATED" || i.status === "NEEDS_ACTION").length;
 
   return (
     <>
       <StatStrip>
-        <Stat value={items.length} label="Obligations tracked" />
+        <Stat value={items.length} label="Invoices tracked" />
         <Stat value={inFlight} label="Payments in flight" />
-        <Stat value={human} label="Waiting on a person" />
+        <Stat value={withPerson} label="Awaiting a person" />
         <Stat value={certified} label="Certified and closed" />
       </StatStrip>
 
@@ -84,12 +84,12 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
           <div className="flex items-center gap-4">
             {health ? (
               <span className="hidden items-center gap-3 sm:flex">
-                <Tag tone={health.model ? "blue-outline" : "muted"}>{health.model ? "Claude on" : "Claude off"}</Tag>
-                <Tag tone={health.sandbox ? "blue-outline" : "muted"}>{health.sandbox ? "Sandbox controls" : "Controls off"}</Tag>
+                <Tag tone={health.model ? "blue-outline" : "muted"}>{health.model ? "Claude connected" : "Claude not connected"}</Tag>
+                <Tag tone={health.sandbox ? "blue-outline" : "muted"}>{health.sandbox ? "Simulator on" : "Simulator off"}</Tag>
               </span>
             ) : null}
             <Button onClick={create} busy={creating}>
-              Pay a sandbox invoice
+              Send a test invoice
             </Button>
           </div>
         </div>
@@ -106,10 +106,10 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
               <div className="hatch grid place-items-center gap-6 px-6 py-20 text-center">
                 <p className="font-display text-2xl tracking-wide">Nothing in flight</p>
                 <p className="max-w-md text-sm text-muted">
-                  Pay a sandbox invoice to open an incident. The ledger records the intent before any money moves.
+                  Send a test invoice to open your first incident. PayOnce records its intent before a single cent moves.
                 </p>
                 <Button onClick={create} busy={creating}>
-                  Pay a sandbox invoice
+                  Send a test invoice
                 </Button>
               </div>
             </Frame>
@@ -119,7 +119,7 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
             <table className="w-full min-w-[760px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-ink">
-                  {["Reference", "Amount", "Status", "Attempts", "Last failure", "Updated"].map((h) => (
+                  {["Invoice", "Amount", "Status", "Attempts", "Latest failure", "Updated"].map((h) => (
                     <th key={h} className="label h-11 pr-6 font-medium">
                       {h}
                     </th>

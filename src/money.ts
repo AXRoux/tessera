@@ -14,3 +14,7 @@ export function toMinor(amount: number, currency: string): number {
 
 export const fromMinor = (minor: number, currency: string): number =>
   minor / 10 ** currencyExponent(currency);
+
+/** A display amount such as "$102.00", for sentences a person will read. */
+export const formatMinor = (minor: number, currency: string): string =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency }).format(fromMinor(minor, currency));

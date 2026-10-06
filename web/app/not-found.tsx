@@ -7,7 +7,8 @@ export default function NotFound() {
       <Frame>
         <div className="hatch px-6 py-20 text-center">
           <Label>404</Label>
-          <p className="mt-6 font-display text-3xl tracking-wide">No such incident</p>
+          <p className="mt-6 font-display text-3xl tracking-wide">Incident not found</p>
+          <p className="mx-auto mt-4 max-w-md text-sm text-muted">It may have been removed, or the link may be wrong.</p>
           <Link href="/" className="label mt-8 inline-block text-ink underline decoration-2 underline-offset-[6px] hover:text-blue">
             Back to the board
           </Link>

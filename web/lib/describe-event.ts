@@ -4,40 +4,46 @@ function record(value: unknown): Record<string, unknown> {
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
 
+const APPROVER_KIND: Record<string, string> = { HUMAN: "a person", POLICY: "policy" };
+
 /** One plain sentence per ledger event type. Unknown types fall back to their name, so nothing is ever hidden. */
 export function describeEvent(type: string, payload: unknown): string {
   const p = record(payload);
   switch (type) {
     case "OBLIGATION_CREATED":
-      return "Obligation recorded";
+      return "Invoice recorded.";
     case "ATTEMPT_INTENT": {
       const note = text(p.note);
-      return `Attempt ${String(p.seq)} intent written before any money moved. Approved by ${text(p.approver) ?? "unknown"} (${text(p.mode) ?? "?"})${note ? `: "${note}"` : ""}`;
+      const kind = APPROVER_KIND[text(p.mode) ?? ""] ?? "unknown";
+      return `Attempt ${String(p.seq)} was recorded before any money moved. Approved by ${text(p.approver) ?? "unknown"} (${kind})${note ? `: "${note}"` : "."}`;
     }
     case "TRANSFER_STATUS": {
+      const from = text(p.from);
       const code = text(p.failureCode);
-      return `Airwallex ${text(p.from) ?? "new"} to ${text(p.to) ?? "?"}${code ? `, failure ${code}` : ""}`;
+      const move = from ? `moved the transfer from ${from} to ${text(p.to) ?? "an unknown state"}` : `accepted the transfer as ${text(p.to) ?? "new"}`;
+      return `Airwallex ${move}${code ? `, with failure code ${code}` : ""}.`;
     }
     case "LATE_FAILURE":
-      return `A transfer that was PAID failed afterwards (${text(p.failureCode) ?? "no code"}). The incident reopened.`;
+      return `A transfer reported as paid was returned afterwards (code ${text(p.failureCode) ?? "unknown"}). The incident reopened.`;
     case "CREATE_AMBIGUOUS":
-      return "The create call's outcome was unknown. Resolving by request_id, never with a new one.";
+      return "The request to Airwallex timed out without a clear answer. PayOnce looks it up by its original request ID rather than sending a new one.";
     case "TRANSFER_MISMATCH":
-      return text(p.detail) ?? "Airwallex returned a transfer that does not match the ledger.";
+      return text(p.detail) ?? "Airwallex returned a transfer that does not match the ledger. It was held for a person.";
     case "ATTEMPT_ABANDONED":
-      return `Airwallex rejected the create outright; nothing was sent (${text(p.reason) ?? "no reason"})`;
+      return `Airwallex rejected the request outright, so nothing was sent: ${text(p.reason) ?? "no reason given"}.`;
     case "STATUS_AFTER_DEAD":
-      return `Airwallex reported ${text(p.status) ?? "a status"} after cancellation. Ignored; the lock was already released.`;
+      return `Airwallex reported ${text(p.status) ?? "a new status"} after the transfer was cancelled. Ignored, because the payment was already released.`;
     case "UNKNOWN_STATUS":
-      return `Unrecognized Airwallex status ${text(p.status) ?? "?"}. The lock stays held.`;
+      return `Airwallex reported a status PayOnce does not recognize (${text(p.status) ?? "unknown"}). The payment stays locked until a person looks.`;
     case "ESCALATED":
-      return `Escalated to a person: ${text(p.reason) ?? "no reason recorded"}`;
+      return `Handed to a person: ${text(p.reason) ?? "no reason recorded"}.`;
     case "EVIDENCE_RECORDED": {
       const evidence = record(p.evidence);
-      return `Supplier evidence from ${text(p.source) ?? "?"} by ${text(p.enteredBy) ?? "?"}: ${text(evidence.summary) ?? "no summary"}`;
+      const who = text(p.source) === "model" ? "read by Claude" : "entered by hand";
+      return `Supplier evidence ${who} for ${text(p.enteredBy) ?? "an operator"}: ${text(evidence.summary) ?? "no summary"}`;
     }
     case "CLOSED":
-      return "Reconciled and certified";
+      return "Reconciled against Airwallex and certified.";
     default:
       return type;
   }

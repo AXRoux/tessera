@@ -41,7 +41,7 @@ export const ClosureCertificateBodySchema = z.object({
   settledTransferId: z.string(),
   attempts: z.array(CertificateAttemptSchema),
   totals: TotalsSchema,
-  /** Head of the event chain just before this certificate; anchors the whole history. */
+  /** Head of the event chain just before this certificate; pins the whole history to it. */
   eventChainHead: z.string(),
   issuedAt: z.string(),
 });
@@ -49,7 +49,7 @@ export type ClosureCertificateBody = z.infer<typeof ClosureCertificateBodySchema
 
 export const SignedCertificateSchema = z.object({
   body: ClosureCertificateBodySchema,
-  /** sha256 of the canonical body. This is the value to anchor on a chain. */
+  /** sha256 of the canonical body: changing any field changes the hash. */
   hash: z.string(),
   signature: z.string(),
 });

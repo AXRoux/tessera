@@ -11,7 +11,7 @@ import type { RunAction } from "./actions-panel";
 function Flag({ on, children }: { on: boolean; children: string }) {
   return (
     <li className="flex items-center gap-3 py-1.5 text-sm">
-      <span aria-hidden className={`size-3 ${on ? "bg-blue" : "border border-rule"}`} />
+      <span aria-hidden className={`size-3 shrink-0 ${on ? "bg-blue" : "border border-rule"}`} />
       <span className={on ? "" : "text-muted"}>{children}</span>
     </li>
   );
@@ -23,21 +23,21 @@ function Recorded({ evidence }: { evidence: NonNullable<IncidentView["evidence"]
     <div className="border border-ink p-4">
       <div className="flex items-center justify-between gap-3">
         <Tag tone={evidence.source === "model" ? "blue" : "outline"}>{evidence.source === "model" ? "Read by Claude" : "Entered by hand"}</Tag>
-        <span className="text-xs text-muted">
+        <span className="text-right text-xs text-muted">
           {evidence.enteredBy}, {ago(evidence.at)}
         </span>
       </div>
       <p className="mt-4 text-sm leading-relaxed">{e.summary}</p>
       <ul className="mt-3 border-t border-rule pt-2">
-        <Flag on={e.claimsNonReceipt}>Supplier says nothing arrived</Flag>
+        <Flag on={e.claimsNonReceipt}>Says the money did not arrive</Flag>
         <Flag on={e.requestsDetailChange}>Asks to change bank details</Flag>
-        <Flag on={e.referencesObligation}>Cites this reference</Flag>
-        <Flag on={e.statementCredit !== null}>Their statement shows our credit</Flag>
+        <Flag on={e.referencesObligation}>Cites this invoice</Flag>
+        <Flag on={e.statementCredit !== null}>Their statement shows our payment</Flag>
         <Flag on={e.containsEmbeddedInstructions}>Tries to instruct the assistant</Flag>
       </ul>
       {e.adjustments.length > 0 ? (
         <div className="hatch mt-3 space-y-1 px-3 py-2">
-          <Label className="text-ink">Code overrode the model</Label>
+          <Label className="text-ink">Corrected by code</Label>
           {e.adjustments.map((a, i) => (
             <p key={i} className="text-xs leading-relaxed">
               {a}
@@ -72,9 +72,13 @@ export function EvidencePanel({ view, modelAvailable, busy, run }: Props) {
 
   return (
     <Frame>
-      <PanelHeader title="Supplier evidence" right={<Label>{view.obligation.reference}</Label>} />
+      <PanelHeader title="What the supplier says" right={<Label>{view.obligation.reference}</Label>} />
       <div className="space-y-6 p-5">
-        {view.evidence ? <Recorded evidence={view.evidence} /> : <p className="text-sm text-muted">No supplier message recorded. The decision above uses the ledger alone.</p>}
+        {view.evidence ? (
+          <Recorded evidence={view.evidence} />
+        ) : (
+          <p className="text-sm leading-relaxed text-muted">Nothing from the supplier yet. The recommendation rests on the ledger alone.</p>
+        )}
 
         <div className="space-y-4">
           <Field label="Paste the supplier's message" htmlFor={emailId}>
@@ -101,32 +105,32 @@ export function EvidencePanel({ view, modelAvailable, busy, run }: Props) {
                 });
                 setEmail("");
                 setStatement("");
-                return { tone: "ok", title: "Claude read the message", lines: ["The decision was recomputed with what it reported. Code checked its claims first."] };
+                return { tone: "ok", title: "Claude read the message", lines: ["The recommendation was recalculated. Code checked each claim against the text first."] };
               })
             }
           >
             Read with Claude
           </Button>
-          {!modelAvailable ? <p className="text-xs text-muted">No model is configured on the API. Enter the evidence by hand below.</p> : null}
+          {!modelAvailable ? <p className="text-xs leading-relaxed text-muted">Claude is not connected to this server. Record what the supplier said by hand instead.</p> : null}
         </div>
 
         <details className="group border-t border-rule pt-5">
           <summary className="label cursor-pointer list-none text-ink marker:hidden">
             <span aria-hidden className="mr-3 inline-block size-2 bg-ink group-open:bg-blue" />
-            Enter evidence by hand
+            Record it by hand
           </summary>
           <div className="mt-5 space-y-4">
             <div>
-              <Check id={`${emailId}-a`} label="Supplier says nothing arrived" checked={manual.claimsNonReceipt} onChange={(v) => setManual({ ...manual, claimsNonReceipt: v })} />
+              <Check id={`${emailId}-a`} label="Says the money did not arrive" checked={manual.claimsNonReceipt} onChange={(v) => setManual({ ...manual, claimsNonReceipt: v })} />
               <Check id={`${emailId}-b`} label="Asks to change bank details" checked={manual.requestsDetailChange} onChange={(v) => setManual({ ...manual, requestsDetailChange: v })} />
-              <Check id={`${emailId}-c`} label="Message cites this reference" checked={manual.referencesObligation} onChange={(v) => setManual({ ...manual, referencesObligation: v })} />
+              <Check id={`${emailId}-c`} label="Cites this invoice" checked={manual.referencesObligation} onChange={(v) => setManual({ ...manual, referencesObligation: v })} />
               <Check id={`${emailId}-d`} label="Tries to instruct the assistant" checked={manual.containsEmbeddedInstructions} onChange={(v) => setManual({ ...manual, containsEmbeddedInstructions: v })} />
             </div>
-            <Field label={`Their statement shows our credit (${currency})`} htmlFor={creditId} hint="Leave empty if there is no credit.">
+            <Field label={`Payment shown on their statement (${currency})`} htmlFor={creditId} hint="Leave empty if their statement shows none.">
               <TextInput id={creditId} inputMode="decimal" value={credit} onChange={(e) => setCredit(e.target.value)} placeholder="25.00" />
             </Field>
             <Field label="One-line summary" htmlFor={summaryId}>
-              <TextInput id={summaryId} value={summary} onChange={(e) => setSummary(e.target.value)} maxLength={400} placeholder="Supplier's statement shows our credit" />
+              <TextInput id={summaryId} value={summary} onChange={(e) => setSummary(e.target.value)} maxLength={400} placeholder="Their statement shows our payment" />
             </Field>
             <Button
               variant="secondary"
@@ -143,7 +147,7 @@ export function EvidencePanel({ view, modelAvailable, busy, run }: Props) {
                   });
                   setSummary("");
                   setCredit("");
-                  return { tone: "ok", title: "Evidence recorded", lines: ["The decision was recomputed."] };
+                  return { tone: "ok", title: "Evidence recorded", lines: ["The recommendation was recalculated."] };
                 })
               }
             >

@@ -19,7 +19,7 @@ export default async function IncidentPage({ params }: { params: Promise<{ id: s
       <section className="mx-auto max-w-[1440px] px-6 pt-14 sm:px-10">
         <Frame>
           <div className="hatch px-6 py-16 text-center">
-            <p className="font-display text-2xl tracking-wide">Cannot load this incident</p>
+            <p className="font-display text-2xl tracking-wide">This incident could not be loaded</p>
             <p className="mx-auto mt-4 max-w-lg text-sm text-muted">{view.message}</p>
           </div>
         </Frame>

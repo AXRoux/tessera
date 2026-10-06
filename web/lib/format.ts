@@ -33,15 +33,17 @@ export function ago(iso: string, now = Date.now()): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-/** Time until `iso`, or "now" if it has passed. */
+/** Time until `iso`, in words. "now" once it has passed. */
 export function until(iso: string, now = Date.now()): string {
   const seconds = Math.round((Date.parse(iso) - now) / 1000);
   if (seconds <= 0) return "now";
-  if (seconds < 90) return `${seconds}s`;
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (seconds < 90) return unit(seconds, "second");
   const minutes = Math.round(seconds / 60);
-  if (minutes < 90) return `${minutes} min`;
+  if (minutes < 90) return unit(minutes, "minute");
   const hours = Math.round(minutes / 60);
-  return hours < 48 ? `${hours} h` : `${Math.round(hours / 24)} d`;
+  if (hours < 48) return unit(hours, "hour");
+  return unit(Math.round(hours / 24), "day");
 }
 
 export const shortHash = (hash: string, length = 10): string => hash.slice(0, length);

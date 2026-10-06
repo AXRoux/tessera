@@ -12,7 +12,7 @@ decision safe in three layers.
 |---|---|
 | **Payout gateway** | The database refuses a second open payout for an obligation. The intent is written before any network call; an ambiguous result is resolved by looking the `request_id` up, never by minting a new one. Survives `kill -9`. |
 | **Commander** | Wait, replace, request a correction, send proof, or escalate, decided by code against a failure playbook (all 32 Airwallex failure codes). Claude reads the supplier's message; code checks what it claims. |
-| **Closer** | Reconciles every wallet line against Airwallex, waits out a hold (a `PAID` transfer can still be returned), then signs a certificate whose hash can be anchored. |
+| **Closer** | Reconciles every wallet line against Airwallex, waits out a hold (a `PAID` transfer can still be returned), then signs a certificate with a tamper-evident fingerprint. |
 
 The model never holds a credential and never decides what is allowed. See [SPEC.md](SPEC.md) for the verified sandbox
 behaviors the design rests on.
@@ -40,13 +40,13 @@ entered by hand instead of read by Claude.
 
 ## Demo path (about 3 minutes)
 
-1. **Pay a sandbox invoice.** The ledger records the intent, then the transfer is created.
-2. **Mark sent**, then paste a supplier email asking to change bank details and press **Read with Claude**. The decision
-   flips to *Escalate / Critical*; the reason is the payment-fraud pattern.
-3. On another invoice, **fail the transfer** with *Duplication return*. Try to approve with the note "ok": refused. Give a
-   real reason: released under a new `request_id`, recorded with your name.
-4. On a third, **mark paid**, try **Close and certify**: refused inside the hold window. After it passes, the Closer
-   reconciles the wallet lines and signs the certificate.
+1. **Send a test invoice.** The ledger records the intent, then the transfer is created.
+2. **Mark sent**, then paste a supplier email asking to change bank details and press **Read with Claude**. The
+   recommendation flips to *Hand to a person*, marked critical, because that is the payment-fraud pattern.
+3. On another invoice, **fail the transfer** with *Duplication return*. Try to release it with the reason "ok": refused.
+   Give a real reason and it goes out under a new request ID, recorded under your name.
+4. On a third, **mark paid** and try **Reconcile and certify**: refused inside the hold window. Once it passes, the
+   Closer checks every wallet line and signs the certificate.
 
 ## Prove it
 

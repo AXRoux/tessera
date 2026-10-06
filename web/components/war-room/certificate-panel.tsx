@@ -16,10 +16,11 @@ export function CertificatePanel({ view }: { view: IncidentView }) {
   if (!cert) {
     return (
       <Frame tone="rule">
-        <PanelHeader title="Closure certificate" />
+        <PanelHeader title="Certificate of completion" />
         <div className="hatch px-5 py-8">
           <p className="text-sm leading-relaxed text-muted">
-            Not certified. Closing reconciles every wallet line against Airwallex and refuses, with its reasons, if anything does not tie out.
+            Not certified yet. Certifying checks every wallet line against Airwallex, and if anything fails to tie out it
+            refuses and tells you exactly what.
           </p>
         </div>
       </Frame>
@@ -29,15 +30,15 @@ export function CertificatePanel({ view }: { view: IncidentView }) {
   const { totals, currency } = cert.body;
   return (
     <Frame tone="blue">
-      <PanelHeader title="Closure certificate" right={<Label className="text-blue">Signed</Label>} />
+      <PanelHeader title="Certificate of completion" right={<Label className="text-blue">Signed</Label>} />
       <div className="p-5">
-        <Label>Hash to anchor</Label>
+        <Label>Fingerprint</Label>
         <p className="mt-2 break-all font-mono text-[12px] leading-relaxed">{cert.hash}</p>
         <div className="mt-5">
-          <Line label="Supplier received" value={money(totals.paidMinor, currency)} />
+          <Line label="Received by supplier" value={money(totals.paidMinor, currency)} />
           <Line label="Owed" value={money(cert.body.amountMinor, currency)} />
           <Line label="Fees across attempts" value={money(totals.feesMinor, currency)} />
-          <Line label="Refunded by failures" value={money(totals.refundedMinor, currency)} />
+          <Line label="Refunded after failures" value={money(totals.refundedMinor, currency)} />
           <Line label="Net wallet movement" value={money(totals.netWalletMinor, currency)} />
           <Line label="Issued" value={ago(cert.body.issuedAt)} />
         </div>

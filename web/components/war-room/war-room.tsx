@@ -77,23 +77,23 @@ export function WarRoom({ initial, health }: { initial: IncidentView; health: He
         </Link>
         <div className="mt-6 flex flex-wrap items-end justify-between gap-6">
           <div>
-            <Label>Obligation / {o.method} / {o.currency}</Label>
+            <Label>Invoice / {o.method} / {o.currency}</Label>
             <h1 className="mt-4 font-display text-[clamp(28px,4vw,52px)] leading-none tracking-wide">{o.reference}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Tag tone={status.tone} pulse={status.pulse}>
               {status.label}
             </Tag>
-            <Tag tone={view.chain.ok ? "blue-outline" : "ink"}>{view.chain.ok ? "Chain intact" : "Chain broken"}</Tag>
+            <Tag tone={view.chain.ok ? "blue-outline" : "ink"}>{view.chain.ok ? "History verified" : "History altered"}</Tag>
           </div>
         </div>
       </div>
 
       <StatStrip>
         <Stat value={money(o.amountMinor, o.currency)} label="Owed to the supplier" />
-        <Stat value={view.attempts.length} label={view.attempts.length === 1 ? "Payout attempt" : "Payout attempts"} />
-        <Stat value={money(feesKept, o.currency)} label="Fees kept by Airwallex" />
-        <Stat value={money(delivered, o.currency)} label="Delivered and still PAID" />
+        <Stat value={view.attempts.length} label={view.attempts.length === 1 ? "Payment attempt" : "Payment attempts"} />
+        <Stat value={money(feesKept, o.currency)} label="Fees spent so far" />
+        <Stat value={money(delivered, o.currency)} label="Delivered to the supplier" />
       </StatStrip>
 
       <div className="mx-auto max-w-[1440px] px-6 pt-10 sm:px-10">

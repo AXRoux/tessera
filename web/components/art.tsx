@@ -19,7 +19,7 @@ export function HeroArt() {
       <rect x="360" y="100" width="60" height="60" fill="#0b0d12" />
       <polygon points="360,100 420,100 420,160" fill="#1f4dff" />
       <g fontFamily="ui-monospace, Menlo, monospace" fontSize="10" letterSpacing="2" fill="#0b0d12">
-        <text x="56" y="30">1 OBLIGATION</text>
+        <text x="56" y="30">1 INVOICE</text>
         <text x="104" y="92" fill="#1f4dff">1 LOCK</text>
         <text x="168" y="244">1 PAYMENT</text>
         <text x="372" y="182" fill="#5c5e62">NEVER 2</text>

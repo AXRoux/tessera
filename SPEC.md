@@ -87,10 +87,5 @@ fixtures/                failure-codes.json (captured from the sandbox)
 
 ## Open questions
 
-- Metal (metalntwx.com), status: docs access granted (under the Developer NDA: never copy docs text into this repo, README or video).
-  Public testnet JSON-RPC verified reachable (chain 63825, finalized head tracks head). Faucet/explorer are gated; funding a
-  throwaway signer needs the user's faucet access. Plan: a second payout rail whose idempotency key is a pre-signed tx hash
-  (rebroadcast is idempotent), sharing the same one-open-attempt lock across rails, plus an on-chain one-payment-per-obligation
-  policy. Needs the MIP20 handler ABI and system-contract addresses from the docs. Cut if no funded signer by Oct 14.
-- Anthropic API key for the Commander and evidence reader (slice 3). Needed before the LLM pieces can run.
+- An MCP server so Claude can drive the typed tools (needs approval to add `@modelcontextprotocol/sdk`).
 - Whether HackerEarth's pre-Oct-25 submission requires a demo, repo, or video (only the user can see the form).

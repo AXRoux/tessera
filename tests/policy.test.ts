@@ -135,7 +135,7 @@ describe("a returned transfer", () => {
 
     expect(d.recommended).toBe("ESCALATE");
     expect(d.allowed).not.toContain("REPLACE");
-    expect(d.reasons.join(" ")).toContain("needs 10300");
+    expect(d.blocked.map((b) => b.action)).toContain("REPLACE");
   });
 
   it("blocks replacement when the supplier's statement shows they already hold the money", () => {
@@ -168,11 +168,14 @@ describe("signals that override everything", () => {
   });
 
   it("notes embedded instructions without letting them change the decision", () => {
-    const clean = decide(facts([attempt()], { evidence: evidence() }));
-    const injected = decide(facts([attempt()], { evidence: evidence({ containsEmbeddedInstructions: true }) }));
+    const quiet = evidence({ claimsNonReceipt: false });
+    const clean = decide(facts([attempt()], { evidence: quiet }));
+    const injected = decide(facts([attempt()], { evidence: { ...quiet, containsEmbeddedInstructions: true } }));
 
     expect(injected.recommended).toBe(clean.recommended);
-    expect(injected.reasons.join(" ")).toContain("instructions aimed at the assistant");
+    expect(injected.allowed).toEqual(clean.allowed);
+    expect(clean.severity).toBe("ROUTINE");
+    expect(injected.severity).toBe("ATTENTION");
   });
 
   it("treats an escalated obligation as needing a human", () => {
