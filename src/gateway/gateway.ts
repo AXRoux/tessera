@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   AwxHttpError,
   type CreateTransferRequest,
@@ -37,6 +38,9 @@ export interface GatewayConfig {
   /** Airwallex dedupes request_ids for 7 days; stop re-sending long before that. */
   maxIntentAgeMs?: number;
 }
+
+/** Airwallex's duplicate_request_id error names the transfer that already used the request_id. */
+const DuplicateBodySchema = z.looseObject({ details: z.looseObject({ id: z.string() }) });
 
 const KNOWN_STATUSES = [
   "SCHEDULED", "IN_APPROVAL", "APPROVAL_RECALLED", "APPROVAL_REJECTED", "APPROVAL_BLOCKED",
@@ -235,7 +239,8 @@ export class PayoutGateway {
   }
 
   private async resolveDuplicate(attempt: Attempt, error: AwxHttpError): Promise<Transfer | null> {
-    const id = (error.body as { details?: { id?: unknown } } | null)?.details?.id;
+    const parsed = DuplicateBodySchema.safeParse(error.body);
+    const id = parsed.success ? parsed.data.details.id : undefined;
     try {
       return typeof id === "string" ? await this.api.getTransfer(id) : await this.api.findTransferByRequestId(attempt.requestId);
     } catch {

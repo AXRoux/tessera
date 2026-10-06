@@ -2,17 +2,22 @@ import {
   AwxHttpError,
   AwxNetworkError,
   type CreateTransferRequest,
+  type FinancialTransaction,
   type PayoutApi,
+  type ReconciliationApi,
   type Transfer,
 } from "../../src/airwallex/types";
 
 /**
- * In-memory Airwallex with the behaviors the gateway depends on, verified against the real sandbox:
+ * In-memory Airwallex with the behaviors the gateway and Closer depend on, verified against the real sandbox:
  * request_id dedupe (400 duplicate_request_id carrying the existing id), lookup by request_id, 404 on unknown ids,
- * fees read from the response. Faults count down per call.
+ * fees read from the response, and wallet lines per transfer (PAYOUT and FEE on create, PAYOUT_REVERSAL on CANCELLED).
+ * Faults count down per call.
  */
-export class FakePayoutApi implements PayoutApi {
+export class FakePayoutApi implements PayoutApi, ReconciliationApi {
   readonly transfers = new Map<string, Transfer>();
+  /** Wallet lines by transfer id. Tests may edit these to simulate a booking Airwallex got wrong. */
+  readonly wallet = new Map<string, FinancialTransaction[]>();
   private readonly byRequest = new Map<string, string>();
   createCalls = 0;
   faults = { failBeforeCreate: 0, loseResponseAfterCreate: 0, rejectCreate: 0, failLookup: 0 };
@@ -56,6 +61,8 @@ export class FakePayoutApi implements PayoutApi {
     };
     this.transfers.set(transfer.id, transfer);
     this.byRequest.set(request.request_id, transfer.id);
+    this.book(transfer, "PAYOUT", -transfer.transfer_amount);
+    this.book(transfer, "FEE", -fee);
 
     if (this.faults.loseResponseAfterCreate > 0) {
       this.faults.loseResponseAfterCreate--;
@@ -85,5 +92,31 @@ export class FakePayoutApi implements PayoutApi {
     if (!transfer) throw new Error(`unknown transfer ${transferId}`);
     transfer.status = status;
     if (failureCode) transfer.failure = { code: failureCode, message: "simulated failure" };
+    if (status === "CANCELLED") this.book(transfer, "PAYOUT_REVERSAL", transfer.transfer_amount);
+  }
+
+  async listFinancialTransactions(sourceId: string): Promise<FinancialTransaction[]> {
+    return structuredClone(this.wallet.get(sourceId) ?? []);
+  }
+
+  async listTransfers(_fromCreatedAt: string): Promise<Transfer[]> {
+    return structuredClone(this.all);
+  }
+
+  /** Books one wallet line against a transfer. */
+  book(transfer: Transfer, type: string, net: number, status = "SETTLED"): void {
+    const lines = this.wallet.get(transfer.id) ?? [];
+    lines.push({
+      id: crypto.randomUUID(),
+      source_id: transfer.id,
+      source_type: type === "FEE" ? "FEE" : "PAYOUT",
+      transaction_type: type,
+      currency: transfer.transfer_currency,
+      amount: net,
+      net,
+      fee: 0,
+      status,
+    });
+    this.wallet.set(transfer.id, lines);
   }
 }

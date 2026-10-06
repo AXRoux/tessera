@@ -1,11 +1,13 @@
 /**
  * Real-sandbox walkthrough of one incident:
- * pay -> SENT -> PAID (lock holds) -> late bank return -> replacement denied by policy -> human-approved replacement.
+ * pay -> SENT -> PAID (lock holds) -> late bank return -> replacement denied by policy -> human-approved replacement
+ * -> Closer refuses inside the hold window, then reconciles against Airwallex's wallet lines and certifies.
  * Requires a beneficiary nicknamed "spike-us-supplier" (US/USD/LOCAL) in the sandbox, or SMOKE_BENEFICIARY_ID.
  */
 import { AirwallexClient } from "../src/airwallex/client";
 import { issueApproval, newNonce, type Approval, type ApprovalPayload } from "../src/approval/approval";
-import { DuplicateLockError, ReplacementDenied } from "../src/errors";
+import { Closer, verifyCertificate } from "../src/closer/closer";
+import { DuplicateLockError, NotClosable, ReplacementDenied } from "../src/errors";
 import { PayoutGateway } from "../src/gateway/gateway";
 import { Ledger, type Obligation } from "../src/ledger/ledger";
 
@@ -120,3 +122,26 @@ show("attempts", ledger.attemptsFor(obligation.id).map((a) => `#${a.seq}:${a.sta
 const recent = await client.listTransfers(new Date(Date.now() - 30 * 60_000).toISOString());
 const transfers = recent.filter((t) => t.reference === obligation.reference);
 show("transfers at Airwallex", transfers.map((t) => `${t.id.slice(0, 8)}:${t.status}`).join("  "));
+
+step("7. The Closer: PAID is not final, so the default 24h hold window refuses to close");
+try {
+  await new Closer({ ledger, api: client, secret }).close(obligation.id);
+  throw new Error("BUG: closed inside the hold window");
+} catch (error) {
+  if (!(error instanceof NotClosable)) throw error;
+  for (const blocker of error.blockers) show("blocker", blocker);
+}
+
+step("8. Hold shortened for the demo; the Closer reconciles every wallet line and certifies");
+const certificate = await new Closer({ ledger, api: client, secret, paidHoldMs: 0 }).close(obligation.id);
+const { totals } = certificate.body;
+show("supplier received", `${totals.paidMinor / 100} USD (owed ${obligation.amountMinor / 100})`);
+show("fees (both attempts)", `${totals.feesMinor / 100} USD`);
+show("refunded by failed attempt", `${totals.refundedMinor / 100} USD`);
+show("net wallet movement", `${totals.netWalletMinor / 100} USD`);
+for (const a of certificate.body.attempts) {
+  show(`attempt #${a.seq} ${a.state}`, `expected ${JSON.stringify(a.expected)}  actual ${JSON.stringify(a.actual)}`);
+}
+show("certificate hash", certificate.hash);
+show("signature verifies", verifyCertificate(certificate, secret));
+show("obligation status", status(obligation));

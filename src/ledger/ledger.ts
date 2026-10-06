@@ -80,6 +80,13 @@ export type AttemptPatch = Partial<
   >
 >;
 
+interface HashRow {
+  hash: string;
+}
+interface JsonRow {
+  json: string;
+}
+
 const GENESIS = sha256Hex("payonce-genesis");
 const PATCHABLE = [
   "state", "transferId", "awxStatus", "failureCode", "failureMessage", "feeMinor", "payerPaysMinor", "lastError",
@@ -133,6 +140,12 @@ CREATE TABLE IF NOT EXISTS events (
   ts TEXT NOT NULL,
   prevHash TEXT NOT NULL,
   hash TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS certificates (
+  obligationId TEXT PRIMARY KEY REFERENCES obligations(id),
+  hash TEXT NOT NULL,
+  json TEXT NOT NULL,
+  createdAt TEXT NOT NULL
 );
 `;
 
@@ -294,10 +307,23 @@ export class Ledger {
     return this.requireAttempt(id);
   }
 
+  // ---- closure certificates ----------------------------------------------
+
+  saveCertificate(obligationId: string, hash: string, json: string): void {
+    this.db
+      .query("INSERT INTO certificates (obligationId, hash, json, createdAt) VALUES (?, ?, ?, ?)")
+      .run(obligationId, hash, json, this.now().toISOString());
+  }
+
+  getCertificateJson(obligationId: string): string | null {
+    const row = this.db.query("SELECT json FROM certificates WHERE obligationId = ?").get(obligationId) as JsonRow | null;
+    return row?.json ?? null;
+  }
+
   // ---- event chain -------------------------------------------------------
 
   append(obligationId: string | null, type: string, payload: unknown): LedgerEvent {
-    const last = this.db.query("SELECT hash FROM events ORDER BY seq DESC LIMIT 1").get() as { hash: string } | null;
+    const last = this.db.query("SELECT hash FROM events ORDER BY seq DESC LIMIT 1").get() as HashRow | null;
     const prevHash = last?.hash ?? GENESIS;
     const ts = this.now().toISOString();
     const body = canonicalJson(payload);

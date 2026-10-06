@@ -2,9 +2,11 @@ import { z } from "zod";
 import {
   AwxHttpError,
   AwxNetworkError,
+  FinancialTransactionListSchema,
   TransferListSchema,
   TransferSchema,
   type CreateTransferRequest,
+  type FinancialTransaction,
   type PayoutApi,
   type Transfer,
 } from "./types";
@@ -20,6 +22,7 @@ export interface ClientOptions {
 }
 
 const LoginSchema = z.object({ token: z.string() });
+const ErrorBodySchema = z.looseObject({ code: z.string().optional(), message: z.string().optional() });
 const TOKEN_TTL_MS = 25 * 60_000; // tokens last 30 minutes
 
 export class AirwallexClient implements PayoutApi {
@@ -68,6 +71,12 @@ export class AirwallexClient implements PayoutApi {
   async listTransfers(fromCreatedAt: string): Promise<Transfer[]> {
     const body = await this.request("GET", "/api/v1/transfers", { query: { from_created_at: fromCreatedAt, page_size: "200" } });
     return this.parse(TransferListSchema, body).items;
+  }
+
+  /** Wallet lines booked against one transfer (payout, fee, reversal). */
+  async listFinancialTransactions(sourceId: string): Promise<FinancialTransaction[]> {
+    const body = await this.request("GET", "/api/v1/financial_transactions", { query: { source_id: sourceId, page_size: "100" } });
+    return this.parse(FinancialTransactionListSchema, body).items;
   }
 
   // ---- transport ------------------------------------------------------------
@@ -157,11 +166,11 @@ export class AirwallexClient implements PayoutApi {
     }
     if (response.ok) return json;
 
-    const error = (json ?? {}) as { code?: unknown; message?: unknown };
+    const error = ErrorBodySchema.safeParse(json);
     throw new AwxHttpError(
       response.status,
-      typeof error.code === "string" ? error.code : "unknown",
-      typeof error.message === "string" ? error.message : response.statusText,
+      (error.success && error.data.code) || "unknown",
+      (error.success && error.data.message) || response.statusText,
       json,
     );
   }

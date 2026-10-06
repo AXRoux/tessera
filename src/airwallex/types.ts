@@ -60,3 +60,27 @@ export interface PayoutApi {
   getTransfer(id: string): Promise<Transfer>;
   findTransferByRequestId(requestId: string): Promise<Transfer | null>;
 }
+
+/** One wallet line. `net` is the signed effect on the balance (payouts negative, reversals positive). */
+export const FinancialTransactionSchema = z.looseObject({
+  id: z.string(),
+  source_id: z.string().nullish(),
+  source_type: z.string().nullish(),
+  transaction_type: z.string(),
+  currency: z.string(),
+  amount: z.number(),
+  net: z.number(),
+  fee: z.number().default(0),
+  status: z.string(),
+  description: z.string().nullish(),
+  created_at: z.string().optional(),
+});
+export type FinancialTransaction = z.infer<typeof FinancialTransactionSchema>;
+
+export const FinancialTransactionListSchema = z.looseObject({ items: z.array(FinancialTransactionSchema) });
+
+/** What the Closer reads from Airwallex: wallet lines for one transfer, and recent transfers (to spot untracked ones). */
+export interface ReconciliationApi {
+  listFinancialTransactions(sourceId: string): Promise<FinancialTransaction[]>;
+  listTransfers(fromCreatedAt: string): Promise<Transfer[]>;
+}

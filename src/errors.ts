@@ -41,3 +41,11 @@ export class LedgerMismatchError extends Error {
     this.name = "LedgerMismatchError";
   }
 }
+
+/** The Closer found reasons the incident cannot be certified yet. Each blocker is a sentence a person can act on. */
+export class NotClosable extends Error {
+  constructor(readonly obligationId: string, readonly blockers: string[]) {
+    super(`obligation ${obligationId} cannot be closed:\n - ${blockers.join("\n - ")}`);
+    this.name = "NotClosable";
+  }
+}
