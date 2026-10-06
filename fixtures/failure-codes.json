@@ -1,0 +1,162 @@
+[
+  {
+    "failureType": "ACCOUNT_CLOSED",
+    "code": "90701",
+    "message": "Account closed"
+  },
+  {
+    "failureType": "ACCOUNT_CURRENCY_MISMATCH",
+    "code": "90302",
+    "message": "Account currency mismatch"
+  },
+  {
+    "failureType": "ACCOUNT_INACTIVE_OR_DORMANT",
+    "code": "90702",
+    "message": "Account inactive or dormant"
+  },
+  {
+    "failureType": "ACCOUNT_UNDER_RESTRICTION",
+    "code": "90703",
+    "message": "Account under restriction"
+  },
+  {
+    "failureType": "BENEFICIARY_BANK_RETURNED",
+    "code": "90802",
+    "message": "Beneficiary bank returned"
+  },
+  {
+    "failureType": "BENEFICIARY_NAME_MISMATCH",
+    "code": "90301",
+    "message": "Beneficiary name mismatch"
+  },
+  {
+    "failureType": "BENEFICIARY_REQUESTED",
+    "code": "90801",
+    "message": "Beneficiary requested"
+  },
+  {
+    "failureType": "CARD_ISSUER_ERROR",
+    "code": "91201",
+    "message": "Card issuer error"
+  },
+  {
+    "failureType": "CHANNEL_POLICY",
+    "code": "90501",
+    "message": "Channel policy"
+  },
+  {
+    "failureType": "CHANNEL_TIMEOUT",
+    "code": "91402",
+    "message": "Channel timeout"
+  },
+  {
+    "failureType": "CLIENT_REQUESTED",
+    "code": "91002",
+    "message": "Client requested"
+  },
+  {
+    "failureType": "DUPLICATION_RETURN",
+    "code": "91301",
+    "message": "Duplication return"
+  },
+  {
+    "failureType": "EXCEEDED_TRANSACTION_AMOUNT_OR_LIMIT",
+    "code": "90601",
+    "message": "Exceeded transaction amount or limit"
+  },
+  {
+    "failureType": "INBOUND_2B_CARD_NOT_SUPPORTED",
+    "code": "90903",
+    "message": "Inbound 2B card not supported"
+  },
+  {
+    "failureType": "INBOUND_BENFICIARY_VALIDATION_ERROR",
+    "code": "90901",
+    "message": "Inbound benficiary validation error"
+  },
+  {
+    "failureType": "INBOUND_COMPANY_REGISTRATION_NUMBER_ERROR",
+    "code": "90904",
+    "message": "Inbound company registration number error"
+  },
+  {
+    "failureType": "INBOUND_ORDER_ERROR",
+    "code": "90902",
+    "message": "Inbound order error"
+  },
+  {
+    "failureType": "INSUFFICIENT_FUNDS",
+    "code": "90602",
+    "message": "Insufficient funds"
+  },
+  {
+    "failureType": "INVALID_ACCOUNT_NAME_OR_NUMBER",
+    "code": "90101",
+    "message": "Invalid account name/number"
+  },
+  {
+    "failureType": "INVALID_BANK_INFORMATION",
+    "code": "90204",
+    "message": "Invalid bank information"
+  },
+  {
+    "failureType": "INVALID_BANK_OR_BRANCH_CODE",
+    "code": "90201",
+    "message": "Invalid bank/branch code"
+  },
+  {
+    "failureType": "INVALID_BENEFICIARY_DETAILS",
+    "code": "90401",
+    "message": "Invalid beneficiary details"
+  },
+  {
+    "failureType": "INVALID_CORRESPONDENT_BANK_INFORMATION",
+    "code": "90203",
+    "message": "Invalid correspondent bank information"
+  },
+  {
+    "failureType": "INVALID_PAYMENT_PURPOSE",
+    "code": "91101",
+    "message": "Invalid payment purpose"
+  },
+  {
+    "failureType": "INVALID_SPECIAL_CHARACTER",
+    "code": "90402",
+    "message": "Invalid special character"
+  },
+  {
+    "failureType": "INVALID_SWIFT_BIC_CODE",
+    "code": "90202",
+    "message": "Invalid SWIFT/BIC code"
+  },
+  {
+    "failureType": "OTHER",
+    "code": "99902",
+    "message": "Other"
+  },
+  {
+    "failureType": "RECALL_REQUESTED",
+    "code": "91001",
+    "message": "Recall requested"
+  },
+  {
+    "failureType": "SYSTEM_ERROR",
+    "code": "91401",
+    "message": "System error"
+  },
+  {
+    "failureType": "TM_SUSPENDED",
+    "code": "90502",
+    "message": "TM suspended"
+  },
+  {
+    "failureType": "TRANSACTION_AMOUNT_NOT_COVERING_FEE",
+    "code": "90603",
+    "message": "Transaction amount not covering fee"
+  },
+  {
+    "failureType": "UNABLE_TO_APPLY",
+    "code": "99901",
+    "message": "Unable to apply"
+  }
+]
