@@ -1,19 +1,7 @@
 import { lookupFailure, type FailureClass, type ReplacePolicy } from "../domain/playbook";
 import type { Attempt, Method, Obligation } from "../ledger/ledger";
+import type { ActionKind, Severity } from "./actions";
 import type { SupplierEvidence } from "./evidence";
-
-export type ActionKind =
-  | "NONE"
-  | "WAIT"
-  | "RECOVER_INTENT"
-  | "SEND_STATUS_TO_SUPPLIER"
-  | "SEND_PROOF_TO_SUPPLIER"
-  | "REQUEST_CORRECTION"
-  | "REPLACE"
-  | "CLOSE"
-  | "ESCALATE";
-
-export type Severity = "ROUTINE" | "ATTENTION" | "CRITICAL";
 
 /** Thresholds live here, in code. The model never sees or sets them. */
 export interface CommanderPolicy {

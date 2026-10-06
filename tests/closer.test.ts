@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { Closer, verifyCertificate } from "../src/closer/closer";
+import { verifyCertificate } from "../src/closer/certificate";
+import { Closer } from "../src/closer/closer";
 import { NotClosable, ObligationNotPayable } from "../src/errors";
 import { approve, SECRET, world, type World } from "./helpers/world";
 

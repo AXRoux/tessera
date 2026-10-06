@@ -1,66 +1,17 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { z } from "zod";
 import type { FinancialTransaction, ReconciliationApi } from "../airwallex/types";
 import { canonicalJson, sha256Hex } from "../canonical";
 import { NotClosable } from "../errors";
 import { paidObservedAt } from "../ledger/events";
 import type { Attempt, Ledger, Obligation } from "../ledger/ledger";
 import { toMinor } from "../money";
-
-/** Signed minor-unit effects on the wallet: payouts and fees are negative, reversals positive. */
-const WalletLinesSchema = z.object({
-  payoutMinor: z.number().int(),
-  feeMinor: z.number().int(),
-  reversalMinor: z.number().int(),
-});
-export type WalletLines = z.infer<typeof WalletLinesSchema>;
-
-const AttemptStateSchema = z.enum(["INTENT", "LIVE", "PAID", "DEAD", "ABANDONED"]);
-
-/** What really happened to the wallet, from Airwallex's own lines. `paidMinor` must equal the amount owed. */
-const TotalsSchema = z.object({
-  paidMinor: z.number().int(),
-  feesMinor: z.number().int(),
-  refundedMinor: z.number().int(),
-  netWalletMinor: z.number().int(),
-});
-export type Totals = z.infer<typeof TotalsSchema>;
-
-const CertificateAttemptSchema = z.object({
-  seq: z.number().int(),
-  attemptId: z.string(),
-  requestId: z.string(),
-  transferId: z.string().nullable(),
-  state: AttemptStateSchema,
-  failureCode: z.string().nullable(),
-  expected: WalletLinesSchema.nullable(),
-  actual: WalletLinesSchema.nullable(),
-});
-
-export const ClosureCertificateBodySchema = z.object({
-  version: z.literal(1),
-  obligationId: z.string(),
-  reference: z.string(),
-  currency: z.string(),
-  amountMinor: z.number().int(),
-  beneficiaryId: z.string(),
-  settledAttemptId: z.string(),
-  settledTransferId: z.string(),
-  attempts: z.array(CertificateAttemptSchema),
-  totals: TotalsSchema,
-  /** Head of the event chain just before this certificate; anchors the whole history. */
-  eventChainHead: z.string(),
-  issuedAt: z.string(),
-});
-export type ClosureCertificateBody = z.infer<typeof ClosureCertificateBodySchema>;
-
-export const SignedCertificateSchema = z.object({
-  body: ClosureCertificateBodySchema,
-  /** sha256 of the canonical body. This is the value to anchor on a chain. */
-  hash: z.string(),
-  signature: z.string(),
-});
-export type SignedCertificate = z.infer<typeof SignedCertificateSchema>;
+import {
+  SignedCertificateSchema,
+  signCertificateHash,
+  type ClosureCertificateBody,
+  type SignedCertificate,
+  type Totals,
+  type WalletLines,
+} from "./certificate";
 
 export interface AttemptReconciliation {
   attemptId: string;
@@ -102,16 +53,6 @@ export interface CloserConfig {
 }
 
 const ZERO: WalletLines = { payoutMinor: 0, feeMinor: 0, reversalMinor: 0 };
-
-const signHash = (hash: string, secret: string): string =>
-  createHmac("sha256", secret).update(`payonce-certificate-v1|${hash}`).digest("hex");
-
-export function verifyCertificate(certificate: SignedCertificate, secret: string): boolean {
-  if (sha256Hex(canonicalJson(certificate.body)) !== certificate.hash) return false;
-  const expected = Buffer.from(signHash(certificate.hash, secret), "hex");
-  const actual = Buffer.from(certificate.signature, "hex");
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
-}
 
 /** What Airwallex must have booked for an attempt that reached its state. A failed transfer keeps its fee. */
 function expectedLines(attempt: Attempt): WalletLines | null {
@@ -230,7 +171,7 @@ export class Closer {
         issuedAt: this.now().toISOString(),
       };
       const hash = sha256Hex(canonicalJson(body));
-      const certificate: SignedCertificate = { body, hash, signature: signHash(hash, this.secret) };
+      const certificate: SignedCertificate = { body, hash, signature: signCertificateHash(hash, this.secret) };
 
       this.ledger.saveCertificate(obligationId, hash, JSON.stringify(certificate));
       this.ledger.setObligationStatus(obligationId, "CLOSED");

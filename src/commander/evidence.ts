@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { LedgerEvent } from "../ledger/ledger";
 import { currencyExponent, fromMinor } from "../money";
 
 /**
@@ -16,8 +17,27 @@ export const ExtractedEvidenceSchema = z.object({
 export type ExtractedEvidence = z.infer<typeof ExtractedEvidenceSchema>;
 
 /** The extraction after code has verified or overridden it. `adjustments` records every time code disagreed. */
-export interface SupplierEvidence extends ExtractedEvidence {
-  adjustments: string[];
+export const SupplierEvidenceSchema = ExtractedEvidenceSchema.extend({ adjustments: z.array(z.string()) });
+export type SupplierEvidence = z.infer<typeof SupplierEvidenceSchema>;
+
+/** The ledger event written whenever evidence enters the system, by a person or by the model. */
+export const EvidenceRecordedSchema = z.object({
+  evidence: SupplierEvidenceSchema,
+  source: z.enum(["manual", "model"]),
+  enteredBy: z.string(),
+  message: z.object({ email: z.string(), statementText: z.string().optional() }).nullable(),
+});
+export type EvidenceRecorded = z.infer<typeof EvidenceRecordedSchema>;
+export type RecordedEvidence = EvidenceRecorded & { at: string };
+
+/** The newest evidence on an obligation. A later record supersedes an earlier one, whoever made it. */
+export function latestEvidence(events: LedgerEvent[]): RecordedEvidence | null {
+  for (const event of events.toReversed()) {
+    if (event.type !== "EVIDENCE_RECORDED") continue;
+    const parsed = EvidenceRecordedSchema.safeParse(event.payload);
+    if (parsed.success) return { ...parsed.data, at: event.ts };
+  }
+  return null;
 }
 
 export interface ExtractRequest<T> {
