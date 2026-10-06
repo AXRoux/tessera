@@ -3,6 +3,7 @@ import {
   AwxNetworkError,
   type CreateTransferRequest,
   type FinancialTransaction,
+  type BalanceApi,
   type PayoutApi,
   type ReconciliationApi,
   type Transfer,
@@ -14,10 +15,12 @@ import {
  * fees read from the response, and wallet lines per transfer (PAYOUT and FEE on create, PAYOUT_REVERSAL on CANCELLED).
  * Faults count down per call.
  */
-export class FakePayoutApi implements PayoutApi, ReconciliationApi {
+export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi {
   readonly transfers = new Map<string, Transfer>();
   /** Wallet lines by transfer id. Tests may edit these to simulate a booking Airwallex got wrong. */
   readonly wallet = new Map<string, FinancialTransaction[]>();
+  /** Available balance per currency in major units. Unlisted currencies are well funded. */
+  readonly balances = new Map<string, number>();
   private readonly byRequest = new Map<string, string>();
   createCalls = 0;
   faults = { failBeforeCreate: 0, loseResponseAfterCreate: 0, rejectCreate: 0, failLookup: 0 };
@@ -101,6 +104,10 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi {
 
   async listTransfers(_fromCreatedAt: string): Promise<Transfer[]> {
     return structuredClone(this.all);
+  }
+
+  async getAvailableBalance(currency: string): Promise<number> {
+    return this.balances.get(currency) ?? 1_000_000;
   }
 
   /** Books one wallet line against a transfer. */

@@ -49,3 +49,11 @@ export class NotClosable extends Error {
     this.name = "NotClosable";
   }
 }
+
+/** The Commander declined to replace on its own. `decision.reasons` says why; a human may still approve. */
+export class AutoReplacementRefused extends Error {
+  constructor(readonly obligationId: string, readonly decision: { recommended: string; reasons: string[] }) {
+    super(`obligation ${obligationId}: automatic replacement refused (recommended ${decision.recommended}): ${decision.reasons.join(" ")}`);
+    this.name = "AutoReplacementRefused";
+  }
+}

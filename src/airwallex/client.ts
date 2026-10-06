@@ -2,12 +2,15 @@ import { z } from "zod";
 import {
   AwxHttpError,
   AwxNetworkError,
+  BalanceListSchema,
   FinancialTransactionListSchema,
   TransferListSchema,
   TransferSchema,
   type CreateTransferRequest,
   type FinancialTransaction,
+  type BalanceApi,
   type PayoutApi,
+  type ReconciliationApi,
   type Transfer,
 } from "./types";
 
@@ -25,7 +28,7 @@ const LoginSchema = z.object({ token: z.string() });
 const ErrorBodySchema = z.looseObject({ code: z.string().optional(), message: z.string().optional() });
 const TOKEN_TTL_MS = 25 * 60_000; // tokens last 30 minutes
 
-export class AirwallexClient implements PayoutApi {
+export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi {
   private token: { value: string; expiresAt: number } | null = null;
   private nextSlot = 0;
 
@@ -77,6 +80,12 @@ export class AirwallexClient implements PayoutApi {
   async listFinancialTransactions(sourceId: string): Promise<FinancialTransaction[]> {
     const body = await this.request("GET", "/api/v1/financial_transactions", { query: { source_id: sourceId, page_size: "100" } });
     return this.parse(FinancialTransactionListSchema, body).items;
+  }
+
+  /** Available wallet balance for one currency, in major units. */
+  async getAvailableBalance(currency: string): Promise<number> {
+    const balances = this.parse(BalanceListSchema, await this.request("GET", "/api/v1/balances/current"));
+    return balances.find((b) => b.currency === currency)?.available_amount ?? 0;
   }
 
   // ---- transport ------------------------------------------------------------

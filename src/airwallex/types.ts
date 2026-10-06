@@ -84,3 +84,10 @@ export interface ReconciliationApi {
   listFinancialTransactions(sourceId: string): Promise<FinancialTransaction[]>;
   listTransfers(fromCreatedAt: string): Promise<Transfer[]>;
 }
+
+export const BalanceListSchema = z.array(z.looseObject({ currency: z.string(), available_amount: z.number() }));
+
+/** Spendable wallet balance in major units. The Commander checks it before proposing a replacement. */
+export interface BalanceApi {
+  getAvailableBalance(currency: string): Promise<number>;
+}

@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { FinancialTransaction, ReconciliationApi } from "../airwallex/types";
 import { canonicalJson, sha256Hex } from "../canonical";
 import { NotClosable } from "../errors";
-import { TransferStatusPayloadSchema } from "../ledger/events";
+import { paidObservedAt } from "../ledger/events";
 import type { Attempt, Ledger, Obligation } from "../ledger/ledger";
 import { toMinor } from "../money";
 
@@ -271,12 +271,7 @@ export class Closer {
   }
 
   private checkHoldWindow(paid: Attempt, blockers: string[]): void {
-    let paidAt: string | undefined;
-    for (const event of this.ledger.events(paid.obligationId)) {
-      if (event.type !== "TRANSFER_STATUS") continue;
-      const payload = TransferStatusPayloadSchema.safeParse(event.payload);
-      if (payload.success && payload.data.attemptId === paid.id && payload.data.to === "PAID") paidAt = event.ts;
-    }
+    const paidAt = paidObservedAt(this.ledger.events(paid.obligationId), paid.id);
     if (!paidAt) {
       blockers.push(`no record of when attempt #${paid.seq} became PAID`);
       return;
