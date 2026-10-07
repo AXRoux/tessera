@@ -31,6 +31,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      # The console imports the wire contract from ../src, which resolves zod from the repo root.
+      - run: bun install --frozen-lockfile
+        working-directory: .
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run typecheck
