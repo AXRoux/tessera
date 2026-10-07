@@ -25,6 +25,37 @@ const ResponseSchema = z.looseObject({
 });
 const ErrorSchema = z.looseObject({ error: z.looseObject({ message: z.string().optional() }).optional() });
 
+/** One block of a Messages API turn. The agent loop speaks these directly. */
+export type Block =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: unknown }
+  | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean };
+export interface Message {
+  role: "user" | "assistant";
+  content: string | Block[];
+}
+export interface ConverseRequest {
+  system: string;
+  messages: Message[];
+  tools: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>;
+}
+export interface ConverseResult {
+  content: Block[];
+  stopReason: string | null;
+}
+
+const ConverseResponseSchema = z.looseObject({
+  stop_reason: z.string().nullable().optional(),
+  content: z.array(
+    z.discriminatedUnion("type", [
+      z.looseObject({ type: z.literal("text"), text: z.string() }),
+      z.looseObject({ type: z.literal("tool_use"), id: z.string(), name: z.string(), input: z.unknown() }),
+      z.looseObject({ type: z.literal("thinking") }),
+      z.looseObject({ type: z.literal("redacted_thinking") }),
+    ]),
+  ),
+});
+
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 529]);
 
 /**
@@ -63,6 +94,26 @@ export class AnthropicModel implements StructuredModel {
     const result = request.schema.safeParse(call.input);
     if (!result.success) throw new ModelError(`model output failed validation: ${result.error.message}`, null);
     return result.data;
+  }
+
+  /** One turn of a tool-use conversation. The caller runs the tools and sends the results back. */
+  async converse(request: ConverseRequest): Promise<ConverseResult> {
+    const json = await this.post(
+      JSON.stringify({
+        model: this.opts.model,
+        max_tokens: this.opts.maxTokens ?? 2048,
+        system: request.system,
+        messages: request.messages,
+        tools: request.tools,
+        tool_choice: { type: "auto" },
+      }),
+    );
+    const parsed = ConverseResponseSchema.safeParse(json);
+    if (!parsed.success) throw new ModelError("model returned a response this client cannot read", null);
+    const content = parsed.data.content.flatMap((b): Block[] =>
+      b.type === "text" ? [{ type: "text", text: b.text }] : b.type === "tool_use" ? [{ type: "tool_use", id: b.id, name: b.name, input: b.input }] : [],
+    );
+    return { content, stopReason: parsed.data.stop_reason ?? null };
   }
 
   private async post(body: string): Promise<unknown> {

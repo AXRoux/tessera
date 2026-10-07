@@ -93,7 +93,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
     forced = "ESCALATE";
     raise("CRITICAL");
     candidates.push("ESCALATE");
-    reasons.push(`Already with a person: ${obligation.escalationReason ?? "no reason recorded"}.`);
+    reasons.push(`Already with a person: ${(obligation.escalationReason ?? "no reason recorded").replace(/[.\s]+$/, "")}.`);
     refuse("REPLACE", "Only a named person can release an escalated invoice.");
   }
   if (evidence?.requestsDetailChange) {

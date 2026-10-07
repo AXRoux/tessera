@@ -4,6 +4,9 @@ function record(value: unknown): Record<string, unknown> {
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
 
+/** Free text from a person or an agent often ends in its own full stop; sentences here add theirs. */
+const bare = (value: string | null): string | null => (value === null ? null : value.replace(/[.\s]+$/, ""));
+
 const APPROVER_KIND: Record<string, string> = { HUMAN: "a person", POLICY: "policy" };
 
 /** One plain sentence per ledger event type. Unknown types fall back to their name, so nothing is ever hidden. */
@@ -36,12 +39,23 @@ export function describeEvent(type: string, payload: unknown): string {
     case "UNKNOWN_STATUS":
       return `Airwallex reported a status Tessera does not recognize (${text(p.status) ?? "unknown"}). The payment stays locked until a person looks.`;
     case "ESCALATED":
-      return `Handed to a person: ${text(p.reason) ?? "no reason recorded"}.`;
+      return `Handed to a person: ${bare(text(p.reason)) ?? "no reason recorded"}.`;
     case "EVIDENCE_RECORDED": {
       const evidence = record(p.evidence);
-      const who = text(p.source) === "model" ? "read by Claude" : "entered by hand";
-      return `Supplier evidence ${who} for ${text(p.enteredBy) ?? "an operator"}: ${text(evidence.summary) ?? "no summary"}`;
+      const by = text(p.enteredBy) ?? "an operator";
+      const who = text(p.source) === "model" ? `read by Claude, called by ${by}` : `entered by hand by ${by}`;
+      return `Supplier evidence ${who}: ${text(evidence.summary) ?? "no summary"}`;
     }
+    case "AGENT_TOOL_CALL": {
+      const who = text(p.actor) ?? "an agent";
+      const tool = (text(p.tool) ?? "a tool").replaceAll("_", " ");
+      const outcome = text(p.outcome);
+      if (outcome === "ok") return `${who} used "${tool}".`;
+      const detail = bare(text(p.detail));
+      return `${who} tried "${tool}" and was ${outcome === "refused" ? "refused" : "turned away"}${detail ? `: ${detail}.` : "."}`;
+    }
+    case "AGENT_DEFERRED":
+      return `${text(p.actor) ?? "An agent"} chose to wait: ${bare(text(p.note)) ?? "no reason recorded"}.`;
     case "CLOSED":
       return "Reconciled against Airwallex and certified.";
     default:

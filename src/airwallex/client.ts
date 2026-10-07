@@ -59,10 +59,25 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
 
   // ---- sandbox helpers (used by scenarios and the smoke scripts) -------------
 
+  /**
+   * The sandbox simulator answers 500 operation_failed now and then. It is off the payout path (no money, no
+   * request_id), so unlike every other POST here it is retried: a retry that races a step that did land gets a 4xx.
+   */
   async simulateTransition(transferId: string, nextStatus: string, failureType?: string): Promise<void> {
-    await this.request("POST", `/api/v1/simulation/transfers/${encodeURIComponent(transferId)}/transition`, {
-      body: { next_status: nextStatus, ...(failureType ? { failure_type: failureType } : {}) },
-    });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.request("POST", `/api/v1/simulation/transfers/${encodeURIComponent(transferId)}/transition`, {
+          body: { next_status: nextStatus, ...(failureType ? { failure_type: failureType } : {}) },
+        });
+        return;
+      } catch (error) {
+        if (error instanceof AwxHttpError && error.status >= 500 && attempt < 3) {
+          await Bun.sleep(900 * (attempt + 1));
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   async listBeneficiaries(): Promise<Array<{ id: string; nickname?: string }>> {

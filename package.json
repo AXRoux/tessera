@@ -10,7 +10,10 @@
     "chaos": "bun run scripts/chaos.ts",
     "commander": "bun run scripts/commander-demo.ts",
     "evidence:live": "bun run scripts/evidence-live.ts",
-    "api": "bun run src/server/main.ts"
+    "api": "bun run src/server/main.ts",
+    "mcp": "bun run src/agent/mcp-main.ts",
+    "agent": "bun run scripts/agent-demo.ts",
+    "redteam": "bun run scripts/redteam.ts"
   },
   "dependencies": {
     "zod": "^4.6.5"
