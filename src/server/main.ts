@@ -1,6 +1,6 @@
 /**
- * PayOnce API process. Holds every credential (Airwallex, approval signing, Anthropic); the Next.js app talks to it
- * server-side with PAYONCE_API_TOKEN, so no secret ever reaches a browser.
+ * Tessera API process. Holds every credential (Airwallex, approval signing, Anthropic); the Next.js app talks to it
+ * server-side with TESSERA_API_TOKEN, so no secret ever reaches a browser.
  */
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -19,12 +19,12 @@ function required(name: string): string {
   return value;
 }
 
-const approvalSecret = required("PAYONCE_APPROVAL_SECRET");
-const token = required("PAYONCE_API_TOKEN");
-const operator = process.env.PAYONCE_OPERATOR ?? "operator";
-const dbPath = process.env.PAYONCE_DB ?? ".data/payonce.db";
-const port = Number(process.env.PAYONCE_API_PORT ?? 4010);
-const paidHoldMs = Number(process.env.PAYONCE_PAID_HOLD_MS ?? 24 * 3600_000);
+const approvalSecret = required("TESSERA_APPROVAL_SECRET");
+const token = required("TESSERA_API_TOKEN");
+const operator = process.env.TESSERA_OPERATOR ?? "operator";
+const dbPath = process.env.TESSERA_DB ?? ".data/tessera.db";
+const port = Number(process.env.TESSERA_API_PORT ?? 4010);
+const paidHoldMs = Number(process.env.TESSERA_PAID_HOLD_MS ?? 24 * 3600_000);
 
 mkdirSync(dirname(dbPath), { recursive: true });
 const client = AirwallexClient.fromEnv();
@@ -39,11 +39,11 @@ const simulator: Simulator | null = sandbox
   ? { advance: (transferId, status, failureType) => client.simulateTransition(transferId, status, failureType) }
   : null;
 
-const model = process.env.ANTHROPIC_API_KEY && process.env.PAYONCE_MODEL ? AnthropicModel.fromEnv() : null;
+const model = process.env.ANTHROPIC_API_KEY && process.env.TESSERA_MODEL ? AnthropicModel.fromEnv() : null;
 
 const beneficiaryId =
-  process.env.PAYONCE_BENEFICIARY_ID ?? (await client.listBeneficiaries()).find((b) => b.nickname === "spike-us-supplier")?.id;
-if (!beneficiaryId) throw new Error("set PAYONCE_BENEFICIARY_ID, or create a sandbox beneficiary nicknamed spike-us-supplier");
+  process.env.TESSERA_BENEFICIARY_ID ?? (await client.listBeneficiaries()).find((b) => b.nickname === "spike-us-supplier")?.id;
+if (!beneficiaryId) throw new Error("set TESSERA_BENEFICIARY_ID, or create a sandbox beneficiary nicknamed spike-us-supplier");
 
 // Anything left in INTENT by a crash is resolved before we accept traffic.
 const resolved = await gateway.recover();
@@ -54,6 +54,6 @@ const server = Bun.serve({
   fetch: createApi({ ledger, gateway, commander, closer, model, simulator, token, operator, beneficiaryId, paidHoldMs }),
 });
 
-console.log(`payonce api  http://${server.hostname}:${server.port}`);
+console.log(`tessera api  http://${server.hostname}:${server.port}`);
 console.log(`  ledger ${dbPath}  |  recovered ${resolved.length} unresolved attempt(s)`);
-console.log(`  model ${model ? process.env.PAYONCE_MODEL : "not configured"}  |  sandbox controls ${simulator ? "on" : "off"}  |  hold ${paidHoldMs}ms`);
+console.log(`  model ${model ? process.env.TESSERA_MODEL : "not configured"}  |  sandbox controls ${simulator ? "on" : "off"}  |  hold ${paidHoldMs}ms`);

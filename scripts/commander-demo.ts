@@ -12,8 +12,8 @@ import { AutoReplacementRefused, ReplacementDenied } from "../src/errors";
 import { PayoutGateway } from "../src/gateway/gateway";
 import { Ledger, type Obligation } from "../src/ledger/ledger";
 
-const secret = process.env.PAYONCE_APPROVAL_SECRET;
-if (!secret) throw new Error("PAYONCE_APPROVAL_SECRET is not set");
+const secret = process.env.TESSERA_APPROVAL_SECRET;
+if (!secret) throw new Error("TESSERA_APPROVAL_SECRET is not set");
 
 const client = AirwallexClient.fromEnv();
 const ledger = new Ledger(":memory:");
@@ -66,7 +66,7 @@ async function failWith(obligation: Obligation, failureType: string): Promise<vo
   throw new Error("transfer never reached CANCELLED");
 }
 
-heading("1. Supplier says nothing arrived; the transfer is in flight");
+heading("1. Supplier says nothing arrived; the transfer is still processing");
 const waiting = await openObligation("WAIT");
 show(await commander.assess(waiting.id, claim));
 

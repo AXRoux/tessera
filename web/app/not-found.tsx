@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { Frame, Label } from "@/components/ui";
 
 export default function NotFound() {
@@ -6,6 +7,7 @@ export default function NotFound() {
     <section className="mx-auto max-w-[1440px] px-6 pt-20 sm:px-10">
       <Frame>
         <div className="hatch px-6 py-20 text-center">
+          <Logo size={44} className="mx-auto mb-6" />
           <Label>404</Label>
           <p className="mt-6 font-display text-3xl tracking-wide">Incident not found</p>
           <p className="mx-auto mt-4 max-w-md text-sm text-muted">It may have been removed, or the link may be wrong.</p>

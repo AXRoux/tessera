@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { AwxHttpError } from "../airwallex/types";
 import { sha256Hex } from "../canonical";
 import { SignedCertificateSchema } from "../closer/certificate";
 import type { Closer } from "../closer/closer";
@@ -108,7 +109,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
   const { ledger, gateway, commander, closer } = deps;
 
   const authorized = (request: Request): boolean => {
-    const given = Buffer.from(request.headers.get("x-payonce-token") ?? "");
+    const given = Buffer.from(request.headers.get("x-tessera-token") ?? "");
     const wanted = Buffer.from(deps.token);
     return given.length === wanted.length && timingSafeEqual(given, wanted);
   };
@@ -246,7 +247,19 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
           const input = await body(request, SimulateBody);
           const latest = ledger.latestAttempt(id);
           if (!latest?.transferId) return json({ error: "Conflict", message: "no transfer to move" }, 409);
-          await deps.simulator.advance(latest.transferId, input.status, input.failureType);
+          try {
+            await deps.simulator.advance(latest.transferId, input.status, input.failureType);
+          } catch (error) {
+            if (!(error instanceof AwxHttpError)) throw error;
+            await gateway.sync(id);
+            return json(
+              {
+                error: "SimulatorRefused",
+                message: "Airwallex's simulator did not accept that step, usually because the transfer is mid-update or has already moved on. Check its current state and try again.",
+              },
+              409,
+            );
+          }
           await gateway.sync(id);
           return json({ ok: true });
         }

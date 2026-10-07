@@ -63,7 +63,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
               onClick={() =>
                 run("recover", async () => {
                   await api(`obligations/${id}/recover`, Acknowledged, { method: "POST" });
-                  return { tone: "ok", title: "Request resolved", lines: ["PayOnce looked the attempt up by its original request ID. No second payment was created."] };
+                  return { tone: "ok", title: "Request resolved", lines: ["Tessera looked the attempt up by its original request ID. No second payment was created."] };
                 })
               }
             >

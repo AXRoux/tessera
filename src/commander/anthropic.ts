@@ -36,9 +36,9 @@ export class AnthropicModel implements StructuredModel {
 
   static fromEnv(env: Record<string, string | undefined> = process.env): AnthropicModel {
     const apiKey = env.ANTHROPIC_API_KEY;
-    const model = env.PAYONCE_MODEL;
+    const model = env.TESSERA_MODEL;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
-    if (!model) throw new Error("PAYONCE_MODEL is not set");
+    if (!model) throw new Error("TESSERA_MODEL is not set");
     return new AnthropicModel({ apiKey, model });
   }
 

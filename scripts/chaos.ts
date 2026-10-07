@@ -16,8 +16,8 @@ import { Ledger } from "../src/ledger/ledger";
 
 type KillPoint = "before" | "after";
 
-const secret = process.env.PAYONCE_APPROVAL_SECRET;
-if (!secret) throw new Error("PAYONCE_APPROVAL_SECRET is not set");
+const secret = process.env.TESSERA_APPROVAL_SECRET;
+if (!secret) throw new Error("TESSERA_APPROVAL_SECRET is not set");
 const client = AirwallexClient.fromEnv();
 
 /** Delegates to Airwallex, but takes the whole process down at the chosen moment. */
@@ -103,9 +103,9 @@ async function scenario(when: KillPoint): Promise<boolean> {
   const reopened = new Ledger(db);
   const gateway = new PayoutGateway({ ledger: reopened, api: client, approvalSecret: secret! });
   const stuck = reopened.latestAttempt(obligation.id)!;
-  const landed = await client.findTransferByRequestId(stuck.requestId);
+  const found = await client.findTransferByRequestId(stuck.requestId);
   console.log(`   ledger after crash:   attempt ${stuck.state}, transferId=${stuck.transferId ?? "none"}`);
-  console.log(`   airwallex has it?     ${landed ? `yes (${landed.id})` : "no"}`);
+  console.log(`   airwallex has it?     ${found ? `yes (${found.id})` : "no"}`);
 
   let refused = false;
   try {

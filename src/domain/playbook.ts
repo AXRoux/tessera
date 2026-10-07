@@ -42,8 +42,8 @@ const GUIDANCE: Record<FailureClass, string> = {
   COMPLIANCE_OR_RECALL:
     "A compliance hold or a recall request. A replacement could run into the same block, or undo a legitimate recall. A person has to decide.",
   CORRIDOR_UNSUPPORTED:
-    "This failure comes from a payment corridor PayOnce does not handle for supplier payouts. A person should take over.",
-  UNKNOWN: "Airwallex reported a failure PayOnce cannot classify. A person should take over.",
+    "This failure comes from a payment corridor Tessera does not handle for supplier payouts. A person should take over.",
+  UNKNOWN: "Airwallex reported a failure Tessera cannot classify. A person should take over.",
 };
 
 const row = (

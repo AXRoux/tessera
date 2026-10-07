@@ -1,5 +1,5 @@
 /**
- * The wire contract between the PayOnce API and its clients. Pure zod: no database, no Bun, so the Next.js server
+ * The wire contract between the Tessera API and its clients. Pure zod: no database, no Bun, so the Next.js server
  * imports these schemas to parse every API response instead of trusting hand-copied types.
  */
 import { z } from "zod";

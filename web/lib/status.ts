@@ -11,10 +11,10 @@ interface Look {
   pulse: boolean;
 }
 
-/** Only blue, black and white: blue means money is moving or has landed, black means a person owns it. */
+/** Only blue, black and white: blue means money is processing or has settled, black means a person owns it. */
 export const STATUS: Record<ObligationStatus, Look> = {
   OPEN: { label: "Open", tone: "muted", pulse: false },
-  PAYING: { label: "In flight", tone: "blue-outline", pulse: true },
+  PAYING: { label: "Processing", tone: "blue-outline", pulse: true },
   PAID: { label: "Paid", tone: "blue", pulse: false },
   NEEDS_ACTION: { label: "Needs a decision", tone: "outline", pulse: true },
   ESCALATED: { label: "With a person", tone: "ink", pulse: true },
@@ -23,7 +23,7 @@ export const STATUS: Record<ObligationStatus, Look> = {
 
 export const ATTEMPT: Record<AttemptState, Look> = {
   INTENT: { label: "Recorded", tone: "muted", pulse: true },
-  LIVE: { label: "In flight", tone: "blue-outline", pulse: true },
+  LIVE: { label: "Processing", tone: "blue-outline", pulse: true },
   PAID: { label: "Paid", tone: "blue", pulse: false },
   DEAD: { label: "Cancelled", tone: "ink", pulse: false },
   ABANDONED: { label: "Never sent", tone: "muted", pulse: false },

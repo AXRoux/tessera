@@ -248,7 +248,7 @@ export class PayoutGateway {
     }
   }
 
-  /** The create may or may not have landed. Look it up by the same request_id; never mint another. */
+  /** The create may or may not have reached Airwallex. Look it up by the same request_id; never mint another. */
   private async resolveAmbiguity(attempt: Attempt, cause: unknown): Promise<SubmitResult> {
     const message = cause instanceof Error ? cause.message : String(cause);
     this.ledger.tx(() => {

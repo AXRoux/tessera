@@ -12,8 +12,8 @@ import { DuplicateLockError, NotClosable, ReplacementDenied } from "../src/error
 import { PayoutGateway } from "../src/gateway/gateway";
 import { Ledger, type Obligation } from "../src/ledger/ledger";
 
-const secret = process.env.PAYONCE_APPROVAL_SECRET;
-if (!secret) throw new Error("PAYONCE_APPROVAL_SECRET is not set");
+const secret = process.env.TESSERA_APPROVAL_SECRET;
+if (!secret) throw new Error("TESSERA_APPROVAL_SECRET is not set");
 
 const client = AirwallexClient.fromEnv();
 const ledger = new Ledger(":memory:");

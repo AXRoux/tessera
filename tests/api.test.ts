@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { z } from "zod";
 import failureCodes from "../fixtures/failure-codes.json";
+import { AwxHttpError } from "../src/airwallex/types";
 import { Closer } from "../src/closer/closer";
 import { Commander } from "../src/commander/commander";
 import type { ExtractRequest, StructuredModel } from "../src/commander/evidence";
@@ -54,20 +55,20 @@ interface ApiWorld extends World {
   call(method: string, path: string, body?: unknown, token?: string | null): Promise<Reply>;
 }
 
-function apiWorld(options: { paidHoldMs?: number; model?: StructuredModel | null } = {}): ApiWorld {
+function apiWorld(options: { paidHoldMs?: number; model?: StructuredModel | null; simulator?: (api: FakePayoutApi) => Simulator } = {}): ApiWorld {
   const w = world();
   const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET });
   const closer = new Closer({ ledger: w.ledger, api: w.api, secret: SECRET, paidHoldMs: options.paidHoldMs ?? 0 });
   const handle = createApi({
     ledger: w.ledger, gateway: w.gateway, commander, closer,
-    model: options.model ?? null, simulator: simulatorFor(w.api),
+    model: options.model ?? null, simulator: options.simulator?.(w.api) ?? simulatorFor(w.api),
     token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", paidHoldMs: options.paidHoldMs ?? 0,
   });
   return {
     ...w,
     async call(method, path, body, token = TOKEN) {
       const headers: Record<string, string> = { "content-type": "application/json" };
-      if (token !== null) headers["x-payonce-token"] = token;
+      if (token !== null) headers["x-tessera-token"] = token;
       const init: RequestInit = { method, headers, body: body === undefined ? undefined : JSON.stringify(body) };
       const response = await handle(new Request(`http://api.test${path}`, init));
       return new Reply(response.status, await response.json().catch(() => null));
@@ -107,7 +108,7 @@ describe("access", () => {
     });
 
     const response = await handle(
-      new Request(`http://api.test/api/obligations/${id}/approve`, { method: "POST", headers: { "x-payonce-token": TOKEN }, body: "{not json" }),
+      new Request(`http://api.test/api/obligations/${id}/approve`, { method: "POST", headers: { "x-tessera-token": TOKEN }, body: "{not json" }),
     );
 
     expect(response.status).toBe(400);
@@ -115,7 +116,7 @@ describe("access", () => {
 });
 
 describe("incidents", () => {
-  it("pays a new obligation exactly once and lists it in flight", async () => {
+  it("pays a new obligation exactly once and lists it as processing", async () => {
     const a = apiWorld();
 
     const id = await openIncident(a);
@@ -142,6 +143,24 @@ describe("incidents", () => {
     const a = apiWorld();
 
     expect((await a.call("GET", "/api/obligations/does-not-exist")).status).toBe(404);
+  });
+
+  it("answers 409 when the simulator refuses a step, and records where the transfer really is", async () => {
+    // The sandbox advances transfers by itself, so a manual step can arrive after it has already moved on.
+    const a = apiWorld({
+      simulator: (api) => ({
+        async advance(transferId) {
+          api.advance(transferId, "PAID");
+          throw new AwxHttpError(500, "operation_failed", "Request could not be processed", {});
+        },
+      }),
+    });
+    const id = await openIncident(a);
+
+    const refused = await a.call("POST", `/api/obligations/${id}/simulate`, { status: "SENT" });
+
+    expect(refused.status).toBe(409);
+    expect(a.ledger.latestAttempt(id)?.state).toBe("PAID");
   });
 });
 

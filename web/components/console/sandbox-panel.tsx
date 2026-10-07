@@ -35,10 +35,10 @@ export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: st
 
   return (
     <Frame tone="rule">
-      <PanelHeader title="Play the incident" right={<Label>Sandbox only</Label>} />
+      <PanelHeader title="Simulate payment events" right={<Label>Sandbox only</Label>} />
       <div className="space-y-5 p-5">
         <p className="text-sm leading-relaxed text-muted">
-          Moves the transfer through Airwallex's simulator, so you can play out an incident without waiting on a bank.
+          Advances the transfer through Airwallex's simulator so you can work an exception end to end without waiting on a bank.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <Button variant="secondary" disabled={!movable} busy={busy === "sent"} onClick={() => simulate("sent", { status: "SENT" }, "Marked as sent")}>

@@ -6,7 +6,7 @@ import type { SupplierEvidence } from "./evidence";
 
 /** Thresholds live here, in code. The model never sees or sets them. */
 export interface CommanderPolicy {
-  /** How long a transfer may be in flight before silence stops being normal. */
+  /** How long a transfer may be processing before silence stops being normal. */
   settlementSlaHours: Record<Method, number>;
   /** Largest replacement the Commander may approve on its own, per currency (minor units). Absent = never automatic. */
   autoReplaceLimitMinor: Record<string, number>;
@@ -122,7 +122,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
       fromState = "RECOVER_INTENT";
       candidates.push("RECOVER_INTENT", "ESCALATE");
       raise("ATTENTION");
-      reasons.push("A payment was recorded but its outcome is unknown. PayOnce will look it up by its request ID before doing anything else.");
+      reasons.push("A payment was recorded but its outcome is unknown. Tessera will look it up by its request ID before doing anything else.");
       refuse("REPLACE", "The unresolved request still holds the lock, and a second payment could duplicate it.");
       break;
 
@@ -141,7 +141,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         fromState = "WAIT";
         candidates.push("WAIT", "SEND_STATUS_TO_SUPPLIER");
         recheckAt = new Date(Date.parse(latest.createdAt) + slaMs).toISOString();
-        reasons.push(`In flight for ${Math.floor(ageMs / HOUR_MS)}h of an expected ${policy.settlementSlaHours[latest.method]}h (${latest.method}). Waiting is the right call.`);
+        reasons.push(`Processing for ${Math.floor(ageMs / HOUR_MS)}h of an expected ${policy.settlementSlaHours[latest.method]}h (${latest.method}). Waiting is the right call.`);
         if (evidence?.claimsNonReceipt) {
           raise("ATTENTION");
           reasons.push("The supplier reports non-receipt, but the transfer is still inside its normal settlement window.");
@@ -150,7 +150,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         fromState = "ESCALATE";
         candidates.push("ESCALATE", "WAIT");
         raise("ATTENTION");
-        reasons.push(`In flight for ${Math.floor(ageMs / HOUR_MS)}h, beyond the expected ${policy.settlementSlaHours[latest.method]}h. Non-delivery cannot be proven from here, so ask Airwallex to trace the payment.`);
+        reasons.push(`Processing for ${Math.floor(ageMs / HOUR_MS)}h, beyond the expected ${policy.settlementSlaHours[latest.method]}h. Non-delivery cannot be proven from here, so ask Airwallex to trace the payment.`);
       }
       break;
     }

@@ -26,7 +26,7 @@ function toNotice(error: unknown): Notice {
   return { tone: "refused", title: "Request failed", lines: [error instanceof Error ? error.message : "Unexpected error"] };
 }
 
-export function WarRoom({ initial, health }: { initial: IncidentView; health: Health | null }) {
+export function IncidentConsole({ initial, health }: { initial: IncidentView; health: Health | null }) {
   const id = initial.obligation.id;
   const [view, setView] = useState(initial);
   const [busy, setBusy] = useState<string | null>(null);

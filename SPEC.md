@@ -1,6 +1,6 @@
-# Spec: PayOnce
+# Spec: Tessera
 
-Exactly-once payout gateway, Payment Ops Incident Commander, and independent Closer on Airwallex sandbox.
+Exactly-once payout gateway, exception handling (the kit's "Incident Commander") and independent reconciliation, on the Airwallex sandbox.
 Hackathon: Airwallex Agentic Banking Hackathon, starter kit 3 (Payment Ops Incident Commander).
 
 ## Objective
@@ -44,7 +44,7 @@ bun run smoke            # real sandbox: pay, fail, deny replacement, human-appr
 bun run chaos            # real sandbox: kill -9 mid-create, recover, assert one transfer
 bun run commander        # real sandbox: wait / auto-replace / escalate decided by policy
 bun run evidence:live    # real Claude reads four supplier messages
-bun run api              # PayOnce API on 127.0.0.1:4010
+bun run api              # Tessera API on 127.0.0.1:4010
 cd web && bun run dev    # Next.js on 127.0.0.1:3100   (bun run build && bun run start for production)
 ```
 
@@ -62,9 +62,9 @@ src/gateway/gateway.ts   exactly-once submit / recover / sync
 src/closer/              reconciliation, certificate schemas (pure) and signing
 src/commander/           decision policy, evidence reader, Anthropic transport, approvals
 src/server/              HTTP API (api.ts), process entry (main.ts), wire contract (wire.ts, pure zod)
-web/                     Next.js war-room app (board, incident page, same-origin proxy)
+web/                     Next.js operations console (board, incident page, same-origin proxy)
 tests/                   behavior tests + FakePayoutApi
-scripts/                 sandbox smoke, chaos, commander demo, live evidence reader
+scripts/                 sandbox smoke, chaos, exception-handling demo, live evidence reader
 fixtures/                failure-codes.json (captured from the sandbox)
 ```
 

@@ -76,7 +76,7 @@ describe("closing an incident", () => {
 });
 
 describe("refusing to close", () => {
-  it("while the replacement is still in flight", async () => {
+  it("while the replacement is still processing", async () => {
     const w = world();
     const firstId = await paid(w);
     const first = w.ledger.requireAttempt(firstId);

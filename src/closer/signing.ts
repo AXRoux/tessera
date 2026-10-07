@@ -3,7 +3,7 @@ import { canonicalJson, sha256Hex } from "../canonical";
 import type { SignedCertificate } from "./certificate";
 
 export const signCertificateHash = (hash: string, secret: string): string =>
-  createHmac("sha256", secret).update(`payonce-certificate-v1|${hash}`).digest("hex");
+  createHmac("sha256", secret).update(`tessera-certificate-v1|${hash}`).digest("hex");
 
 export function verifyCertificate(certificate: SignedCertificate, secret: string): boolean {
   if (sha256Hex(canonicalJson(certificate.body)) !== certificate.hash) return false;

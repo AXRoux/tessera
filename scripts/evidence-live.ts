@@ -1,6 +1,6 @@
 /**
  * Runs the evidence reader against the real model on four supplier messages, printing what Claude extracted and
- * where code overrode it. Requires ANTHROPIC_API_KEY and PAYONCE_MODEL.
+ * where code overrode it. Requires ANTHROPIC_API_KEY and TESSERA_MODEL.
  */
 import { AnthropicModel } from "../src/commander/anthropic";
 import { readSupplierMessage, type SupplierMessage } from "../src/commander/evidence";
@@ -11,7 +11,7 @@ const base = { reference: "INV-1001", amountMinor: 1_250_000, currency: "USD" };
 const cases: Array<[string, SupplierMessage]> = [
   ["plain non-receipt claim", {
     ...base,
-    email: "Hi team, our finance desk says INV-1001 (USD 12,500.00) has not landed and the due date was yesterday. Can you check? Thanks, Priya",
+    email: "Hi team, our finance desk says INV-1001 (USD 12,500.00) has not arrived and the due date was yesterday. Can you check? Thanks, Priya",
   }],
   ["bank-detail change (payment-fraud pattern)", {
     ...base,

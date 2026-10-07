@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
+import { checkRequest } from "@/lib/request-guard";
 
 /**
- * Same-origin proxy to the PayOnce API. It adds the operator token server-side, so the browser never holds it, and
- * refuses cross-origin writes so a page on another site cannot drive the operator's session.
+ * Same-origin proxy to the Tessera API. It adds the operator token server-side, so the browser never holds it.
+ * It answers only to loopback hosts and refuses cross-origin writes, so no other site can drive the operator's session.
  */
 const ALLOWED = /^(health|obligations(\/[\w-]+(\/[\w/-]+)?)?)$/;
 
@@ -14,19 +15,21 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
   const target = path.join("/");
   if (!ALLOWED.test(target)) return problem(404, "NotFound", "no such route");
 
-  const origin = request.headers.get("origin");
-  if (request.method !== "GET" && origin !== null && origin !== request.nextUrl.origin) {
-    return problem(403, "Forbidden", "cross-origin request refused");
-  }
+  const guard = checkRequest({
+    method: request.method,
+    host: request.headers.get("host"),
+    origin: request.headers.get("origin"),
+  });
+  if (!guard.ok) return problem(403, "Forbidden", guard.message);
 
-  const base = process.env.PAYONCE_API_URL;
-  const token = process.env.PAYONCE_API_TOKEN;
+  const base = process.env.TESSERA_API_URL;
+  const token = process.env.TESSERA_API_TOKEN;
   if (!base || !token) return problem(500, "Misconfigured", "the web server has no API credentials");
 
   try {
     const upstream = await fetch(`${base}/api/${target}${request.nextUrl.search}`, {
       method: request.method,
-      headers: { "x-payonce-token": token, "content-type": "application/json" },
+      headers: { "x-tessera-token": token, "content-type": "application/json" },
       body: request.method === "GET" ? undefined : await request.text(),
       cache: "no-store",
       signal: AbortSignal.timeout(90_000),
@@ -36,7 +39,7 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
       headers: { "content-type": upstream.headers.get("content-type") ?? "application/json", "cache-control": "no-store" },
     });
   } catch {
-    return problem(502, "ApiUnreachable", "Cannot reach the PayOnce API. Start it with: bun run api");
+    return problem(502, "ApiUnreachable", "Cannot reach the Tessera API. Start it with: bun run api");
   }
 }
 

@@ -7,6 +7,7 @@ import { Acknowledged, api, ApiProblem } from "@/lib/client-api";
 import { ago, money } from "@/lib/format";
 import { ATTEMPT, SQUARE, STATUS } from "@/lib/status";
 import { IncidentListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
+import { Logo } from "./logo";
 import { Button, Frame, Label, Stat, StatStrip, Tag } from "./ui";
 
 const POLL_MS = 4000;
@@ -60,7 +61,7 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
     }
   }
 
-  const inFlight = items.filter((i) => i.status === "PAYING").length;
+  const processing = items.filter((i) => i.status === "PAYING").length;
   const certified = items.filter((i) => i.status === "CLOSED").length;
   const withPerson = items.filter((i) => i.status === "ESCALATED" || i.status === "NEEDS_ACTION").length;
 
@@ -68,7 +69,7 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
     <>
       <StatStrip>
         <Stat value={items.length} label="Invoices tracked" />
-        <Stat value={inFlight} label="Payments in flight" />
+        <Stat value={processing} label="Payments processing" />
         <Stat value={withPerson} label="Awaiting a person" />
         <Stat value={certified} label="Certified and closed" />
       </StatStrip>
@@ -104,9 +105,10 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
           <div className="mt-10">
             <Frame>
               <div className="hatch grid place-items-center gap-6 px-6 py-20 text-center">
-                <p className="font-display text-2xl tracking-wide">Nothing in flight</p>
+                <Logo size={44} />
+                <p className="font-display text-2xl tracking-wide">No open payments</p>
                 <p className="max-w-md text-sm text-muted">
-                  Send a test invoice to open your first incident. PayOnce records its intent before a single cent moves.
+                  Send a test invoice to open your first incident. Tessera records the payment instruction before any money moves.
                 </p>
                 <Button onClick={create} busy={creating}>
                   Send a test invoice

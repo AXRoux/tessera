@@ -1,18 +1,20 @@
-# PayOnce
+# Tessera
 
-Agents can read your balances. **PayOnce lets them move money without ever paying a supplier twice.**
+Agents can read your balances. **Tessera lets them move money without ever paying a supplier twice.**
+
+A tessera is a single tile. Each payment is one tile in the picture, and the picture is only right if none of them repeats.
 
 Built for the Airwallex Agentic Banking Hackathon, starter kit 3 (Payment Ops Incident Commander), on the Airwallex
 sandbox. Sandbox only: no real money moves.
 
-When a supplier says a transfer never arrived, the agent has to decide: wait, replace, or escalate. PayOnce makes that
+When a supplier says a transfer never arrived, the agent has to decide: wait, replace, or escalate. Tessera makes that
 decision safe in three layers.
 
 | Layer | What it guarantees |
 |---|---|
 | **Payout gateway** | The database refuses a second open payout for an obligation. The intent is written before any network call; an ambiguous result is resolved by looking the `request_id` up, never by minting a new one. Survives `kill -9`. |
-| **Commander** | Wait, replace, request a correction, send proof, or escalate, decided by code against a failure playbook (all 32 Airwallex failure codes). Claude reads the supplier's message; code checks what it claims. |
-| **Closer** | Reconciles every wallet line against Airwallex, waits out a hold (a `PAID` transfer can still be returned), then signs a certificate with a tamper-evident fingerprint. |
+| **Exception handling** (`src/commander`) | Wait, replace, request a correction, send proof, or escalate, decided by code against a failure playbook covering all 32 Airwallex failure codes. Claude reads the supplier's message; code checks what it claims. |
+| **Reconciliation** (`src/closer`) | Checks every wallet line against Airwallex, waits out a hold (a `PAID` transfer can still be returned), then signs a certificate with a tamper-evident fingerprint. |
 
 The model never holds a credential and never decides what is allowed. See [SPEC.md](SPEC.md) for the verified sandbox
 behaviors the design rests on.
@@ -27,15 +29,15 @@ cp .env.example .env        # then fill it in (see below)
 bun install
 (cd web && bun install)
 
-bun run api                 # terminal 1: PayOnce API, 127.0.0.1:4010
+bun run api                 # terminal 1: Tessera API, 127.0.0.1:4010
 cd web && bun run dev       # terminal 2: web app, http://127.0.0.1:3100
 ```
 
-`web/.env.local` needs only `PAYONCE_API_URL=http://127.0.0.1:4010` and the same `PAYONCE_API_TOKEN` as the root `.env`.
+`web/.env.local` needs only `TESSERA_API_URL=http://127.0.0.1:4010` and the same `TESSERA_API_TOKEN` as the root `.env`.
 For a production build: `cd web && bun run build && bun run start`.
 
 Create a sandbox beneficiary nicknamed `spike-us-supplier` (US, USD, LOCAL, ABA routing `021000021`) or set
-`PAYONCE_BENEFICIARY_ID`. Without `ANTHROPIC_API_KEY` and `PAYONCE_MODEL` the app still works; supplier evidence is
+`TESSERA_BENEFICIARY_ID`. Without `ANTHROPIC_API_KEY` and `TESSERA_MODEL` the app still works; supplier evidence is
 entered by hand instead of read by Claude.
 
 ## Demo path (about 3 minutes)
@@ -69,7 +71,7 @@ src/approval    HMAC approvals bound to amount, currency, beneficiary, evidence
 src/closer      reconciliation and signed certificates
 src/commander   decision policy, evidence reader, Anthropic transport
 src/server      HTTP API and the wire contract the web app parses with
-web             Next.js 16 war-room app
+web             Next.js 16 operations console
 ```
 
 ## Security notes

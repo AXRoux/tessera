@@ -87,7 +87,7 @@ interface JsonRow {
   json: string;
 }
 
-const GENESIS = sha256Hex("payonce-genesis");
+const GENESIS = sha256Hex("tessera-genesis");
 const PATCHABLE = [
   "state", "transferId", "awxStatus", "failureCode", "failureMessage", "feeMinor", "payerPaysMinor", "lastError",
 ] as const;

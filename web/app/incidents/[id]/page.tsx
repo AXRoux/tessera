@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { HealthSchema, IncidentViewSchema } from "../../../../src/server/wire";
 import { Frame } from "@/components/ui";
-import { WarRoom } from "@/components/war-room/war-room";
+import { IncidentConsole } from "@/components/console/incident-console";
 import { loadFromApi } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
@@ -27,5 +27,5 @@ export default async function IncidentPage({ params }: { params: Promise<{ id: s
     );
   }
 
-  return <WarRoom initial={view.data} health={health.ok ? health.data : null} />;
+  return <IncidentConsole initial={view.data} health={health.ok ? health.data : null} />;
 }

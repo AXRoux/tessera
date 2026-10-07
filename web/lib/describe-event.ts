@@ -26,7 +26,7 @@ export function describeEvent(type: string, payload: unknown): string {
     case "LATE_FAILURE":
       return `A transfer reported as paid was returned afterwards (code ${text(p.failureCode) ?? "unknown"}). The incident reopened.`;
     case "CREATE_AMBIGUOUS":
-      return "The request to Airwallex timed out without a clear answer. PayOnce looks it up by its original request ID rather than sending a new one.";
+      return "The request to Airwallex timed out without a clear answer. Tessera looks it up by its original request ID rather than sending a new one.";
     case "TRANSFER_MISMATCH":
       return text(p.detail) ?? "Airwallex returned a transfer that does not match the ledger. It was held for a person.";
     case "ATTEMPT_ABANDONED":
@@ -34,7 +34,7 @@ export function describeEvent(type: string, payload: unknown): string {
     case "STATUS_AFTER_DEAD":
       return `Airwallex reported ${text(p.status) ?? "a new status"} after the transfer was cancelled. Ignored, because the payment was already released.`;
     case "UNKNOWN_STATUS":
-      return `Airwallex reported a status PayOnce does not recognize (${text(p.status) ?? "unknown"}). The payment stays locked until a person looks.`;
+      return `Airwallex reported a status Tessera does not recognize (${text(p.status) ?? "unknown"}). The payment stays locked until a person looks.`;
     case "ESCALATED":
       return `Handed to a person: ${text(p.reason) ?? "no reason recorded"}.`;
     case "EVIDENCE_RECORDED": {
