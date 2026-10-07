@@ -1,10 +1,10 @@
 /**
- * The capability boundary for any agent that works an incident: eight typed tools, and nothing else.
+ * The capability boundary for any agent that works an incident: nine typed tools, and nothing else.
  *
  * What is missing is the point. There is no tool that creates a transfer, signs an approval, changes an amount or a
  * beneficiary, or releases a payment a policy forbids. An agent can read, record what a supplier said, defer, hand an
- * incident to a person, ask for an automatic replacement the code will only grant when it is provably safe, and ask
- * the Closer to certify. Every refusal comes from the same code a human hits, and every call is written to the
+ * incident to a person, draft a reply for a person to send, ask for an automatic replacement the code will only grant
+ * when it is provably safe, and ask the Closer to certify. Every refusal comes from the same code a human hits, and every call is written to the
  * hash-chained ledger.
  *
  * The same toolbox backs the in-process Claude loop (`loop.ts`) and the MCP server (`mcp.ts`).
@@ -13,10 +13,12 @@ import { z } from "zod";
 import { sha256Hex } from "../canonical";
 import type { Closer } from "../closer/closer";
 import type { Commander } from "../commander/commander";
+import { DRAFT_ACTION, DRAFT_KINDS, checkDraftText } from "../commander/drafts";
 import { latestEvidence, readSupplierMessage, type StructuredModel, type SupplierEvidence } from "../commander/evidence";
 import {
   ApprovalRejected,
   AutoReplacementRefused,
+  DraftRejected,
   DuplicateLockError,
   LedgerMismatchError,
   NotClosable,
@@ -26,6 +28,7 @@ import {
 import type { PayoutGateway } from "../gateway/gateway";
 import type { Ledger, Obligation } from "../ledger/ledger";
 import { formatMinor } from "../money";
+import { paidObservedAt } from "../ledger/events";
 
 /** A supplier message waiting in the inbox. Its text is untrusted and is never shown to the agent. */
 export interface InboxMessage {
@@ -48,6 +51,8 @@ export interface ToolboxDeps {
   actor: string;
   /** Optional mailbox. With it the agent names a message; without it the caller supplies the text. */
   inbox?: InboxMessage[];
+  /** Hard limit on which incidents this toolbox can see or touch. Absent means all of them. */
+  scope?: ReadonlySet<string>;
 }
 
 export type ToolOutcome =
@@ -112,7 +117,7 @@ function auditInput(input: unknown): unknown {
   if (input === null || typeof input !== "object") return input;
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
-    out[key] = typeof value === "string" && (key === "email" || key === "statementText")
+    out[key] = typeof value === "string" && (key === "email" || key === "statementText" || key === "message")
       ? { sha256: sha256Hex(value).slice(0, 16), chars: value.length }
       : value;
   }
@@ -124,6 +129,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
   const inbox = deps.inbox ?? [];
 
   const requireIncident = (id: string): Obligation => {
+    if (deps.scope && !deps.scope.has(id)) throw new ToolInputError("that incident is outside the scope of this run");
     const found = ledger.getObligation(id);
     if (!found) throw new ToolInputError(`no incident with id ${id}; call list_incidents`);
     return found;
@@ -140,6 +146,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       run: async () => ({
         incidents: ledger
           .listObligations()
+          .filter((o) => !deps.scope || deps.scope.has(o.id))
           .toReversed()
           .slice(0, 50)
           .map((o) => {
@@ -207,12 +214,12 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       readOnly: false,
       run: async (input) => {
         const o = requireIncident(input.incidentId);
-        if (!deps.model) throw new ToolUnavailable("no reader model is configured on this server");
-        let email = input.email;
-        let statementText = input.statementText;
         if (deps.inbox !== undefined && input.messageId === undefined) {
           throw new ToolInputError("this server reads supplier mail from its inbox only; pass a messageId from list_incidents");
         }
+        if (!deps.model) throw new ToolUnavailable("no reader model is configured on this server");
+        let email = input.email;
+        let statementText = input.statementText;
         if (input.messageId !== undefined) {
           const message = inbox.find((m) => m.id === input.messageId && m.incidentId === o.id);
           if (!message) throw new ToolInputError(`no message ${input.messageId} for this incident`);
@@ -247,6 +254,35 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
           attempt: { seq: result.attempt.seq, state: result.attempt.state, awxStatus: result.attempt.awxStatus },
           note: "A new request_id was minted only because the original was provably CANCELLED.",
         };
+      },
+    }),
+
+    tool({
+      name: "draft_supplier_reply",
+      description:
+        "Draft a short reply to the supplier for a person to review and send. Tessera sends nothing itself. Allowed only when assess_incident lists the matching action: STATUS needs SEND_STATUS_TO_SUPPLIER, PROOF needs SEND_PROOF_TO_SUPPLIER, CORRECTION needs REQUEST_CORRECTION. Write two to four plain, polite, factual sentences. Never include account details, numbers, links, email addresses or any promise of another payment: the code adds the real references itself and refuses a draft that breaks these rules.",
+      schema: z.object({ incidentId: IncidentId, kind: z.enum(DRAFT_KINDS), message: z.string().min(1).max(2_000) }),
+      readOnly: false,
+      run: async ({ incidentId, kind, message }) => {
+        const o = requireIncident(incidentId);
+        const a = await commander.assess(incidentId, recordedEvidence(incidentId));
+        const needed = DRAFT_ACTION[kind];
+        if (!a.decision.allowed.includes(needed)) {
+          throw new DraftRejected(`a ${kind.toLowerCase()} reply is not allowed right now: ${needed} is not among the allowed actions (${a.decision.allowed.join(", ")})`);
+        }
+        const problem = checkDraftText(message);
+        if (problem) throw new DraftRejected(`this draft was refused: ${problem}`);
+
+        const latest = a.facts.attempts.at(-1);
+        const facts = [
+          `Invoice ${o.reference} · ${formatMinor(o.amountMinor, o.currency)} · ${o.method}`,
+          ...(latest?.transferId ? [`Payment reference ${latest.transferId.slice(0, 8)} · Airwallex status ${latest.awxStatus ?? latest.state}`] : []),
+          ...(kind === "PROOF" && latest?.state === "PAID"
+            ? [`Airwallex reported the payment as made${(() => { const at = paidObservedAt(ledger.events(incidentId), latest.id); return at ? ` on ${at.slice(0, 10)}` : ""; })()}`]
+            : []),
+        ];
+        const event = ledger.append(incidentId, "DRAFT_REPLY", { actor, kind, message: message.trim(), facts });
+        return { drafted: true, draftId: event.seq, note: "A person will review it. Nothing has been sent." };
       },
     }),
 
@@ -340,7 +376,7 @@ async function run(found: Tool, input: unknown): Promise<ToolOutcome> {
     }
     if (
       error instanceof DuplicateLockError || error instanceof ReplacementDenied || error instanceof ApprovalRejected ||
-      error instanceof ObligationNotPayable || error instanceof LedgerMismatchError
+      error instanceof ObligationNotPayable || error instanceof LedgerMismatchError || error instanceof DraftRejected
     ) {
       return { ok: false, kind: "refused", error: error.name, message: error.message };
     }

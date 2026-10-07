@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { AttemptStateSchema, SignedCertificateSchema } from "../closer/certificate";
 import { ACTION_KINDS, SEVERITIES } from "../commander/actions";
+import { DraftRecordedSchema } from "../commander/drafts";
 import { EvidenceRecordedSchema } from "../commander/evidence";
 
 const Method = z.enum(["LOCAL", "SWIFT"]);
@@ -94,11 +95,15 @@ export type IncidentSummary = z.infer<typeof IncidentSummarySchema>;
 
 export const IncidentListSchema = z.object({ items: z.array(IncidentSummarySchema) });
 
+export const PendingDraftSchema = DraftRecordedSchema.extend({ seq: z.number().int(), at: z.string() });
+
 export const IncidentViewSchema = z.object({
   obligation: ObligationSchema,
   attempts: z.array(AttemptSchema),
   events: z.array(LedgerEventSchema),
   evidence: RecordedEvidenceSchema.nullable(),
+  /** A supplier reply an agent drafted that no person has dealt with yet. */
+  draft: PendingDraftSchema.nullable(),
   assessment: z.object({ decision: DecisionSchema, evidenceHash: z.string() }).nullable(),
   assessmentError: z.string().nullable(),
   certificate: SignedCertificateSchema.nullable(),
@@ -109,6 +114,26 @@ export type IncidentView = z.infer<typeof IncidentViewSchema>;
 
 export const HealthSchema = z.object({ ok: z.boolean(), model: z.boolean(), sandbox: z.boolean(), operator: z.string() });
 export type Health = z.infer<typeof HealthSchema>;
+
+/**
+ * What the console receives while an agent works. One server-sent event per step, so the page can show the agent's
+ * words, each tool it reaches for, and what the code answered, as it happens.
+ */
+export const AgentStreamEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("start"), scope: z.string().nullable(), actor: z.string(), mode: z.enum(["commander", "adversary"]) }),
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({ type: z.literal("call"), id: z.string(), tool: z.string(), incident: z.string().nullable(), detail: z.string().nullable() }),
+  z.object({
+    type: z.literal("result"), id: z.string(), tool: z.string(), ok: z.boolean(),
+    kind: z.enum(["refused", "invalid", "failed"]).nullable(), summary: z.string(),
+  }),
+  z.object({
+    type: z.literal("done"), steps: z.number().int(), calls: z.number().int(), refused: z.number().int(),
+    stoppedBecause: z.enum(["finished", "step_limit", "aborted"]),
+  }),
+  z.object({ type: z.literal("error"), message: z.string() }),
+]);
+export type AgentStreamEvent = z.infer<typeof AgentStreamEventSchema>;
 
 /** Error body for every non-2xx answer. `reasons` and `blockers` are sentences a person can act on. */
 export const ProblemSchema = z.object({

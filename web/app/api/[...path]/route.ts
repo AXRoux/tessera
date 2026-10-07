@@ -5,7 +5,10 @@ import { checkRequest } from "@/lib/request-guard";
  * Same-origin proxy to the Tessera API. It adds the operator token server-side, so the browser never holds it.
  * It answers only to loopback hosts and refuses cross-origin writes, so no other site can drive the operator's session.
  */
-const ALLOWED = /^(health|obligations(\/[\w-]+(\/[\w/-]+)?)?)$/;
+const ALLOWED = /^(health|agent\/run|obligations(\/[\w-]+(\/[\w/-]+)?)?)$/;
+
+/** An agent run streams for a minute or more; everything else answers quickly. */
+const timeoutFor = (target: string): number => (target === "agent/run" ? 300_000 : 90_000);
 
 const problem = (status: number, error: string, message: string): Response =>
   Response.json({ error, message }, { status, headers: { "cache-control": "no-store" } });
@@ -32,11 +35,15 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
       headers: { "x-tessera-token": token, "content-type": "application/json" },
       body: request.method === "GET" ? undefined : await request.text(),
       cache: "no-store",
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.any([AbortSignal.timeout(timeoutFor(target)), request.signal]),
     });
     return new Response(upstream.body, {
       status: upstream.status,
-      headers: { "content-type": upstream.headers.get("content-type") ?? "application/json", "cache-control": "no-store" },
+      headers: {
+        "content-type": upstream.headers.get("content-type") ?? "application/json",
+        "cache-control": "no-store, no-transform",
+        "x-accel-buffering": "no",
+      },
     });
   } catch {
     return problem(502, "ApiUnreachable", "Cannot reach the Tessera API. Start it with: bun run api");

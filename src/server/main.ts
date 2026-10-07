@@ -22,10 +22,14 @@ if (!beneficiaryId) throw new Error("set TESSERA_BENEFICIARY_ID, or create a san
 // Anything left in INTENT by a crash is resolved before we accept traffic.
 const resolved = await gateway.recover();
 
+const agent = model ? { model, actor: process.env.TESSERA_AGENT_NAME ?? "agent:claude" } : null;
+
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port,
-  fetch: createApi({ ledger, gateway, commander, closer, model, simulator, token, operator, beneficiaryId, paidHoldMs }),
+  // Agent runs stream for a minute or more; the default 10s idle timer would cut them off between model turns.
+  idleTimeout: 255,
+  fetch: createApi({ ledger, gateway, commander, closer, model, simulator, token, operator, beneficiaryId, paidHoldMs, agent }),
 });
 
 console.log(`tessera api  http://${server.hostname}:${server.port}`);

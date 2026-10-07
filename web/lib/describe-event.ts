@@ -7,6 +7,10 @@ const text = (value: unknown): string | null => (typeof value === "string" && va
 /** Free text from a person or an agent often ends in its own full stop; sentences here add theirs. */
 const bare = (value: string | null): string | null => (value === null ? null : value.replace(/[.\s]+$/, ""));
 
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g;
+/** Refusal messages carry the incident's internal id; the page is already about that incident. */
+const withoutIds = (value: string | null): string | null => (value === null ? null : value.replace(/obligation\s+/gi, "").replace(UUID, "").replace(/\s{2,}/g, " ").replace(/^\s*:\s*/, ""));
+
 const APPROVER_KIND: Record<string, string> = { HUMAN: "a person", POLICY: "policy" };
 
 /** One plain sentence per ledger event type. Unknown types fall back to their name, so nothing is ever hidden. */
@@ -51,9 +55,15 @@ export function describeEvent(type: string, payload: unknown): string {
       const tool = (text(p.tool) ?? "a tool").replaceAll("_", " ");
       const outcome = text(p.outcome);
       if (outcome === "ok") return `${who} used "${tool}".`;
-      const detail = bare(text(p.detail));
+      const detail = bare(withoutIds(text(p.detail)));
       return `${who} tried "${tool}" and was ${outcome === "refused" ? "refused" : "turned away"}${detail ? `: ${detail}.` : "."}`;
     }
+    case "DRAFT_REPLY":
+      return `${text(p.actor) ?? "An agent"} drafted a ${(text(p.kind) ?? "reply").toLowerCase()} reply for the supplier. Nothing was sent; a person decides.`;
+    case "DRAFT_RESOLVED":
+      return text(p.resolution) === "SENT"
+        ? `${text(p.by) ?? "A person"} sent the drafted reply to the supplier.`
+        : `${text(p.by) ?? "A person"} discarded the drafted reply.`;
     case "AGENT_DEFERRED":
       return `${text(p.actor) ?? "An agent"} chose to wait: ${bare(text(p.note)) ?? "no reason recorded"}.`;
     case "CLOSED":

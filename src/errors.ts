@@ -57,3 +57,11 @@ export class AutoReplacementRefused extends Error {
     this.name = "AutoReplacementRefused";
   }
 }
+
+/** A drafted supplier reply was refused: the action is not allowed right now, or the text breaks a rule. */
+export class DraftRejected extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DraftRejected";
+  }
+}

@@ -1,6 +1,6 @@
 /**
  * A Model Context Protocol server over stdio, written against the spec with no SDK, so there is no new dependency.
- * Any MCP client (Claude Desktop, Claude Code, pi, ...) can then drive Tessera through the same eight tools the
+ * Any MCP client (Claude Desktop, Claude Code, pi, ...) can then drive Tessera through the same nine tools the
  * in-process agent uses, and meets the same refusals.
  *
  * Framing: one JSON-RPC message per line. stdout carries protocol only; everything else goes to stderr.

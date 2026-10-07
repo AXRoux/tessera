@@ -7,8 +7,9 @@ import { Acknowledged, api, ApiProblem } from "@/lib/client-api";
 import { ago, money } from "@/lib/format";
 import { ATTEMPT, SQUARE, STATUS } from "@/lib/status";
 import { IncidentListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
+import { AgentTimeline, useAgentRun } from "./agent/agent-run";
 import { Logo } from "./logo";
-import { Button, Frame, Label, Stat, StatStrip, Tag } from "./ui";
+import { Button, Frame, Label, PanelHeader, Stat, StatStrip, Tag } from "./ui";
 
 const POLL_MS = 4000;
 
@@ -38,6 +39,8 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
       /* the next poll will retry; the page keeps showing the last good list */
     }
   }, []);
+
+  const agent = useAgentRun(() => void refresh());
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -89,11 +92,38 @@ export function Board({ initial, health }: { initial: IncidentSummary[]; health:
                 <Tag tone={health.sandbox ? "blue-outline" : "muted"}>{health.sandbox ? "Simulator on" : "Simulator off"}</Tag>
               </span>
             ) : null}
+            <Button
+              variant="secondary"
+              disabled={!health?.model || items.length === 0}
+              busy={agent.state.status === "running" && agent.state.mode === "commander"}
+              onClick={() => void agent.start(null)}
+            >
+              {agent.state.status === "running" && agent.state.mode === "commander" ? "Claude is working" : "Let Claude work them all"}
+            </Button>
+            {health?.sandbox ? (
+              <Button
+                variant="secondary"
+                disabled={!health.model || items.length === 0}
+                busy={agent.state.status === "running" && agent.state.mode === "adversary"}
+                onClick={() => void agent.start(null, "adversary")}
+              >
+                {agent.state.status === "running" && agent.state.mode === "adversary" ? "Claude is attacking" : "Try to break it"}
+              </Button>
+            ) : null}
             <Button onClick={create} busy={creating}>
               Send a test invoice
             </Button>
           </div>
         </div>
+
+        {agent.state.status !== "idle" ? (
+          <div className="mt-8">
+            <Frame tone="blue">
+              <PanelHeader title={agent.state.mode === "adversary" ? "Adversary agent" : "Commander agent"} right={<Label className={agent.state.mode === "adversary" ? "text-ink" : "text-blue"}>{agent.state.actor ?? "Claude"}</Label>} />
+              <AgentTimeline state={agent.state} />
+            </Frame>
+          </div>
+        ) : null}
 
         {error ? (
           <p role="alert" className="mt-6 border border-ink px-5 py-4 text-sm">

@@ -6,10 +6,12 @@ import { api, ApiProblem } from "@/lib/client-api";
 import { money } from "@/lib/format";
 import { STATUS } from "@/lib/status";
 import { IncidentViewSchema, type Health, type IncidentView } from "../../../src/server/wire";
+import { AgentPanel } from "../agent/agent-panel";
 import { Label, Stat, StatStrip, Tag } from "../ui";
 import { ActionsPanel, type RunAction } from "./actions-panel";
 import { AttemptsRail } from "./attempts-rail";
 import { CertificatePanel } from "./certificate-panel";
+import { DraftPanel } from "./draft-panel";
 import { DecisionPanel } from "./decision-panel";
 import { EvidencePanel } from "./evidence-panel";
 import { NoticeBox, type Notice } from "./fields";
@@ -105,6 +107,15 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
         <div className="grid gap-8 lg:grid-cols-12">
           <div className="space-y-8 lg:col-span-8">
             <DecisionPanel view={view} />
+            <AgentPanel
+              incidentId={id}
+              modelAvailable={health?.model ?? false}
+              sandbox={health?.sandbox ?? false}
+              busy={busy}
+              run={run}
+              refresh={() => void refresh().catch(() => undefined)}
+            />
+            <DraftPanel view={view} busy={busy} run={run} />
             <AttemptsRail attempts={view.attempts} />
             <LedgerLog events={view.events} chain={view.chain} />
           </div>

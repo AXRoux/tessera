@@ -12,7 +12,7 @@ describe("red team: every attempt to pay twice, pay the wrong party or rewrite h
 
   it("covers every layer of the design", () => {
     const layers = new Set(ATTACKS.map((a) => a.layer));
-    for (const layer of ["Database", "Approvals", "Playbook", "Policy", "Quarantine", "Gateway", "Closer", "Hash chain"]) {
+    for (const layer of ["Database", "Approvals", "Playbook", "Policy", "Quarantine", "Gateway", "Closer", "Hash chain", "Outbound"]) {
       expect(layers.has(layer as never)).toBe(true);
     }
   });
