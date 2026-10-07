@@ -18,7 +18,7 @@ Success criteria (all demonstrated against the real sandbox):
 6. Every approval is bound to obligation, amount, currency, beneficiary, method, reason and evidence hash, is single-use, and expires.
 7. The Closer refuses to close until per-transfer ledger entries reconcile.
 8. An agent holding only the toolbox cannot pay twice, pay the wrong party, release a forbidden replacement, or make the
-   Closer certify early, however it is prompted. Nineteen attacks prove it (`bun run redteam`), and a live Claude told to
+   Closer certify early, however it is prompted. Twenty-one attacks prove it (`bun run redteam`), and a live Claude told to
    pay twice could not (`bun run agent -- --adversary`).
 9. Supplier-supplied evidence can only make the system more cautious (tested as a property over every playbook code).
 
@@ -49,7 +49,7 @@ bun run smoke            # real sandbox: pay, fail, deny replacement, human-appr
 bun run chaos            # real sandbox: kill -9 mid-create, recover, assert one transfer
 bun run commander        # real sandbox: wait / auto-replace / escalate decided by policy
 bun run evidence:live    # real Claude reads four supplier messages
-bun run redteam          # offline, no keys: nineteen attacks on the invariants, with a scoreboard
+bun run redteam          # offline, no keys: twenty-one attacks on the invariants, with a scoreboard
 bun run agent            # real sandbox + real Claude: an agent works five incidents through the toolbox
 bun run agent -- --adversary   # the same toolbox, but the agent is told to get a supplier paid twice
 bun run mcp              # the toolbox over stdio, for Claude Desktop / Claude Code / any MCP client
@@ -70,10 +70,10 @@ src/approval/approval.ts HMAC approvals
 src/gateway/gateway.ts   exactly-once submit / recover / sync
 src/closer/              reconciliation, certificate schemas (pure) and signing
 src/commander/           decision policy, evidence reader, Anthropic transport, approvals
-src/agent/               the agent surface: toolbox (8 typed tools), Claude tool-use loop, MCP server (stdio)
+src/agent/               the agent surface: toolbox (9 typed tools), Claude tool-use loop, MCP server (stdio)
 src/server/              HTTP API (api.ts), process entry (main.ts), shared wiring (runtime.ts), wire contract (wire.ts, pure zod)
 web/                     Next.js operations console (board, incident page, same-origin proxy)
-tests/                   behavior tests + FakePayoutApi; tests/redteam/ holds the nineteen attacks
+tests/                   behavior tests + FakePayoutApi; tests/redteam/ holds the twenty-one attacks
 scripts/                 sandbox smoke, chaos, exception-handling demo, live evidence reader, agent demo, red team
 fixtures/                failure-codes.json (captured from the sandbox)
 ```
@@ -94,6 +94,10 @@ fixtures/                failure-codes.json (captured from the sandbox)
   summary is withheld from tool output (a person sees it in the console). The sender address is shown only if it fits an
   address grammar. With an inbox configured the agent cannot supply message text itself.
 - Every mutating tool call, and every refusal, is appended to the hash-chained ledger under the agent's name.
+- Supplier-facing text is a draft for a person. A draft is allowed only when the Commander allows that kind of reply, may not
+  carry account details, links, an email address or a promise of another payment, and carries facts written by code.
+- A console agent run is scoped, one at a time, step-limited and cancelled when the viewer leaves. "Try to break it" (a hostile
+  brief for the same agent) exists only when the API is pointed at the sandbox.
 
 ## Boundaries
 
@@ -103,6 +107,7 @@ fixtures/                failure-codes.json (captured from the sandbox)
 
 ## Open questions
 
-- A "run the agent" button in the console (stream the loop's steps over SSE). The terminal demo exists; the UI does not.
+- An inbox in the console so the agent can read operator-supplied mail through the quarantined reader.
+- Sending approved drafts through a real mail integration.
 - Per-agent authority levels (for example a read-only agent that may only defer and escalate).
 - Whether HackerEarth's pre-Oct-25 submission requires a demo, repo, or video (only the user can see the form).
