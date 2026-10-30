@@ -74,6 +74,8 @@ interface AgentRun {
   running: boolean;
   start: (incidentId: string | null, mode?: Mode) => void;
   stop: () => void;
+  /** Stops a running run and empties the timeline. Used when the demo is reset underneath it. */
+  clear: () => void;
   /** Subscribes to "something changed": fired after each tool result and when the run ends. Returns the unsubscribe. */
   subscribe: (listener: () => void) => () => void;
 }
@@ -133,14 +135,20 @@ export function AgentRunProvider({ children }: { children: ReactNode }) {
 
   const stop = useCallback(() => controller.current?.abort(), []);
 
+  const clear = useCallback(() => {
+    controller.current?.abort();
+    setState(IDLE);
+    setTarget(null);
+  }, []);
+
   const subscribe = useCallback((listener: () => void) => {
     listeners.current.add(listener);
     return () => void listeners.current.delete(listener);
   }, []);
 
   const value = useMemo<AgentRun>(
-    () => ({ state, target, running: state.status === "running", start, stop, subscribe }),
-    [state, target, start, stop, subscribe],
+    () => ({ state, target, running: state.status === "running", start, stop, clear, subscribe }),
+    [state, target, start, stop, clear, subscribe],
   );
   return <AgentRunContext.Provider value={value}>{children}</AgentRunContext.Provider>;
 }

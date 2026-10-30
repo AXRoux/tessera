@@ -16,8 +16,11 @@ import { DecisionPanel } from "./decision-panel";
 import { EvidencePanel } from "./evidence-panel";
 import { NoticeBox, type Notice } from "./fields";
 import { InboxPanel } from "./inbox-panel";
+import { HandoffBanner } from "./handoff-banner";
 import { LedgerLog } from "./ledger-log";
 import { SandboxPanel } from "./sandbox-panel";
+import { markTakeoverOpened } from "../tour";
+import { viewNeedsPerson } from "@/lib/tour-steps";
 
 const POLL_MS = 3000;
 
@@ -47,6 +50,12 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
     }, POLL_MS);
     return () => clearInterval(timer);
   }, [refresh]);
+
+  // The walkthrough's "take over" step is done once the operator has looked at an incident that was waiting for them.
+  const needsPerson = viewNeedsPerson(view);
+  useEffect(() => {
+    if (needsPerson) markTakeoverOpened();
+  }, [needsPerson]);
 
   const run: RunAction = useCallback(
     async (key, work) => {
@@ -93,6 +102,8 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
           </div>
         </div>
       </div>
+
+      <HandoffBanner view={view} />
 
       <StatStrip>
         <Stat value={money(o.amountMinor, o.currency)} label="Owed to the supplier" />

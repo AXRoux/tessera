@@ -25,7 +25,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" className={`${zen.variable} ${archivo.variable} ${mono.variable}`}>
       <body>
         <AgentRunProvider>
-          <Header offline={offline} />
+          <Header offline={offline} tour={health.ok && health.data.sandbox} />
           <main>{children}</main>
         </AgentRunProvider>
         <footer className="mx-auto mt-24 flex max-w-[1440px] items-center justify-between border-t border-rule px-6 py-8 sm:px-10">

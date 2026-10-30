@@ -4,11 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Acknowledged, api, ApiProblem } from "@/lib/client-api";
+import { actorLabel, agentVerdict } from "@/lib/agent-verdict";
 import { ago, duration, money } from "@/lib/format";
 import { ATTEMPT, describeFailure, SQUARE, STATUS } from "@/lib/status";
 import { IncidentListSchema, MetricsSchema, SeedResultSchema, type Health, type IncidentSummary, type Metrics } from "../../src/server/wire";
 import { AgentTimeline, agentName, useAgentRun } from "./agent/agent-run";
+import { RunReport } from "./agent/run-report";
 import { Logo } from "./logo";
+import { NeedsYou } from "./needs-you";
+import { resetTour, Tour } from "./tour";
 import { Button, Frame, Label, PanelHeader, Stat, StatStrip, Tag } from "./ui";
 
 const POLL_MS = 4000;
@@ -23,6 +27,22 @@ function AttemptSquares({ item }: { item: IncidentSummary }) {
       ))}
       {item.latest ? <span className={`size-3 ${SQUARE[item.latest.state]}`} /> : <span className="size-3 border border-rule" />}
     </span>
+  );
+}
+
+/** The agent's latest verdict on the incident, in words. A refusal is as loud here as in the agent timeline. */
+function VerdictLine({ item }: { item: IncidentSummary }) {
+  const action = item.lastAgentAction;
+  if (!action) return null;
+  const verdict = agentVerdict(action);
+  return (
+    <p className="mt-2 max-w-[320px] text-[12px] leading-[1.9] text-muted">
+      <span className={verdict.refused ? "bg-ink px-1.5 py-0.5 font-medium text-paper [box-decoration-break:clone]" : "font-medium text-ink"}>{verdict.label}</span>
+      <span suppressHydrationWarning>
+        {" "}
+        &middot; {actorLabel(action.actor)} &middot; {ago(action.at)}
+      </span>
+    </p>
   );
 }
 
@@ -68,6 +88,8 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
   const [metrics, setMetrics] = useState(initialMetrics);
   const [creating, setCreating] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seeded, setSeeded] = useState<string | null>(null);
 
@@ -117,7 +139,30 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
     }
   }
 
-  const awaiting = items.filter((i) => i.status === "ESCALATED" || i.status === "NEEDS_ACTION").length;
+  /** Offline demo only. Clears the shared in-memory state, then starts the walkthrough over. */
+  async function reset() {
+    setResetting(true);
+    setError(null);
+    try {
+      await api("demo/reset", Acknowledged, { method: "POST" });
+      agent.clear();
+      resetTour();
+      setSeeded(null);
+      setConfirmingReset(false);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof ApiProblem ? e.problem.message : "The demo could not be reset.");
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  const runCommander = () => agent.start(null);
+  const runAdversary = () => agent.start(null, "adversary");
+  const idFor = (reference: string) => items.find((i) => i.reference === reference)?.id;
+
+  // The same derivation as the "Needs you" queue: an incident is waiting for a person when the server gives it an attention reason.
+  const awaiting = items.filter((i) => i.attention !== null).length;
   const canSeed = Boolean(health && (health.offline || health.sandbox));
   const name = agentName(health?.agent);
   const Name = agentName(health?.agent, true);
@@ -162,7 +207,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
               variant="secondary"
               disabled={!agentReady || agent.running}
               busy={runningMode === "commander"}
-              onClick={() => agent.start(null)}
+              onClick={runCommander}
             >
               {runningMode === "commander" ? `${Name} is working` : `Let ${name} work them all`}
             </Button>
@@ -171,7 +216,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
                 variant="secondary"
                 disabled={!agentReady || agent.running}
                 busy={runningMode === "adversary"}
-                onClick={() => agent.start(null, "adversary")}
+                onClick={runAdversary}
               >
                 {runningMode === "adversary" ? `${Name} is attacking` : "Try to break it"}
               </Button>
@@ -181,11 +226,38 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
                 Seed demo incidents
               </Button>
             ) : null}
+            {health?.canReset ? (
+              confirmingReset ? (
+                <span className="flex flex-wrap items-center gap-3">
+                  <span className="label text-muted">Clears every incident for everyone using this demo.</span>
+                  <Button onClick={reset} busy={resetting}>
+                    Confirm reset
+                  </Button>
+                  <Button variant="secondary" onClick={() => setConfirmingReset(false)} disabled={resetting}>
+                    Cancel
+                  </Button>
+                </span>
+              ) : (
+                <Button variant="secondary" onClick={() => setConfirmingReset(true)}>
+                  Reset demo
+                </Button>
+              )
+            ) : null}
             <Button onClick={create} busy={creating}>
               Send a test invoice
             </Button>
           </div>
         </div>
+
+        <Tour
+          items={items}
+          metrics={metrics}
+          health={health}
+          onSeed={seed}
+          onRun={(mode) => (mode === "adversary" ? runAdversary() : runCommander())}
+          seeding={seeding}
+          running={agent.running}
+        />
 
         {agent.state.status !== "idle" ? (
           <div className="mt-8">
@@ -208,6 +280,10 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
                   </span>
                 }
               />
+              <p aria-live="polite" className="sr-only">
+                {agent.state.status === "running" ? `${Name} is working.` : agent.state.status === "error" ? "The agent run stopped before it finished." : ""}
+              </p>
+              <RunReport state={agent.state} idFor={idFor} />
               <AgentTimeline state={agent.state} />
             </Frame>
           </div>
@@ -223,6 +299,8 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
             {seeded}
           </p>
         ) : null}
+
+        <NeedsYou items={items} />
 
         {items.length === 0 ? (
           <div className="mt-10">
@@ -276,6 +354,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
                         <Tag tone={status.tone} pulse={status.pulse}>
                           {status.label}
                         </Tag>
+                        <VerdictLine item={item} />
                       </td>
                       <td className="pr-6">
                         <AttemptSquares item={item} />
@@ -283,7 +362,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
                       <td className="py-3 pr-6 text-sm">
                         <FailureCell item={item} />
                       </td>
-                      <td className="text-sm text-muted">{ago(item.updatedAt)}</td>
+                      <td suppressHydrationWarning className="text-sm text-muted">{ago(item.updatedAt)}</td>
                     </tr>
                   );
                 })}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 export type Tone = "ink" | "blue" | "outline" | "blue-outline" | "muted";
@@ -48,6 +49,19 @@ export function Button({ variant = "primary", busy = false, className = "", chil
       {busy ? <span aria-hidden className="beat size-2 bg-blue" /> : null}
       {children}
     </button>
+  );
+}
+
+/** A link that looks like a Button, for actions that navigate. */
+export function LinkButton({ href, variant = "primary", className = "", onClick, children }: { href: string; variant?: Variant; className?: string; onClick?: () => void; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={`inline-flex h-12 cursor-pointer items-center justify-center gap-3 px-6 text-[12px] font-medium uppercase tracking-[0.18em] transition-colors ${VARIANT[variant]} ${className}`}
+    >
+      {children}
+    </Link>
   );
 }
 

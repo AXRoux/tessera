@@ -1,7 +1,8 @@
 import { HealthSchema, IncidentListSchema, MetricsSchema } from "../../src/server/wire";
 import { Logo } from "@/components/logo";
 import { Board } from "@/components/board";
-import { Frame, Index, Label } from "@/components/ui";
+import { Frame, Index, Label, LinkButton } from "@/components/ui";
+import { StartButton } from "@/components/tour";
 import { loadFromApi } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,14 @@ export default async function Home() {
               ? "Running offline on a simulated Airwallex. The reader and the agent read; code decides what is allowed."
               : "Built on the Airwallex sandbox. Claude reads what the supplier says; code decides what is allowed."}
           </p>
+          {health.ok && health.data.sandbox ? (
+            <div className="mt-10 flex flex-wrap items-center gap-4">
+              <StartButton />
+              <LinkButton href="/#method" variant="secondary">
+                How it works
+              </LinkButton>
+            </div>
+          ) : null}
         </div>
         <div className="mx-auto w-full max-w-[440px] lg:col-span-5">
           <Logo size={440} large label="Tessera: a card marked 1×, the mark of a payment that happens once" className="h-auto w-full" />
