@@ -36,8 +36,8 @@ describe("what a supplier reply may contain", () => {
 function rig() {
   const w = world();
   const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET });
-  const closer = new Closer({ ledger: w.ledger, api: w.api, secret: SECRET, paidHoldMs: 0 });
-  const toolbox = createToolbox({ ledger: w.ledger, gateway: w.gateway, commander, closer, model: null, actor: "agent:test" });
+  const closer = new Closer({ ledger: w.ledger, api: w.api, gateway: w.gateway, secret: SECRET, paidHoldMs: 0 });
+  const toolbox = createToolbox({ ledger: w.ledger, gateway: w.gateway, commander, closer, model: null, actor: "agent:test", acceptClientText: false });
   return { w, toolbox, commander, closer };
 }
 
@@ -154,5 +154,20 @@ describe("resolving a draft over the API", () => {
     const stale = await call("POST", `/api/obligations/${w.obligation.id}/drafts/resolve`, { draftSeq: 999, resolution: "SENT" });
 
     expect(stale.status).toBe(409);
+  });
+});
+
+describe("links and numbers in disguise", () => {
+  it.each([
+    ["a bare domain with a path", "You can see the remittance at acme-pay.co/inv whenever it suits you today."],
+    ["a bare domain", "The status page on acmepayments.com shows the latest for this invoice today."],
+    ["dotted digit groups", "Please quote 1234.5678.90 when you ask your bank to trace the payment today."],
+    ["underscored digit groups", "Please quote 1234_5678_90 when you ask your bank to trace the payment today."],
+  ])("refuses %s", (_name, text) => {
+    expect(checkDraftText(text)).not.toBeNull();
+  });
+
+  it("still accepts an amount written with separators", () => {
+    expect(checkDraftText("The payment of USD 1,250.00 was sent and is being processed by the bank as expected.")).toBeNull();
   });
 });

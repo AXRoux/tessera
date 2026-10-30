@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Commander } from "../src/commander/commander";
-import type { SupplierEvidence } from "../src/commander/evidence";
-import { AutoReplacementRefused } from "../src/errors";
+import { effectiveEvidence, type SupplierEvidence } from "../src/commander/evidence";
+import { ApprovalRejected, AutoReplacementRefused } from "../src/errors";
 import { approve, killedAttempt, SECRET, world, type World } from "./helpers/world";
 
 const commanderFor = (w: World): Commander =>
@@ -94,6 +94,7 @@ describe("replacing with a named human", () => {
 
     const approval = await commander.humanApproval({
       obligationId: w.obligation.id,
+      evidenceHash: (await commander.assess(w.obligation.id)).evidenceHash,
       approver: "cfo@acme.example",
       note: "supplier's bank confirmed no credit by phone callback",
     });
@@ -107,7 +108,10 @@ describe("replacing with a named human", () => {
   it("still refuses a human who gives no real reason", async () => {
     const w = world();
     await killedAttempt(w, "91301");
-    const approval = await commanderFor(w).humanApproval({ obligationId: w.obligation.id, approver: "cfo@acme.example", note: "ok" });
+    const commander = commanderFor(w);
+    const approval = await commander.humanApproval({
+      obligationId: w.obligation.id, approver: "cfo@acme.example", note: "ok", evidenceHash: (await commander.assess(w.obligation.id)).evidenceHash,
+    });
 
     await expect(w.gateway.submit(approval)).rejects.toMatchObject({ name: "ReplacementDenied" });
     expect(w.api.all).toHaveLength(1);
@@ -116,8 +120,10 @@ describe("replacing with a named human", () => {
   it("carries a corrected beneficiary into the new attempt", async () => {
     const w = world();
     await killedAttempt(w, "90101");
-    const approval = await commanderFor(w).humanApproval({
+    const commander = commanderFor(w);
+    const approval = await commander.humanApproval({
       obligationId: w.obligation.id,
+      evidenceHash: (await commander.assess(w.obligation.id)).evidenceHash,
       approver: "ap@acme.example",
       note: "new account verified by callback",
       beneficiaryId: "ben-B",
@@ -126,5 +132,76 @@ describe("replacing with a named human", () => {
     const { attempt } = await w.gateway.submit(approval);
 
     expect(attempt.beneficiaryId).toBe("ben-B");
+  });
+});
+
+describe("evidence cannot be laundered", () => {
+  const record = (w: World, e: SupplierEvidence, source: "manual" | "model" = "model", enteredBy = "agent:test") =>
+    w.ledger.append(w.obligation.id, "EVIDENCE_RECORDED", { evidence: e, source, enteredBy, message: null });
+  const current = (w: World) => effectiveEvidence(w.ledger.events(w.obligation.id), w.obligation.amountMinor)?.evidence ?? null;
+  const innocent = evidence({ claimsNonReceipt: false, summary: "thanks, all good" });
+
+  it("keeps refusing after a phishing message is followed by an innocent one", async () => {
+    const w = world();
+    await killedAttempt(w, "91402");
+    record(w, evidence({ requestsDetailChange: true }));
+    record(w, innocent);
+
+    await expect(commanderFor(w).replaceAutomatically(w.obligation.id, current(w))).rejects.toBeInstanceOf(AutoReplacementRefused);
+    expect(w.api.all).toHaveLength(1);
+  });
+
+  it("keeps refusing after a statement credit is followed by an innocent message", async () => {
+    const w = world();
+    await killedAttempt(w, "91402");
+    record(w, evidence({ statementCredit: { amountMinor: w.obligation.amountMinor, currency: "USD" } }));
+    record(w, innocent);
+
+    await expect(commanderFor(w).replaceAutomatically(w.obligation.id, current(w))).rejects.toBeInstanceOf(AutoReplacementRefused);
+  });
+
+  it("lets an operator's manual entry clear earlier warnings", async () => {
+    const w = world();
+    await killedAttempt(w, "91402");
+    record(w, evidence({ requestsDetailChange: true }));
+    record(w, innocent, "manual", "ap@acme.example");
+
+    const { outcome } = await commanderFor(w).replaceAutomatically(w.obligation.id, current(w));
+    expect(outcome).toBe("CREATED");
+  });
+});
+
+describe("limits on automatic replacement", () => {
+  it("escalates the third automatic replacement of the same invoice", async () => {
+    const w = world();
+    const commander = commanderFor(w);
+    await killedAttempt(w, "91402");
+    for (let i = 0; i < 2; i++) {
+      const { attempt } = await commander.replaceAutomatically(w.obligation.id);
+      w.api.advance(attempt.transferId!, "FAILED", "91402");
+      w.api.advance(attempt.transferId!, "CANCELLED", "91402");
+    }
+
+    await expect(commander.replaceAutomatically(w.obligation.id)).rejects.toBeInstanceOf(AutoReplacementRefused);
+    expect(w.api.all).toHaveLength(3);
+    expect((await commander.assess(w.obligation.id)).decision.recommended).toBe("ESCALATE");
+  });
+});
+
+describe("two-step human approval", () => {
+  it("rejects an approval of an assessment that has since changed", async () => {
+    const w = world();
+    await killedAttempt(w, "91301");
+    const commander = commanderFor(w);
+    const seen = await commander.assess(w.obligation.id, null);
+
+    const promise = commander.humanApproval({
+      obligationId: w.obligation.id, approver: "cfo@acme.example", evidenceHash: seen.evidenceHash,
+      note: "supplier's bank confirmed no credit by phone callback", evidence: evidence({ requestsDetailChange: true }),
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(ApprovalRejected);
+    await expect(promise).rejects.toMatchObject({ reason: "stale_evidence" });
+    expect(w.api.all).toHaveLength(1);
   });
 });

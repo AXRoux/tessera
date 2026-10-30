@@ -1,10 +1,10 @@
 import { issueApproval, newNonce, type Approval } from "../approval/approval";
 import type { BalanceApi } from "../airwallex/types";
 import { canonicalJson, sha256Hex } from "../canonical";
-import { AutoReplacementRefused } from "../errors";
+import { ApprovalRejected, AutoReplacementRefused } from "../errors";
 import type { PayoutGateway, SubmitResult } from "../gateway/gateway";
-import { paidObservedAt } from "../ledger/events";
-import type { Attempt, Ledger, Method } from "../ledger/ledger";
+import { paidObservedAt, TransferStatusPayloadSchema } from "../ledger/events";
+import type { Ledger, LedgerEvent, Method } from "../ledger/ledger";
 import { toMinor } from "../money";
 import type { SupplierEvidence } from "./evidence";
 import { DEFAULT_POLICY, decide, type CommanderPolicy, type Decision, type IncidentFacts } from "./policy";
@@ -33,6 +33,8 @@ export interface HumanApprovalInput {
   /** Authenticated identity of the approver; authentication happens in the caller. */
   approver: string;
   note: string;
+  /** The `evidenceHash` of the assessment the approver was shown. A different current hash means they approved stale facts. */
+  evidenceHash: string;
   evidence?: SupplierEvidence | null;
   beneficiaryId?: string;
   method?: Method;
@@ -40,6 +42,26 @@ export interface HumanApprovalInput {
 }
 
 const APPROVAL_TTL_MS = 5 * 60_000;
+
+/** When the ledger last saw `attemptId` become FAILED, or null if it never did. */
+function failedObservedAt(events: LedgerEvent[], attemptId: string): string | null {
+  let at: string | null = null;
+  for (const event of events) {
+    if (event.type !== "TRANSFER_STATUS") continue;
+    const payload = TransferStatusPayloadSchema.safeParse(event.payload);
+    if (payload.success && payload.data.attemptId === attemptId && payload.data.to === "FAILED" && payload.data.from !== "FAILED") at = event.ts;
+  }
+  return at;
+}
+
+/** Replacements made under a code-granted (POLICY) approval. The first payment is not a replacement. */
+function automaticReplacements(events: LedgerEvent[]): number {
+  return events.filter((e) => {
+    if (e.type !== "ATTEMPT_INTENT") return false;
+    const p = e.payload as { mode?: unknown; replaces?: unknown } | null;
+    return p?.mode === "POLICY" && p.replaces != null;
+  }).length;
+}
 
 export class Commander {
   private readonly ledger: Ledger;
@@ -66,10 +88,13 @@ export class Commander {
     const latest = attempts.at(-1);
 
     const balance = await this.balances.getAvailableBalance(obligation.currency).catch(() => null);
+    const events = this.ledger.events(obligationId);
     const facts: IncidentFacts = {
       obligation,
       attempts,
-      paidObservedAt: latest?.state === "PAID" ? paidObservedAt(this.ledger.events(obligationId), latest.id) : null,
+      paidObservedAt: latest?.state === "PAID" ? paidObservedAt(events, latest.id) : null,
+      failedObservedAt: latest?.awxStatus === "FAILED" ? failedObservedAt(events, latest.id) : null,
+      automaticReplacements: automaticReplacements(events),
       walletAvailableMinor: balance === null ? null : toMinor(balance, obligation.currency),
       evidence,
       now: this.now(),
@@ -123,6 +148,9 @@ export class Commander {
    */
   async humanApproval(input: HumanApprovalInput): Promise<Approval> {
     const assessment = await this.assess(input.obligationId, input.evidence ?? null);
+    if (assessment.evidenceHash !== input.evidenceHash) {
+      throw new ApprovalRejected("stale_evidence", "the incident changed since the approver reviewed it; review the current assessment and approve again");
+    }
     const previous = assessment.facts.attempts.at(-1) ?? null;
     const obligation = this.ledger.requireObligation(input.obligationId);
     return issueApproval(

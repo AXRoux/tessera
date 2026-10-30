@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  effectiveEvidence,
   readSupplierMessage,
   type ExtractedEvidence,
   type ExtractRequest,
@@ -124,5 +125,39 @@ describe("code overrides the model where it can check", () => {
     const evidence = await readSupplierMessage(new ScriptedModel(base), message({ email }));
 
     expect(evidence.containsEmbeddedInstructions).toBe(true);
+  });
+});
+
+describe("the evidence the policy acts on", () => {
+  const base = {
+    claimsNonReceipt: false, requestsDetailChange: false, referencesObligation: true, statementCredit: null,
+    containsEmbeddedInstructions: false, summary: "", adjustments: [],
+  };
+  const event = (seq: number, evidence: object, source: "manual" | "model") => ({
+    seq, obligationId: "ob-1", type: "EVIDENCE_RECORDED", ts: "2026-10-20T12:00:00.000Z", prevHash: "", hash: "",
+    payload: { evidence: { ...base, ...evidence }, source, enteredBy: source === "manual" ? "ap@acme.example" : "model", message: null },
+  });
+
+  it("keeps a phishing flag after a later harmless message", () => {
+    const e = effectiveEvidence([event(1, { requestsDetailChange: true }, "model"), event(2, {}, "model")]);
+    expect(e?.evidence.requestsDetailChange).toBe(true);
+  });
+
+  it("keeps a statement credit after a later message without one, preferring the matching amount", () => {
+    const e = effectiveEvidence(
+      [
+        event(1, { statementCredit: { amountMinor: 2_500, currency: "USD" } }, "model"),
+        event(2, { statementCredit: { amountMinor: 900, currency: "USD" } }, "model"),
+        event(3, {}, "model"),
+      ],
+      2_500,
+    );
+    expect(e?.evidence.statementCredit).toEqual({ amountMinor: 2_500, currency: "USD" });
+  });
+
+  it("resets only on an operator's manual entry", () => {
+    const e = effectiveEvidence([event(1, { requestsDetailChange: true, containsEmbeddedInstructions: true }, "model"), event(2, {}, "manual")]);
+    expect(e?.evidence.requestsDetailChange).toBe(false);
+    expect(e?.evidence.containsEmbeddedInstructions).toBe(false);
   });
 });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import type { SupplierEvidence } from "../src/commander/evidence";
+import { effectiveEvidence, type SupplierEvidence } from "../src/commander/evidence";
 import { PLAYBOOK } from "../src/domain/playbook";
 import { decide, type IncidentFacts } from "../src/commander/policy";
-import type { Attempt } from "../src/ledger/ledger";
+import type { Attempt, LedgerEvent } from "../src/ledger/ledger";
 
 /**
  * The property that makes it safe to let an agent, or a supplier, supply evidence: evidence can only make Tessera
@@ -13,7 +13,7 @@ const NOW = new Date("2026-01-10T12:00:00Z");
 const attempt = (state: Attempt["state"], failureCode: string | null, awxStatus: string | null): Attempt => ({
   id: "att-1", obligationId: "ob-1", seq: 1, requestId: "req-1", beneficiaryId: "ben-A", amountMinor: 2_500, currency: "USD",
   method: "LOCAL", reason: "r", state, transferId: "tr-1", awxStatus, failureCode, failureMessage: null, feeMinor: 300,
-  payerPaysMinor: 2_800, approvalNonce: "n".repeat(16), lastError: null,
+  payerPaysMinor: 2_800, approvalNonce: "n".repeat(16), lastError: null, awxUpdatedAt: null,
   createdAt: new Date(NOW.getTime() - 3600_000).toISOString(), updatedAt: NOW.toISOString(),
 });
 
@@ -21,6 +21,8 @@ const facts = (latest: Attempt, evidence: SupplierEvidence | null, status = "PAY
   obligation: { id: "ob-1", amountMinor: 2_500, currency: "USD", status, escalationReason: null },
   attempts: [latest],
   paidObservedAt: latest.state === "PAID" ? new Date(NOW.getTime() - 60_000).toISOString() : null,
+  failedObservedAt: null,
+  automaticReplacements: 0,
   walletAvailableMinor: 1_000_000,
   evidence,
   now: NOW,
@@ -69,5 +71,35 @@ describe("evidence is monotone toward caution", () => {
         if (bare.recommended !== "CLOSE") expect(decide(facts(latest, evidence)).recommended).not.toBe("CLOSE");
       }
     }
+  });
+
+  it("never lets a later model or agent record make a sequence less cautious than any record in it", () => {
+    const pool = allEvidence();
+    let seed = 7;
+    const rand = (n: number) => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed % n;
+    };
+    const asEvents = (records: SupplierEvidence[]): LedgerEvent[] =>
+      records.map((evidence, i) => ({
+        seq: i + 1, obligationId: "ob-1", type: "EVIDENCE_RECORDED", ts: NOW.toISOString(), prevHash: "", hash: "",
+        payload: { evidence, source: "model", enteredBy: i % 2 ? "agent:mcp" : "model:reader", message: null },
+      }));
+
+    let checked = 0;
+    for (const latest of states) {
+      for (let n = 0; n < 150; n++) {
+        const records = Array.from({ length: 2 + rand(3) }, () => pool[rand(pool.length)]!);
+        const combined = decide(facts(latest, effectiveEvidence(asEvents(records), 2_500)!.evidence));
+        for (const single of records) {
+          const alone = decide(facts(latest, single));
+          if (!alone.allowed.includes("REPLACE")) expect(combined.allowed).not.toContain("REPLACE");
+          if (!alone.replacement?.autoApprovable) expect(combined.replacement?.autoApprovable ?? false).toBe(false);
+          if (alone.recommended !== "CLOSE") expect(combined.recommended).not.toBe("CLOSE");
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(5_000);
   });
 });

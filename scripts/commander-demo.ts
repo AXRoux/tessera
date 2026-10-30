@@ -11,6 +11,7 @@ import type { SupplierEvidence } from "../src/commander/evidence";
 import { AutoReplacementRefused, ReplacementDenied } from "../src/errors";
 import { PayoutGateway } from "../src/gateway/gateway";
 import { Ledger, type Obligation } from "../src/ledger/ledger";
+import { resolveBeneficiary } from "../src/server/runtime";
 
 const secret = process.env.TESSERA_APPROVAL_SECRET;
 if (!secret) throw new Error("TESSERA_APPROVAL_SECRET is not set");
@@ -20,8 +21,7 @@ const ledger = new Ledger(":memory:");
 const gateway = new PayoutGateway({ ledger, api: client, approvalSecret: secret });
 const commander = new Commander({ ledger, gateway, balances: client, secret });
 
-const beneficiaryId = (await client.listBeneficiaries()).find((b) => b.nickname === "spike-us-supplier")?.id;
-if (!beneficiaryId) throw new Error("no spike-us-supplier beneficiary in the sandbox");
+const beneficiaryId = await resolveBeneficiary(client);
 
 const claim: SupplierEvidence = {
   claimsNonReceipt: true, requestsDetailChange: false, referencesObligation: true, statementCredit: null,
@@ -49,7 +49,7 @@ async function openObligation(label: string): Promise<Obligation> {
     method: "LOCAL",
     reason: "professional_business_services",
   });
-  const approval = await commander.humanApproval({ obligationId: obligation.id, approver: "ap@acme.example", note: "scheduled invoice run" });
+  const approval = await commander.humanApproval({ obligationId: obligation.id, approver: "ap@acme.example", note: "scheduled invoice run", evidenceHash: (await commander.assess(obligation.id)).evidenceHash });
   const { attempt } = await gateway.submit(approval);
   await client.simulateTransition(attempt.transferId!, "SENT");
   return obligation;
@@ -93,7 +93,7 @@ try {
   line("automatic replace", "refused");
 }
 try {
-  const vague = await commander.humanApproval({ obligationId: risky.id, approver: "ap@acme.example", note: "ok" });
+  const vague = await commander.humanApproval({ obligationId: risky.id, approver: "ap@acme.example", note: "ok", evidenceHash: (await commander.assess(risky.id)).evidenceHash });
   await gateway.submit(vague);
   throw new Error("BUG: a one-word note released a possible duplicate");
 } catch (error) {
@@ -102,6 +102,7 @@ try {
 }
 const real = await commander.humanApproval({
   obligationId: risky.id,
+  evidenceHash: (await commander.assess(risky.id)).evidenceHash,
   approver: "cfo@acme.example",
   note: "supplier's bank confirmed no credit received, by callback to the number on file",
 });

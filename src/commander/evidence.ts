@@ -30,14 +30,37 @@ export const EvidenceRecordedSchema = z.object({
 export type EvidenceRecorded = z.infer<typeof EvidenceRecordedSchema>;
 export type RecordedEvidence = EvidenceRecorded & { at: string };
 
-/** The newest evidence on an obligation. A later record supersedes an earlier one, whoever made it. */
-export function latestEvidence(events: LedgerEvent[]): RecordedEvidence | null {
-  for (const event of events.toReversed()) {
+/**
+ * The evidence the policy acts on. Only an operator's `manual` entry resets the picture; every later record (from the
+ * model or an agent) can only add caution: risk flags are OR-ed, any later statement credit is kept (preferring one that
+ * matches `amountMinor`), and adjustments accumulate. A harmless message can never launder an earlier warning away.
+ */
+export function effectiveEvidence(events: LedgerEvent[], amountMinor?: number): RecordedEvidence | null {
+  const records: RecordedEvidence[] = [];
+  for (const event of events) {
     if (event.type !== "EVIDENCE_RECORDED") continue;
     const parsed = EvidenceRecordedSchema.safeParse(event.payload);
-    if (parsed.success) return { ...parsed.data, at: event.ts };
+    if (parsed.success) records.push({ ...parsed.data, at: event.ts });
   }
-  return null;
+  const lastManual = records.findLastIndex((r) => r.source === "manual");
+  const base = lastManual >= 0 ? records[lastManual]! : null;
+  const later = records.slice(lastManual + 1);
+  if (later.length === 0) return base;
+  const all = base ? [base, ...later] : later;
+  const newest = later.at(-1)!;
+  const credits = all.flatMap((r) => (r.evidence.statementCredit ? [r.evidence.statementCredit] : []));
+  const statementCredit = credits.find((c) => c.amountMinor === amountMinor) ?? credits.at(-1) ?? null;
+  return {
+    ...newest,
+    evidence: {
+      ...newest.evidence,
+      claimsNonReceipt: all.some((r) => r.evidence.claimsNonReceipt),
+      requestsDetailChange: all.some((r) => r.evidence.requestsDetailChange),
+      containsEmbeddedInstructions: all.some((r) => r.evidence.containsEmbeddedInstructions),
+      statementCredit,
+      adjustments: all.flatMap((r) => r.evidence.adjustments),
+    },
+  };
 }
 
 export interface ExtractRequest<T> {

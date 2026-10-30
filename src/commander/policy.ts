@@ -12,12 +12,18 @@ export interface CommanderPolicy {
   autoReplaceLimitMinor: Record<string, number>;
   /** PAID is not final; how long it must stay PAID before the incident may close. */
   paidHoldMs: number;
+  /** Most replacements the Commander may approve on its own for one invoice; beyond this a person decides. */
+  maxAutoReplacements: number;
+  /** How long a transfer may sit FAILED (awaiting cancellation) before a person is asked to look. */
+  failedSlaMs: number;
 }
 
 export const DEFAULT_POLICY: CommanderPolicy = {
   settlementSlaHours: { LOCAL: 48, SWIFT: 120 },
   autoReplaceLimitMinor: { USD: 500_000, EUR: 500_000, GBP: 500_000 },
   paidHoldMs: 24 * 3600_000,
+  maxAutoReplacements: 2,
+  failedSlaMs: 30 * 60_000,
 };
 
 export interface IncidentFacts {
@@ -26,6 +32,10 @@ export interface IncidentFacts {
   attempts: Attempt[];
   /** When the latest attempt was first seen PAID. */
   paidObservedAt: string | null;
+  /** When the latest attempt was last seen becoming FAILED. */
+  failedObservedAt: string | null;
+  /** Replacements already made under a POLICY (non-human) approval for this invoice. */
+  automaticReplacements: number;
   /** Null when the balance could not be read. */
   walletAvailableMinor: number | null;
   evidence: SupplierEvidence | null;
@@ -95,6 +105,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
     candidates.push("ESCALATE");
     reasons.push(`Already with a person: ${(obligation.escalationReason ?? "no reason recorded").replace(/[.\s]+$/, "")}.`);
     refuse("REPLACE", "Only a named person can release an escalated invoice.");
+    refuse("CLOSE", "An escalated invoice cannot be closed until a person resolves the escalation.");
   }
   if (evidence?.requestsDetailChange) {
     forced = "ESCALATE";
@@ -129,9 +140,17 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
     case "LIVE": {
       refuse("REPLACE", "The original payment may still arrive. Replacing it could pay the supplier twice.");
       if (latest.awxStatus === "FAILED") {
+        const failedAt = Date.parse(facts.failedObservedAt ?? latest.updatedAt);
+        if (now.getTime() - failedAt > policy.failedSlaMs) {
+          fromState = "ESCALATE";
+          candidates.push("ESCALATE", "WAIT");
+          raise("ATTENTION");
+          reasons.push(`Airwallex marked the transfer as failed over ${Math.floor(policy.failedSlaMs / 60_000)} minutes ago and has not cancelled it. A person should chase the cancellation; the lock still holds.`);
+          break;
+        }
         fromState = "WAIT";
         candidates.push("WAIT");
-        recheckAt = new Date(now.getTime() + 5 * 60_000).toISOString();
+        recheckAt = new Date(Math.min(now.getTime() + 5 * 60_000, failedAt + policy.failedSlaMs)).toISOString();
         reasons.push("Airwallex has marked the transfer as failed. The money returns to the wallet only once it is cancelled, so the lock holds until then.");
         break;
       }
@@ -212,9 +231,20 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         break;
       }
 
+      // A replacement pays its own fee; the previous attempt's fee is the best estimate of it.
       const neededMinor = latest.amountMinor + (latest.feeMinor ?? 0);
       const limit = policy.autoReplaceLimitMinor[obligation.currency];
-      if (facts.walletAvailableMinor !== null && facts.walletAvailableMinor < neededMinor) {
+      if (facts.automaticReplacements >= policy.maxAutoReplacements) {
+        fromState = "ESCALATE";
+        candidates.push("ESCALATE", "REPLACE");
+        raise("ATTENTION");
+        reasons.push(`This invoice has already been replaced automatically ${facts.automaticReplacements} times. Repeated failures need a person's eyes before paying again.`);
+      } else if (facts.walletAvailableMinor === null) {
+        fromState = "REPLACE";
+        candidates.push("REPLACE", "ESCALATE");
+        raise("ATTENTION");
+        reasons.push("The wallet balance could not be read, so the replacement cannot be approved automatically. A person must confirm the funds.");
+      } else if (facts.walletAvailableMinor < neededMinor) {
         fromState = "ESCALATE";
         candidates.push("ESCALATE");
         raise("ATTENTION");

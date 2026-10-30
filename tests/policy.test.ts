@@ -11,7 +11,7 @@ function attempt(overrides: Partial<Attempt> = {}): Attempt {
     id: "att-1", obligationId: "ob-1", seq: 1, requestId: "req-1", beneficiaryId: "ben-A", amountMinor: 10_000,
     currency: "USD", method: "LOCAL", reason: "services", state: "LIVE", transferId: "tr-1", awxStatus: "SENT",
     failureCode: null, failureMessage: null, feeMinor: 300, payerPaysMinor: 10_300, approvalNonce: "nonce",
-    lastError: null, createdAt: hoursAgo(1), updatedAt: hoursAgo(1), ...overrides,
+    lastError: null, awxUpdatedAt: null, createdAt: hoursAgo(1), updatedAt: hoursAgo(1), ...overrides,
   };
 }
 
@@ -25,7 +25,7 @@ function evidence(overrides: Partial<SupplierEvidence> = {}): SupplierEvidence {
 function facts(attempts: Attempt[], overrides: Partial<IncidentFacts> = {}): IncidentFacts {
   return {
     obligation: { id: "ob-1", amountMinor: 10_000, currency: "USD", status: "PAYING", escalationReason: null },
-    attempts, paidObservedAt: null, walletAvailableMinor: 1_000_000, evidence: null, now: NOW, ...overrides,
+    attempts, paidObservedAt: null, failedObservedAt: null, automaticReplacements: 0, walletAvailableMinor: 1_000_000, evidence: null, now: NOW, ...overrides,
   };
 }
 
@@ -55,7 +55,7 @@ describe("waiting is a decision", () => {
   });
 
   it("keeps waiting after FAILED until Airwallex returns the funds", () => {
-    const d = decide(facts([attempt({ awxStatus: "FAILED", failureCode: "91401" })]));
+    const d = decide(facts([attempt({ awxStatus: "FAILED", failureCode: "91401" })], { failedObservedAt: hoursAgo(0.1) }));
 
     expect(d.recommended).toBe("WAIT");
     expect(d.allowed).not.toContain("REPLACE");
@@ -72,6 +72,7 @@ describe("PAID", () => {
 
   it("holds before closing, then allows close once the hold passes", () => {
     const paid = attempt({ state: "PAID", awxStatus: "PAID" });
+  const dead = (failureCode: string) => attempt({ state: "DEAD", awxStatus: "CANCELLED", failureCode });
 
     const early = decide(facts([paid], { paidObservedAt: hoursAgo(2) }));
     const late = decide(facts([paid], { paidObservedAt: hoursAgo(30) }));
@@ -82,6 +83,7 @@ describe("PAID", () => {
 
   it("closes on the supplier's own statement showing the credit, once held", () => {
     const paid = attempt({ state: "PAID", awxStatus: "PAID" });
+  const dead = (failureCode: string) => attempt({ state: "DEAD", awxStatus: "CANCELLED", failureCode });
     const e = evidence({ claimsNonReceipt: false, statementCredit: { amountMinor: 10_000, currency: "USD" } });
 
     const d = decide(facts([paid], { paidObservedAt: hoursAgo(30), evidence: e }));
@@ -205,5 +207,54 @@ describe("signals that override everything", () => {
     const d = decide(facts([attempt({ createdAt: hoursAgo(10) })]), strict);
 
     expect(d.recommended).toBe("ESCALATE");
+  });
+});
+
+describe("limits on acting without a person", () => {
+  const paid = attempt({ state: "PAID", awxStatus: "PAID" });
+  const dead = (failureCode: string) => attempt({ state: "DEAD", awxStatus: "CANCELLED", failureCode });
+
+  it("never allows CLOSE while the invoice is escalated", () => {
+    const d = decide(facts([paid], {
+      paidObservedAt: hoursAgo(30),
+      obligation: { id: "ob-1", amountMinor: 10_000, currency: "USD", status: "ESCALATED", escalationReason: "late failure" },
+    }));
+
+    expect(d.allowed).not.toContain("CLOSE");
+    expect(d.blocked.map((b) => b.action)).toContain("CLOSE");
+  });
+
+  it("does not auto-approve a replacement when the wallet balance is unknown", () => {
+    const d = decide(facts([dead("91402")], { walletAvailableMinor: null }));
+
+    expect(d.replacement?.autoApprovable).toBe(false);
+  });
+
+  it("escalates once the automatic replacement budget is spent", () => {
+    const within = decide(facts([dead("91402")], { automaticReplacements: DEFAULT_POLICY.maxAutoReplacements - 1 }));
+    const beyond = decide(facts([dead("91402")], { automaticReplacements: DEFAULT_POLICY.maxAutoReplacements }));
+
+    expect(within.replacement?.autoApprovable).toBe(true);
+    expect(beyond.recommended).toBe("ESCALATE");
+    expect(beyond.replacement?.autoApprovable).toBe(false);
+  });
+
+  it("escalates a transfer left FAILED past the SLA instead of waiting forever", () => {
+    const failed = attempt({ awxStatus: "FAILED", failureCode: "91402" });
+    const fresh = decide(facts([failed], { failedObservedAt: new Date(NOW.getTime() - 60_000).toISOString() }));
+    const stale = decide(facts([failed], { failedObservedAt: new Date(NOW.getTime() - DEFAULT_POLICY.failedSlaMs - 60_000).toISOString() }));
+
+    expect(fresh.recommended).toBe("WAIT");
+    expect(stale.recommended).toBe("ESCALATE");
+    expect(stale.allowed).not.toContain("REPLACE");
+  });
+
+  it("requires the wallet to cover the amount plus the replacement's fee", () => {
+    const amountOnly = decide(facts([dead("91402")], { walletAvailableMinor: 10_000 }));
+    const withFee = decide(facts([dead("91402")], { walletAvailableMinor: 10_300 }));
+
+    expect(amountOnly.replacement?.autoApprovable).toBe(false);
+    expect(amountOnly.allowed).not.toContain("REPLACE");
+    expect(withFee.replacement?.autoApprovable).toBe(true);
   });
 });

@@ -48,13 +48,17 @@ export function pendingDraft(events: LedgerEvent[]): PendingDraft | null {
 }
 
 const ISO_DATE = /\d{4}-\d{2}-\d{2}/g;
+/** Money as people write it ("1,250.00", "25.00"); removed so an amount is not mistaken for an account number. */
+const AMOUNT = /(?<![\d./_])(?:\d{1,3}(?:,\d{3}){1,2}(?:\.\d{2})?|\d+\.\d{2})(?![\d./_,])/g;
+/** A host without a scheme: anything followed by a path, or ending in a common top-level domain. */
+const BARE_DOMAIN = /\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:[a-z]{2,}\/|(?:com|net|org|io|co|biz|info|app|xyz|pay|money|uk|us|eu|de|fr|nl|au|ca|sg|hk)\b)/i;
 const RULES: Array<{ test: (text: string) => boolean; reason: string }> = [
   { test: (t) => /\b[A-Z]{2}\d{2}(\s?[A-Z0-9]{4}){3,}/.test(t), reason: "it contains something shaped like an IBAN" },
   {
-    test: (t) => /\d{6,}/.test(t.replace(ISO_DATE, "").replace(/[\s-]/g, "")),
+    test: (t) => /\d{6,}/.test(t.replace(ISO_DATE, "").replace(AMOUNT, " ").replace(/[\s\-./_]/g, "")),
     reason: "a long run of digits looks like an account or reference number; the code adds the real references itself",
   },
-  { test: (t) => /https?:\/\/|www\./i.test(t), reason: "it contains a link" },
+  { test: (t) => /https?:\/\/|www\./i.test(t) || BARE_DOMAIN.test(t.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "")), reason: "it contains a link" },
   { test: (t) => /[\w.+-]+@[\w-]+\.[\w.-]+/.test(t), reason: "it contains an email address" },
   {
     test: (t) => /\b(re-?send(ing)?|pay(ing)?\s+(you\s+)?(again|twice)|second\s+(payment|transfer)|another\s+(payment|transfer)|new\s+(payment|transfer)|replacement)\b/i.test(t),
