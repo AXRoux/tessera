@@ -208,7 +208,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
             <div className="mt-3">
               <NotedAction
                 label="Why should this lock be released?"
-                hint={`Tessera first asks Airwallex again. It releases the lock only if no transfer exists for request ${shortHash(attempt.requestId, 8)} or the transfer was cancelled or rejected without executing; a live ${money(attempt.amountMinor, attempt.currency)} transfer is never released.`}
+                hint={`Tessera first asks Airwallex again. It releases the lock only if Airwallex shows the transfer cancelled, or this attempt never reached Airwallex (no transfer exists for request ${shortHash(attempt.requestId, 8)} and the attempt is at least 10 minutes old, so a slow send cannot still land). A transfer waiting in an approval queue stays locked until it is cancelled, and a live ${money(attempt.amountMinor, attempt.currency)} transfer is never released.`}
                 placeholder="Checked the Airwallex dashboard: no transfer was created for this request."
                 button={`Release as ${name}`}
                 busy={busy === `release-${attempt.id}`}

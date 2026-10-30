@@ -135,7 +135,11 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   if (env.ANTHROPIC_API_KEY && !env.TESSERA_MODEL) {
     warnings.push("ANTHROPIC_API_KEY is set but TESSERA_MODEL is not (e.g. claude-sonnet-5-5); Claude stays off");
   }
-  const claude = env.ANTHROPIC_API_KEY && env.TESSERA_MODEL ? AnthropicModel.fromEnv(env) : null;
+  // A public demo is open to anyone who can reach it, so it must never be able to spend the owner's tokens.
+  if (publicDemo && env.ANTHROPIC_API_KEY) {
+    warnings.push("ANTHROPIC_API_KEY is ignored: a public demo (TESSERA_PUBLIC_DEMO=1) uses the scripted agent, never a key anyone can spend");
+  }
+  const claude = !publicDemo && env.ANTHROPIC_API_KEY && env.TESSERA_MODEL ? AnthropicModel.fromEnv(env) : null;
   let model: StructuredModel | null = claude;
   let agent: AgentDeps | null = claude ? { model: claude, actor: env.TESSERA_AGENT_NAME || "agent:claude", kind: "claude" } : null;
   if (!claude && offline) {

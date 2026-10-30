@@ -79,7 +79,14 @@ export interface ApiDeps {
   reset?: () => Promise<void>;
 }
 
+/** What any one route accepts after reading the body (checked on the text, so it counts characters). */
 const MAX_BODY_BYTES = 64 * 1024;
+/**
+ * What the HTTP server accepts at all (`Bun.serve` `maxRequestBodySize`): above the largest legitimate request, so the
+ * route's own 413 answers anything near it, and far below Bun's 128 MB default. The largest route is a supplier message
+ * (up to 20 000 characters of email and 20 000 of statement, which JSON-encodes to well under this).
+ */
+export const MAX_REQUEST_BODY_BYTES = 256 * 1024;
 const EVENT_WINDOW = 80;
 
 const CreateBody = z.object({
@@ -357,12 +364,16 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
 
   /**
    * Airwallex webhooks are hints: verified by signature, deduplicated by event id, then the transfer is re-read from
-   * Airwallex like any sync. A sync failure still answers 200 (the background sweep catches up), so Airwallex does not
-   * retry a delivery that was received.
+   * Airwallex like any sync. A delivery counts as handled only after its sync succeeded; if the sync fails the event
+   * is not recorded and the answer is 503, so Airwallex redelivers it instead of the dedupe swallowing it. (A transfer
+   * that mismatches the ledger is escalated in the ledger by the sync itself, so it is handled, not retried.) The
+   * body is bounded before it is read: the content-length is checked first, and the server caps the rest.
    */
   async function webhook(request: Request): Promise<Response> {
     if (!deps.webhookSecret) return json({ error: "NotFound", message: "no such route" }, 404);
     if (request.method !== "POST") return json({ error: "MethodNotAllowed", message: "unsupported method" }, 405);
+    const declared = Number(request.headers.get("content-length") ?? 0);
+    if (declared > MAX_BODY_BYTES) throw new PayloadTooLarge();
     const rawBody = await request.text();
     if (rawBody.length > MAX_BODY_BYTES) throw new PayloadTooLarge();
     let event;
@@ -374,15 +385,18 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       if (!(error instanceof WebhookRejected)) throw error;
       return json({ error: error.name, message: error.message }, error.reason === "malformed" ? 400 : 401);
     }
-    const first = ledger.recordWebhookEvent(event);
-    if (!first) return json({ ok: true, duplicate: true });
+    if (ledger.webhookEventSeen(event.id)) return json({ ok: true, duplicate: true });
     if (event.transferId) {
       try {
         await gateway.syncTransfer(event.transferId);
       } catch (error) {
-        console.error("webhook sync failed; the sweep will retry", error instanceof Error ? error.message : error);
+        if (!(error instanceof LedgerMismatchError)) {
+          console.error("webhook sync failed; leaving the event retryable", error instanceof Error ? error.message : error);
+          return json({ error: "SyncFailed", message: "the transfer could not be re-read; redeliver this event" }, 503);
+        }
       }
     }
+    ledger.recordWebhookEvent(event);
     return json({ ok: true, duplicate: false });
   }
 

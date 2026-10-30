@@ -6,7 +6,7 @@
  *   TESSERA_OFFLINE=1 bun run api       simulated Airwallex in-process, scripted agent unless a Claude key is set
  *                                       (can be reset to empty from the console; TESSERA_DEMO_IDLE_RESET_MS resets it when idle)
  */
-import { createApi } from "./api";
+import { createApi, MAX_REQUEST_BODY_BYTES } from "./api";
 import { resettable, type Instance } from "./resettable";
 import { buildRuntime, resolveBeneficiary } from "./runtime";
 
@@ -39,17 +39,31 @@ async function build(): Promise<Instance> {
   const isFirst = pending !== null;
   const { offline, api, simulator, ledger, gateway, commander, closer, model, agent, paidHoldMs, webhookSecret } = nextRuntime();
   const beneficiaryId = await resolveBeneficiary(api);
-  // Anything left in INTENT by a crash is resolved before we accept traffic.
-  const resolved = await gateway.recover();
-  if (isFirst) recoveredAtStart = resolved.length;
+  // Anything left in INTENT by a crash is resolved before we accept traffic. A stuck or mismatching attempt is
+  // escalated in the ledger, never a reason to refuse to start: log it and keep serving.
+  let recovered = 0;
+  try {
+    recovered = (await gateway.recover()).length;
+  } catch (error) {
+    console.error("startup recovery failed; serving anyway", error instanceof Error ? error.message : error);
+  }
+  if (isFirst) recoveredAtStart = recovered;
   return {
     handle: createApi({
       ledger, gateway, commander, closer, model, simulator, token, operator, beneficiaryId, paidHoldMs, agent, offline, webhookSecret,
       reset: offline ? () => demo.reset() : undefined,
     }),
     sweep: async () => {
-      await gateway.recover();
-      await gateway.sync();
+      // Each half runs even if the other fails, so one stuck attempt never stops the rest from syncing.
+      const failures: unknown[] = [];
+      for (const step of [() => gateway.recover(), () => gateway.sync()]) {
+        try {
+          await step();
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (failures.length > 0) throw failures[0];
     },
   };
 }
@@ -62,6 +76,8 @@ const server = Bun.serve({
   port,
   // Agent runs stream for a minute or more; the default 10s idle timer would cut them off between model turns.
   idleTimeout: 255,
+  // Bun's default is 128 MB, and the webhook route is reachable without the operator token through a tunnel.
+  maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
   fetch: demo.handle,
 });
 

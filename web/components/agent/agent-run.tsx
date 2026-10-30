@@ -203,12 +203,24 @@ function ToolStep({ step }: { step: Extract<Step, { kind: "tool" }> }) {
 
 /** What the agent said, each tool it reached for, and what the code answered. Refusals are the loudest thing on it. */
 export function AgentTimeline({ state }: { state: AgentRunState }) {
+  const [showAll, setShowAll] = useState(false);
   if (state.status === "idle") return null;
   const refused = state.done?.refused ?? state.steps.filter((s) => s.kind === "tool" && s.result?.kind === "refused").length;
+
+  // Live, every step shows as it happens. Once the run is done the page is for reading the outcome: keep the agent's
+  // closing report and everything the code refused or turned away, and fold the routine steps behind a toggle.
+  const finished = state.status === "done";
+  const lastText = state.steps.findLastIndex((s) => s.kind === "text");
+  const visible = state.steps.flatMap((step, i) => {
+    const keep = !finished || showAll || i === lastText || (step.kind === "tool" && step.result?.ok === false);
+    return keep ? [{ step, i }] : [];
+  });
+  const folded = state.steps.length - visible.length;
+
   return (
     <div>
       <ol className="divide-y divide-rule">
-        {state.steps.map((step, i) =>
+        {visible.map(({ step, i }) =>
           step.kind === "text" ? (
             <li key={i} className="px-5 py-4">
               <p className="whitespace-pre-line border-l-2 border-blue pl-4 text-sm leading-relaxed">{plain(step.text)}</p>
@@ -224,6 +236,16 @@ export function AgentTimeline({ state }: { state: AgentRunState }) {
           </li>
         ) : null}
       </ol>
+      {finished && (folded > 0 || showAll) ? (
+        <button
+          type="button"
+          aria-expanded={showAll}
+          onClick={() => setShowAll((open) => !open)}
+          className="label w-full cursor-pointer border-t border-rule px-5 py-3.5 text-left text-ink hover:text-blue"
+        >
+          {showAll ? "Hide routine steps" : `Show ${folded} routine step${folded === 1 ? "" : "s"}`}
+        </button>
+      ) : null}
       {state.error ? (
         <p role="alert" className="border-t border-ink bg-ink px-5 py-4 text-sm text-paper">
           {state.error}

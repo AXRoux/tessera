@@ -22,8 +22,8 @@ Success criteria (all demonstrated against the real sandbox):
    (`bun run redteam`), each mutation-checked, and a live Claude told to pay twice could not (`bun run agent -- --adversary`).
 9. Supplier-supplied evidence can only make the system more cautious: tested as a property over every playbook code and over
    sequences of evidence, so a later harmless message cannot erase an earlier warning.
-10. A payment is refused when the ledger does not verify (an edited row cannot release the lock), and a bank return after
-    certification revokes the certificate and reopens the incident.
+10. A payment is refused when the ledger does not verify (an edited, flipped or deleted row cannot release the lock), and a bank
+    return after certification revokes the certificate and reopens the incident.
 11. Anyone can run the whole product with no keys: `bun run demo` (simulated Airwallex, scripted agent, labelled as such).
 
 ## Verified sandbox facts (do not re-derive)
@@ -112,8 +112,12 @@ fixtures/                failure-codes.json (captured from the sandbox)
 - Payouts are same-currency; a wallet line in another currency blocks certification.
 - A webhook (HMAC-SHA256 of timestamp + raw body, 5 minute tolerance, deduplicated by event id) is only a hint: the transfer is
   re-read. A background sweep (`TESSERA_SWEEP_MS`) recovers stray intents and syncs live transfers even if webhooks are lost.
-- A person releases a stuck lock (`resolveAttempt`) only after Airwallex confirms nothing is live, with a written note. A person
-  approves a risky replacement in two steps: the approval is bound to the assessment (evidence hash) they reviewed.
+- A person releases a stuck lock (`resolveAttempt`) only after Airwallex confirms it, with a written note: the transfer is CANCELLED,
+  or the attempt never reached Airwallex (an INTENT with no transfer for its request_id, at least 10 minutes old, so a slow send cannot
+  still land). A transfer in an approval state (REJECTED, BLOCKED, RECALLED) stays locked until CANCELLED, because Airwallex lets it be
+  resubmitted. The gateway re-reads the attempt before every send, and never sends for an escalated obligation. A transfer that shows up
+  for a released attempt is recorded (TRANSFER_AFTER_ABANDON) and escalated. A person approves a risky replacement in two steps: the
+  approval is bound to the incident and to the assessment (evidence hash) they reviewed.
 - Every mutating tool call, and every refusal, is appended to the hash-chained ledger under the agent's name.
 - Supplier-facing text is a draft for a person. A draft is allowed only when the Commander allows that kind of reply, may not
   carry account details, links, an email address or a promise of another payment, and carries facts written by code.

@@ -56,12 +56,22 @@ Tessera is the layer you put **between any agent and a payout API**: the agent k
 ### See it in two minutes, with no keys
 
 ```sh
-bun run demo           # API on :4010, console on http://127.0.0.1:3100
+bun run doctor         # optional: one screen that says what works and the exact command to fix what does not
+bun run demo           # API on :4010, console on http://127.0.0.1:3100, and it opens your browser
 ```
 
-The console opens on a simulated Airwallex with a deterministic, scripted agent (clearly labelled *not Claude* everywhere it appears). Press **Seed demo incidents**, then **Let the scripted agent work them all**, wait six seconds, and press it again to watch the paid invoice certify. **Try to break it** runs a scripted adversary at the same toolbox and shows the refusals. Add `ANTHROPIC_API_KEY` and `TESSERA_MODEL` and the same buttons drive real Claude. Nothing in this mode can move money.
+The page opens with a **Start here** checklist, five steps that follow what you actually do and survive a reload: load six
+incidents, watch the agent work them, try to break it, take over the one it handed you, get one certified. A **Needs you**
+queue lists everything waiting for a person, each row shows what the agent last did there, and after a run **What the agent did**
+gives one line per incident. **Reset demo** clears it and starts over.
+
+The demo runs on a simulated Airwallex with a deterministic, scripted agent (clearly labelled *not Claude* everywhere it
+appears). The paid invoice certifies after a 6-second hold, so press the agent button a second time. **Try to break it** runs a
+scripted adversary at the same toolbox and shows the refusals. Add `ANTHROPIC_API_KEY` and `TESSERA_MODEL` to `.env` and the
+same buttons drive real Claude against the same simulator. Nothing in this mode can move money.
 
 `bun run scale` runs 100 mixed incidents through the same path and ends with `INVARIANT HELD: at most one live payout per invoice`.
+Want it on a URL for someone else? [`docs/DEPLOY.md`](docs/DEPLOY.md). Recording the submission video? [`docs/VIDEO.md`](docs/VIDEO.md).
 
 ---
 
@@ -172,10 +182,10 @@ The idea is a division of labor. **The model does the one thing it is wonderful 
 |---|---|---|
 | **Quarantined reader** | `src/commander/evidence.ts` | The supplier's text is treated as data. Claude returns a schema-constrained record (booleans and a credit amount). Code then **cross-checks every field and widens what the model missed**: a bank-detail-change pattern the model did not flag, an instruction aimed at an assistant, a credit that is not in the statement. A fooled model still gets caught. **Evidence accumulates**: a later, harmless message can never erase an earlier risk flag. Only an operator's own manual entry resets it. |
 | **Commander** | `src/commander/policy.ts`, `src/domain/playbook.ts` | Decides wait / replace / request correction / escalate / close. A playbook maps all **32** Airwallex failure codes to a class and a replacement rule (`AUTO`, `AFTER_CHANGE`, `FORBIDDEN`); **unknown codes fail closed**. An automatic replacement also needs a known wallet balance that covers the amount **plus the replacement's fee**, and stops after two per invoice. A transfer stuck at `FAILED` past 30 minutes is escalated, and CLOSE is never offered while an invoice is escalated or a supplier is disputing receipt. Evidence can only make it more cautious, and that is a [tested property](tests/monotonic.test.ts), including over *sequences* of evidence. |
-| **Gateway** | `src/gateway/gateway.ts`, `src/ledger/ledger.ts` | **Exactly-once.** The intent and its `request_id` are committed before any network call. An ambiguous result (timeout, 5xx, lost reply, `kill -9`) is resolved by looking the *same* `request_id` up, never by minting a new one; a `429` resends that same `request_id`, honouring `Retry-After`. A partial unique index makes the database itself refuse a second open attempt. It also **refuses to pay on a ledger that does not verify**, so editing a row to release the lock gets you a refusal, not a second payment. A webhook is only a hint to re-read the transfer; a stuck lock can be released by a named person, after Airwallex confirms nothing is live. |
+| **Gateway** | `src/gateway/gateway.ts`, `src/ledger/ledger.ts` | **Exactly-once.** The intent and its `request_id` are committed before any network call, and the attempt is re-read from the ledger immediately before every send (including after each `429` wait), so a released attempt can never still be sending. An ambiguous result (timeout, 5xx, lost reply, `kill -9`) is resolved by looking the *same* `request_id` up, never by minting a new one. A partial unique index makes the database itself refuse a second open attempt. It **refuses to pay on a ledger that does not verify**, and it **never sends for an escalated invoice** (a restart or a background sweep looks the request up and adopts it, nothing more). A webhook is only a hint to re-read the transfer. A stuck lock can be released by a named person only when Airwallex shows the transfer cancelled, or the attempt never reached Airwallex and is at least 10 minutes old; a transfer waiting in an approval queue stays locked until it is cancelled. If a transfer ever appears for a released attempt, it is recorded as an orphan and escalated. |
 | **Approvals** | `src/approval/approval.ts` | HMAC over obligation, amount, currency, beneficiary, method, reason and evidence hash. Single-use, 5-minute expiry. A person needs a written reason (10+ characters) for anything risky, and approval is **two steps**: the console shows the facts fingerprint the person reviewed, and the server refuses the approval if the facts changed since. |
 | **Closer** | `src/closer/closer.ts` | **`PAID` is a claim, not a fact.** It re-reads the transfer from Airwallex first, waits out a hold window, then checks every wallet line (payout, fee, reversal) and signs a certificate with a tamper-evident fingerprint. A bank return after certification **revokes the certificate and reopens the incident**. Same-currency payouts only; a wallet line in another currency blocks certification. |
-| **Ledger** | `src/ledger/ledger.ts` | Append-only and hash-chained, written inside one write transaction so two processes cannot fork it. Edit an event, delete the newest ones, swap a certificate, or flip an attempt row, and the history stops verifying. |
+| **Ledger** | `src/ledger/ledger.ts` | Append-only and hash-chained, written inside one write transaction so two processes cannot fork it. `verifyChain` reads one consistent snapshot and replays the events against the tables: edit an event, delete the newest ones, swap a certificate, flip or **delete** an attempt row, change an attempt's amount, beneficiary or failure code, or change an obligation's amount, and the history stops verifying. |
 
 ### A payment survives a crash
 
@@ -382,6 +392,20 @@ A test that always passes proves nothing, so the red team was **mutation-checked
 
 That exercise also caught two attacks that were passing *for the wrong reason*: they used failure type names instead of the sandbox's numeric codes, so they were testing "unknown code" rather than the playbook. They were fixed, and attacks 2 and 3 now also try the gateway directly with a validly signed approval, so the database lock is exercised even when the policy is skipped.
 
+### An independent review, and what it found
+
+After the hardening pass, a separate reviewer (a fresh agent, read-only, told to be adversarial and to write a reproduction for every claim) went through the money path. It found **one way to pay twice** and four more serious holes:
+
+| Finding | Fixed by |
+|---|---|
+| Releasing an attempt whose create was still asleep in a `429` wait could let the original send land after a replacement paid: two transfers. | The attempt is re-read before every send; an INTENT can be released only after 10 minutes; a transfer that appears for a released attempt is recorded and escalated. |
+| A transfer in an approval queue (rejected, blocked, recalled) was released as "never executed", but Airwallex lets it be resubmitted. | Released only once Airwallex shows it cancelled; older releases keep being polled. |
+| Deleting an attempt row freed the lock and the chain did not notice. | `verifyChain` replays events against the tables in both directions. |
+| Editing an attempt's failure code (91301 to 91402), its beneficiary, or an obligation's amount was not detected, and the next replacement used the edit. | Terms, amounts and failure codes are checked against the events that created them. |
+| A restart, or the 60-second sweep, re-sent a payment for an invoice that had been escalated; a triage agent could trigger it through `assess_incident`. | Nothing sends for an escalated invoice: it looks up and adopts only. |
+
+Eleven smaller items (a spurious "chain broken" while another process wrote, a stale snapshot rolling `PAID` back inside one second, an evidence hash that was not bound to the incident, a statement credit that could lift an open claim, an unbounded webhook body, and others) are fixed too. Each fix has a test that **failed on the old code**: `tests/money-path.test.ts`, `tests/ledger-verify.test.ts` and the commander, API and toolbox suites. Five further items I chose not to build are listed in [Honest limits](#honest-limits).
+
 ### Verified against the real sandbox
 
 The design rests on behaviors observed on the Airwallex sandbox, recorded in [SPEC.md](SPEC.md) so they are not re-derived: `failure.code` is a lossless key (32 types, 32 codes; `details.type` is useless), a duplicate `request_id` returns `400 duplicate_request_id` carrying the existing transfer id, `FAILED` flips to `CANCELLED` within seconds and refunds minus the fee, `PAID` can still fail, and fees differ from the guide (so Tessera never hardcodes one).
@@ -404,6 +428,7 @@ For the sandbox:
 
 ```sh
 bun run setup                   # creates .env, generates the two secrets, creates the sandbox beneficiaries
+bun run doctor -- --live        # checks the sandbox login, the beneficiary and your Anthropic key with real calls
 bun run dev                     # API on 127.0.0.1:4010 + console on :3100, prefixed logs, Ctrl-C stops both
 ```
 
@@ -418,7 +443,15 @@ bun run agent -- --seed-only                        # writes .data/agent-demo.db
 TESSERA_DB=.data/agent-demo.db bun run dev
 ```
 
-**Public demo container:** `docker build -t tessera-demo . && docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera-demo`. Offline only (`TESSERA_PUBLIC_DEMO=1` is refused without `TESSERA_OFFLINE=1`); the API stays on loopback inside the container.
+**Public demo container:** `docker build -t tessera-demo . && docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera-demo`. Offline only (`TESSERA_PUBLIC_DEMO=1` is refused without `TESSERA_OFFLINE=1`, and a public demo ignores any Anthropic key so a stranger can never spend yours); the API stays on loopback inside the container. Hosting it: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+**Webhooks (optional; the sweep does the same job a minute later).** Airwallex can only reach a public URL, so tunnel the **API port (4010)**, not the console, then prove the endpoint works before you register it:
+
+```sh
+bun run webhook:ping -- --url https://<your-tunnel>/api/webhooks/airwallex
+```
+
+It signs a harmless synthetic event the way Airwallex does and checks that a good delivery is accepted, a redelivery is ignored, a forged signature is refused, and a captured delivery replayed after five minutes is refused. When it says *Ready for Airwallex*, add the URL in the sandbox web app (Settings > Developer > Webhooks), subscribe to `payout.transfer.paid`, `payout.transfer.failed` and `payout.transfer.cancelled`, and put the secret it shows in `AWX_WEBHOOK_SECRET`. I verified the endpoint and this check locally; a real Airwallex delivery through a tunnel I have not seen.
 
 | Variable | Purpose |
 |---|---|
@@ -433,8 +466,10 @@ TESSERA_DB=.data/agent-demo.db bun run dev
 | `TESSERA_AGENT_NAME` | Name written on every agent action, for console runs and MCP clients. The scripted agent is always `agent:scripted`. |
 | `TESSERA_AGENT_AUTHORITY` | MCP: `operator` (default) or `triage` (never offered `replace_payment` or `reconcile_and_close`). |
 | `TESSERA_OFFLINE` | `1`: simulated Airwallex, in-memory ledger, generated secrets if unset. |
-| `TESSERA_PUBLIC_DEMO`, `TESSERA_ALLOWED_HOSTS` | Offline only: let the console answer the listed hosts, not just loopback. |
+| `TESSERA_PUBLIC_DEMO`, `TESSERA_ALLOWED_HOSTS` | Offline only: let the console answer the listed hosts, not just loopback. A public demo never uses an Anthropic key. |
+| `TESSERA_DEMO_IDLE_RESET_MS` | Offline only: reset the in-memory demo after this many idle milliseconds (the Docker image sets 15 minutes). Default 0, off. |
 | `TESSERA_API_PORT`, `TESSERA_WEB_PORT` | Ports for `bun run demo` / `bun run dev` (defaults 4010 and 3100). A busy port stops the start with a message naming the variable. |
+| `TESSERA_NO_OPEN` | Set to stop `bun run demo` from opening your browser (it only does when run in a terminal). |
 | `TESSERA_BENEFICIARY_ID` | Override for the USD beneficiary. |
 | `TESSERA_DB` | Ledger path. Default `.data/tessera.db` (offline: in memory). |
 
@@ -477,7 +512,7 @@ About 6,100 lines of core (including 650 for the offline demo), 4,400 of tests, 
 This is a hackathon build, so here is what it is and is not.
 
 - **Sandbox only.** No real money moves. Payouts are **same-currency** (a wallet line in another currency blocks certification); the console's invoice flow is USD over `LOCAL`, and `bun run scale` also exercises EUR over `SWIFT`.
-- **Tamper-evident, not tamper-proof.** The hash chain *detects* an edited history. Someone with write access to the database **and** the approval secret could mint approvals. Production would put the secret in an HSM or KMS and anchor the chain head externally.
+- **Tamper-evident, not tamper-proof.** The hash chain *detects* edits that do not rewrite the whole history. It is **unkeyed**: someone with write access to the database could recompute every event, hash and the stored chain head consistently, and then nothing in the file would disagree. Detecting that needs the chain keyed with a secret the database does not hold, or its head anchored somewhere the database cannot reach; neither is built. Someone with the database **and** the approval secret could also mint approvals. Production would put the secret in an HSM or KMS and anchor the head externally. An operator can re-baseline a chain that an old build left unverifiable (`CHAIN_REBASELINED`, written note required); the agent toolbox cannot.
 - **One operator, no login.** The web app and API bind to `127.0.0.1`, refuse non-loopback `Host` headers and cross-origin writes, and stamp a single configured operator identity. Real multi-user auth is the first thing to add.
 - **The model can be wrong.** Misreading an email can only make the system more cautious or leave it where the code already put it, never unlock a payment. But a missed non-receipt claim means nobody is told.
 - **Drafts are not sent.** Tessera has no mail integration on purpose: a person reads each drafted reply, sends it themselves and records that they did.
@@ -487,6 +522,10 @@ This is a hackathon build, so here is what it is and is not.
 - **An agent can be annoying.** `escalate_to_human` is always allowed on an open incident. A hostile agent can escalate everything and make work for people; it cannot make money move.
 - **SQLite, one node.** Two processes can share the ledger safely (the index is the arbiter), but this is not a distributed system.
 - **Demo hold window.** The scripts shorten the 24 h `PAID` hold to seconds so you can see certification. Production policy is 24 h.
+- **The Closer finds stray payments by reference only,** and a transfer that was cancelled before it was ever funded can never be certified (it expects wallet lines that do not exist). Both fail closed: it refuses and a person looks.
+- **"Send a test invoice" creates and pays in one call, with no idempotency key.** A double submit creates two different invoices; it cannot pay one invoice twice.
+- **Reading an incident syncs it.** Opening an incident page asks Airwallex for the transfer and can write events, so a poll costs a call.
+- **A signed certificate is still served after an unrelated escalation.** It is revoked when a bank returns the payment late; if a person (or agent) escalates the invoice for some other reason after it was certified, the certificate stays and `GET .../certificate` keeps returning it.
 
 ### Roadmap
 
