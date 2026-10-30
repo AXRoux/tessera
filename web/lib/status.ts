@@ -1,4 +1,6 @@
 import type { Tone } from "@/components/ui";
+import { titleCase } from "@/lib/format";
+import { lookupFailure, type FailureClass } from "../../src/domain/playbook";
 import type { IncidentSummary, IncidentView } from "../../src/server/wire";
 
 export type ObligationStatus = IncidentSummary["status"];
@@ -36,3 +38,24 @@ export const SQUARE: Record<AttemptState, string> = {
   DEAD: "bg-ink",
   ABANDONED: "border border-rule",
 };
+
+/** What the playbook makes of each class of failure, in the words an operator would use. */
+const FAILURE_CLASS: Record<FailureClass, string> = {
+  FIX_DETAILS: "Fix the details",
+  SUPPLIER_ACCOUNT: "Supplier's account",
+  TRANSIENT: "Temporary fault",
+  FUNDING_OR_LIMITS: "Funding or limits",
+  POSSIBLE_DUPLICATE: "Possible duplicate",
+  COMPLIANCE_OR_RECALL: "Compliance or recall",
+  CORRIDOR_UNSUPPORTED: "Unsupported corridor",
+  UNKNOWN: "Unrecognized failure",
+};
+
+/** A failure code as the playbook reads it: its name and the class it falls in. Unknown codes say so. */
+export function describeFailure(code: string): { name: string; playbook: string } {
+  const entry = lookupFailure(code);
+  return {
+    name: entry.code === "UNRECOGNIZED" ? "Unrecognized code" : titleCase(entry.failureType),
+    playbook: FAILURE_CLASS[entry.class],
+  };
+}

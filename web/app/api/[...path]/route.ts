@@ -1,11 +1,12 @@
 import type { NextRequest } from "next/server";
-import { checkRequest } from "@/lib/request-guard";
+import { allowedHostsFromEnv, checkRequest } from "@/lib/request-guard";
 
 /**
  * Same-origin proxy to the Tessera API. It adds the operator token server-side, so the browser never holds it.
- * It answers only to loopback hosts and refuses cross-origin writes, so no other site can drive the operator's session.
+ * proxy.ts already refuses foreign hosts and cross-origin writes for every route; this repeats the check because this
+ * is the route that holds the token. Signed Airwallex webhooks go to the API directly, never through here.
  */
-const ALLOWED = /^(health|agent\/run|obligations(\/[\w-]+(\/[\w/-]+)?)?)$/;
+const ALLOWED = /^(health|metrics|demo\/seed|agent\/run|obligations(\/[\w-]+(\/[\w/-]+)?)?)$/;
 
 /** An agent run streams for a minute or more; everything else answers quickly. */
 const timeoutFor = (target: string): number => (target === "agent/run" ? 300_000 : 90_000);
@@ -18,11 +19,10 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
   const target = path.join("/");
   if (!ALLOWED.test(target)) return problem(404, "NotFound", "no such route");
 
-  const guard = checkRequest({
-    method: request.method,
-    host: request.headers.get("host"),
-    origin: request.headers.get("origin"),
-  });
+  const guard = checkRequest(
+    { method: request.method, host: request.headers.get("host"), origin: request.headers.get("origin") },
+    allowedHostsFromEnv(process.env),
+  );
   if (!guard.ok) return problem(403, "Forbidden", guard.message);
 
   const base = process.env.TESSERA_API_URL;
@@ -46,7 +46,7 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
       },
     });
   } catch {
-    return problem(502, "ApiUnreachable", "Cannot reach the Tessera API. Start it with: bun run api");
+    return problem(502, "ApiUnreachable", "Cannot reach the Tessera API. Start it with: bun run demo (offline) or bun run dev");
   }
 }
 

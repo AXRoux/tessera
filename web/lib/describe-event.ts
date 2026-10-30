@@ -68,6 +68,18 @@ export function describeEvent(type: string, payload: unknown): string {
       return `${text(p.actor) ?? "An agent"} chose to wait: ${bare(text(p.note)) ?? "no reason recorded"}.`;
     case "CLOSED":
       return "Reconciled against Airwallex and certified.";
+    case "ESCALATION_RESOLVED":
+      return `${text(p.by) ?? "A person"} took the incident back from escalation: "${bare(text(p.note)) ?? "no note"}".`;
+    case "ATTEMPT_RESOLVED":
+      return `${text(p.by) ?? "A person"} released the payment lock after checking Airwallex (${text(p.from) ?? "?"} to ${text(p.to) ?? "?"}): "${bare(text(p.note)) ?? "no note"}".`;
+    case "INTENT_STALE":
+      return `An attempt has waited ${String(p.ageHours ?? "?")}h without a transfer at Airwallex. Its lock stays until a person releases it.`;
+    case "CERTIFICATE_REVOKED":
+      return `The certificate was revoked: ${bare(text(p.reason)) ?? "no reason recorded"}.`;
+    case "INBOX_RECEIVED":
+      return `A message from ${text(p.from) ?? "the supplier"} arrived in the inbox (${String(p.chars ?? "?")} characters). Only its fingerprint is in the ledger.`;
+    case "PAYMENT_REFUSED":
+      return `A payment requested by ${text(p.by) ?? "someone"} was refused by code${text(p.message) ? `: ${bare(withoutIds(text(p.message)))}` : ""}.`;
     default:
       return type;
   }

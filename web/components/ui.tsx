@@ -83,8 +83,9 @@ export function Stat({ value, unit, label }: { value: ReactNode; unit?: string; 
 }
 
 /** The spec strip: large numerals separated by hairline rules. */
-export function StatStrip({ children, columns = 4 }: { children: ReactNode; columns?: 2 | 3 | 4 }) {
-  const grid = columns === 2 ? "grid-cols-2" : columns === 3 ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2 lg:grid-cols-4";
+export function StatStrip({ children, columns = 4 }: { children: ReactNode; columns?: 2 | 3 | 4 | 6 }) {
+  const grid =
+    columns === 2 ? "grid-cols-2" : columns === 3 ? "grid-cols-2 sm:grid-cols-3" : columns === 6 ? "grid-cols-2 sm:grid-cols-3 xl:grid-cols-6" : "grid-cols-2 lg:grid-cols-4";
   return (
     <div className="border-y border-rule">
       <div className={`mx-auto grid max-w-[1440px] ${grid} divide-x divide-rule px-6 sm:px-10`}>{children}</div>

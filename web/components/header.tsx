@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Logo } from "./logo";
 import { Tag } from "./ui";
 
-export function Header() {
+export function Header({ offline }: { offline: boolean }) {
   return (
     <header className="border-b border-rule">
       <div className="mx-auto flex h-[72px] max-w-[1440px] items-center justify-between px-6 sm:px-10">
@@ -18,7 +18,7 @@ export function Header() {
             Method
           </Link>
           <span className="hidden sm:inline">
-            <Tag tone="blue-outline">Sandbox</Tag>
+            <Tag tone="blue-outline">{offline ? "Offline demo" : "Sandbox"}</Tag>
           </span>
         </nav>
       </div>

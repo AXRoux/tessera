@@ -15,6 +15,7 @@ import { DraftPanel } from "./draft-panel";
 import { DecisionPanel } from "./decision-panel";
 import { EvidencePanel } from "./evidence-panel";
 import { NoticeBox, type Notice } from "./fields";
+import { InboxPanel } from "./inbox-panel";
 import { LedgerLog } from "./ledger-log";
 import { SandboxPanel } from "./sandbox-panel";
 
@@ -70,6 +71,8 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
   const status = STATUS[o.status];
   const feesKept = view.attempts.reduce((sum, a) => sum + (a.feeMinor ?? 0), 0);
   const delivered = view.attempts.filter((a) => a.state === "PAID").reduce((sum, a) => sum + a.amountMinor, 0);
+  // Who reads supplier messages: Claude when this server has a key, otherwise the offline keyword reader (not Claude).
+  const reader = !health?.model ? null : health.agent === "scripted" ? "the offline reader" : "Claude";
 
   return (
     <>
@@ -107,21 +110,15 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
         <div className="grid gap-8 lg:grid-cols-12">
           <div className="space-y-8 lg:col-span-8">
             <DecisionPanel view={view} />
-            <AgentPanel
-              incidentId={id}
-              modelAvailable={health?.model ?? false}
-              sandbox={health?.sandbox ?? false}
-              busy={busy}
-              run={run}
-              refresh={() => void refresh().catch(() => undefined)}
-            />
+            <AgentPanel incidentId={id} health={health} refresh={() => void refresh().catch(() => undefined)} />
             <DraftPanel view={view} busy={busy} run={run} />
             <AttemptsRail attempts={view.attempts} />
             <LedgerLog events={view.events} chain={view.chain} />
           </div>
           <aside className="space-y-8 lg:col-span-4">
             <ActionsPanel view={view} operator={health?.operator ?? "operator"} busy={busy} run={run} />
-            <EvidencePanel view={view} modelAvailable={health?.model ?? false} busy={busy} run={run} />
+            <InboxPanel view={view} reader={reader} busy={busy} run={run} />
+            <EvidencePanel view={view} reader={reader} busy={busy} run={run} />
             {health?.sandbox ? <SandboxPanel view={view} busy={busy} run={run} /> : null}
             <CertificatePanel view={view} />
           </aside>

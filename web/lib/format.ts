@@ -48,6 +48,17 @@ export function until(iso: string, now = Date.now()): string {
 
 export const shortHash = (hash: string, length = 10): string => hash.slice(0, length);
 
+/** A length of time in the largest unit that keeps it readable: "42s", "18m", "3.5h", "2.1d". */
+export function duration(ms: number): string {
+  const seconds = Math.max(0, ms) / 1000;
+  if (seconds < 90) return `${Math.round(seconds)}s`;
+  const minutes = seconds / 60;
+  if (minutes < 90) return `${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${hours.toFixed(1)}h`;
+  return `${(hours / 24).toFixed(1)}d`;
+}
+
 export const titleCase = (value: string): string =>
   value
     .toLowerCase()

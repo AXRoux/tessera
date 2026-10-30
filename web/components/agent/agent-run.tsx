@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiProblem, streamAgentRun } from "@/lib/client-api";
-import type { AgentStreamEvent } from "../../../src/server/wire";
+import type { AgentStreamEvent, Health } from "../../../src/server/wire";
 import { Label } from "../ui";
 
 type Result = { ok: boolean; kind: "refused" | "invalid" | "failed" | null; summary: string };
@@ -23,6 +23,15 @@ export interface AgentRunState {
 }
 
 const IDLE: AgentRunState = { status: "idle", actor: null, mode: "commander", scope: null, steps: [], done: null, error: null };
+
+/**
+ * Who works agent runs on this server, as a sentence would name it. Offline without a key that is a deterministic
+ * script, and the page says so rather than letting it pass for Claude.
+ */
+export function agentName(agent: Health["agent"] | undefined, capital = false): string {
+  if (agent === "scripted") return capital ? "The scripted agent" : "the scripted agent";
+  return "Claude";
+}
 
 /** Folds one streamed event into the run state. Pure, so the timeline is a function of what the server said. */
 export function reduce(state: AgentRunState, event: AgentStreamEvent): AgentRunState {
@@ -47,40 +56,104 @@ export function reduce(state: AgentRunState, event: AgentStreamEvent): AgentRunS
   }
 }
 
-/** Runs the agent on the server and mirrors its steps. `onProgress` fires after each tool result so the page can refetch. */
-export function useAgentRun(onProgress?: () => void) {
-  const [state, setState] = useState<AgentRunState>(IDLE);
-  const abort = useRef<AbortController | null>(null);
-  const progress = useRef(onProgress);
-  progress.current = onProgress;
+/** Shown when the server closed the stream without saying the run finished or failed. */
+export const STREAM_ENDED_EARLY =
+  "The stream ended early, before the agent said it was done. Whatever it completed is in the ledger; nothing else happened.";
 
-  const start = useCallback(async (incidentId: string | null, mode: "commander" | "adversary" = "commander"): Promise<void> => {
-    abort.current?.abort();
-    const controller = new AbortController();
-    abort.current = controller;
-    setState({ ...IDLE, status: "running", mode });
-    try {
-      await streamAgentRun(
-        incidentId,
-        (event) => {
-          setState((current) => reduce(current, event));
-          if (event.type === "result") progress.current?.();
-        },
-        controller.signal,
-        mode,
-      );
-      setState((current) => (current.status === "running" ? { ...current, status: "done" } : current));
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      const message = error instanceof ApiProblem ? error.problem.message : error instanceof Error ? error.message : "The agent run failed.";
-      setState((current) => ({ ...current, status: "error", error: message }));
-    }
+/** Folds the end of the stream into the state: a run that never reported done or error did not succeed. */
+export function settle(state: AgentRunState): AgentRunState {
+  return state.status === "running" ? { ...state, status: "error", error: STREAM_ENDED_EARLY } : state;
+}
+
+type Mode = AgentRunState["mode"];
+
+interface AgentRun {
+  state: AgentRunState;
+  /** The incident the running (or last) run was started for; null for the whole board. */
+  target: string | null;
+  running: boolean;
+  start: (incidentId: string | null, mode?: Mode) => void;
+  stop: () => void;
+  /** Subscribes to "something changed": fired after each tool result and when the run ends. Returns the unsubscribe. */
+  subscribe: (listener: () => void) => () => void;
+}
+
+const AgentRunContext = createContext<AgentRun | null>(null);
+
+/**
+ * Holds the one agent run for the whole app. It lives in the root layout, so moving between the board and an incident
+ * page does not cancel a run; only "Stop" does. Only one run at a time: start() while running is ignored.
+ */
+export function AgentRunProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<AgentRunState>(IDLE);
+  const [target, setTarget] = useState<string | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  const listeners = useRef(new Set<() => void>());
+
+  const notify = useCallback(() => {
+    for (const listener of listeners.current) listener();
   }, []);
 
-  // Leaving the page cancels the fetch; the proxy forwards that and the server stops the agent at its next step.
-  useEffect(() => () => abort.current?.abort(), []);
+  const start = useCallback(
+    (incidentId: string | null, mode: Mode = "commander") => {
+      if (controller.current) return;
+      const abort = new AbortController();
+      controller.current = abort;
+      setTarget(incidentId);
+      setState({ ...IDLE, status: "running", mode, scope: incidentId });
+      void (async () => {
+        try {
+          await streamAgentRun(
+            incidentId,
+            (event) => {
+              setState((current) => reduce(current, event));
+              if (event.type === "result") notify();
+            },
+            abort.signal,
+            mode,
+          );
+          setState(settle);
+        } catch (error) {
+          const message = abort.signal.aborted
+            ? "Stopped. The server ends the run at its next step; whatever it completed is in the ledger."
+            : error instanceof ApiProblem
+              ? error.problem.message
+              : error instanceof Error
+                ? error.message
+                : "The agent run failed.";
+          setState((current) => (current.status === "running" ? { ...current, status: "error", error: message } : current));
+        } finally {
+          controller.current = null;
+          notify();
+        }
+      })();
+    },
+    [notify],
+  );
 
-  return { state, start };
+  const stop = useCallback(() => controller.current?.abort(), []);
+
+  const subscribe = useCallback((listener: () => void) => {
+    listeners.current.add(listener);
+    return () => void listeners.current.delete(listener);
+  }, []);
+
+  const value = useMemo<AgentRun>(
+    () => ({ state, target, running: state.status === "running", start, stop, subscribe }),
+    [state, target, start, stop, subscribe],
+  );
+  return <AgentRunContext.Provider value={value}>{children}</AgentRunContext.Provider>;
+}
+
+/** The app's agent run. `onProgress` fires after each tool result and when the run ends, so a page can refetch. */
+export function useAgentRun(onProgress?: () => void): AgentRun {
+  const run = useContext(AgentRunContext);
+  if (!run) throw new Error("useAgentRun needs <AgentRunProvider> in the root layout");
+  const progress = useRef(onProgress);
+  progress.current = onProgress;
+  const { subscribe } = run;
+  useEffect(() => subscribe(() => progress.current?.()), [subscribe]);
+  return run;
 }
 
 /** The model sometimes reaches for markdown. The console shows plain text, so strip the markers rather than print them. */
@@ -153,6 +226,7 @@ export function AgentTimeline({ state }: { state: AgentRunState }) {
           {state.done.calls} tool call{state.done.calls === 1 ? "" : "s"} &middot; {refused} refused by code &middot; {state.done.steps} model turn
           {state.done.steps === 1 ? "" : "s"}
           {state.done.stoppedBecause === "step_limit" ? " · stopped at the step limit" : ""}
+          {state.done.stoppedBecause === "call_limit" ? " · stopped at the tool call limit" : ""}
           {state.done.stoppedBecause === "aborted" ? " · stopped early" : ""}
         </p>
       ) : null}

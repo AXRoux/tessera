@@ -1,4 +1,4 @@
-import { HealthSchema, IncidentListSchema } from "../../src/server/wire";
+import { HealthSchema, IncidentListSchema, MetricsSchema } from "../../src/server/wire";
 import { Logo } from "@/components/logo";
 import { Board } from "@/components/board";
 import { Frame, Index, Label } from "@/components/ui";
@@ -22,9 +22,10 @@ const CHAPTERS = [
 ];
 
 export default async function Home() {
-  const [list, health] = await Promise.all([
+  const [list, health, metrics] = await Promise.all([
     loadFromApi("/api/obligations", IncidentListSchema),
     loadFromApi("/api/health", HealthSchema),
+    loadFromApi("/api/metrics", MetricsSchema),
   ]);
 
   return (
@@ -45,7 +46,9 @@ export default async function Home() {
           </p>
           <p className="mt-6 flex items-center gap-3 text-sm">
             <span aria-hidden className="size-2 shrink-0 bg-blue" />
-            Built on the Airwallex sandbox. Claude reads what the supplier says; code decides what is allowed.
+            {health.ok && health.data.offline
+              ? "Running offline on a simulated Airwallex. The reader and the agent read; code decides what is allowed."
+              : "Built on the Airwallex sandbox. Claude reads what the supplier says; code decides what is allowed."}
           </p>
         </div>
         <div className="mx-auto w-full max-w-[440px] lg:col-span-5">
@@ -54,7 +57,7 @@ export default async function Home() {
       </section>
 
       {list.ok ? (
-        <Board initial={list.data.items} health={health.ok ? health.data : null} />
+        <Board initial={list.data.items} initialMetrics={metrics.ok ? metrics.data : null} health={health.ok ? health.data : null} />
       ) : (
         <section className="mx-auto max-w-[1440px] px-6 sm:px-10">
           <Frame>
