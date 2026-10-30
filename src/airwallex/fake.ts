@@ -22,7 +22,15 @@ export interface FakePayoutApiOptions {
   /** Transfers per page of `listTransfersPage`; the real API pages too, so callers must follow the cursor. */
   pageSize?: number;
   beneficiaries?: Beneficiary[];
+  /**
+   * Stamp `created_at`/`updated_at` at whole-second resolution without forcing them to increase, as Airwallex's docs
+   * show: two snapshots taken in the same second then carry the same `updated_at`.
+   */
+  secondResolution?: boolean;
 }
+
+/** Airwallex searches only this far back when a transfer lookup gives no `from_created_at`. */
+const DEFAULT_LOOKUP_WINDOW_MS = 30 * 24 * 3600_000;
 
 /**
  * In-memory Airwallex with the behaviors the gateway and Closer depend on, verified against the real sandbox:
@@ -41,13 +49,19 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi, 
   private readonly byRequest = new Map<string, string>();
   private readonly now: () => Date;
   private readonly pageSize: number;
+  private readonly secondResolution: boolean;
   private lastStamp = 0;
   createCalls = 0;
   faults = { failBeforeCreate: 0, loseResponseAfterCreate: 0, rejectCreate: 0, failLookup: 0, rateLimitCreate: 0 };
+  /** Retry-After a rate-limited create reports, in ms. */
+  rateLimitRetryAfterMs = 1_000;
+  /** Every `findTransferByRequestId` call: the request_id and the `from_created_at` it was given. */
+  readonly lookups: Array<{ requestId: string; fromCreatedAt: string | undefined }> = [];
 
   constructor(options: FakePayoutApiOptions = {}) {
     this.now = options.now ?? (() => new Date());
     this.pageSize = options.pageSize ?? 100;
+    this.secondResolution = options.secondResolution ?? false;
     this.beneficiaries = options.beneficiaries ?? [
       { id: "ben-A", nickname: "spike-us-supplier" },
       { id: "ben-B", nickname: "spike-us-supplier-alt" },
@@ -62,7 +76,7 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi, 
     this.createCalls++;
     if (this.faults.rateLimitCreate > 0) {
       this.faults.rateLimitCreate--;
-      throw new AwxHttpError(429, "too_many_requests", "rate limit exceeded", { code: "too_many_requests" }, 1_000);
+      throw new AwxHttpError(429, "too_many_requests", "rate limit exceeded", { code: "too_many_requests" }, this.rateLimitRetryAfterMs);
     }
     if (this.faults.failBeforeCreate > 0) {
       this.faults.failBeforeCreate--;
@@ -116,13 +130,19 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi, 
     return structuredClone(transfer);
   }
 
-  async findTransferByRequestId(requestId: string): Promise<Transfer | null> {
+  async findTransferByRequestId(requestId: string, fromCreatedAt?: string): Promise<Transfer | null> {
+    this.lookups.push({ requestId, fromCreatedAt });
     if (this.faults.failLookup > 0) {
       this.faults.failLookup--;
       throw new AwxNetworkError("lookup timed out");
     }
     const id = this.byRequest.get(requestId);
-    return id ? structuredClone(this.transfers.get(id)!) : null;
+    const transfer = id ? this.transfers.get(id) : undefined;
+    if (!transfer) return null;
+    // Like the real search: older than the window (30 days unless the caller reaches further back) is not found.
+    const from = fromCreatedAt === undefined ? this.now().getTime() - DEFAULT_LOOKUP_WINDOW_MS : Date.parse(fromCreatedAt);
+    if (transfer.created_at !== undefined && Date.parse(transfer.created_at) < from) return null;
+    return structuredClone(transfer);
   }
 
   /**
@@ -202,8 +222,12 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi, 
     this.wallet.set(transfer.id, lines);
   }
 
-  /** Strictly increasing timestamps, so `updated_at` orders snapshots even within one millisecond. */
+  /** Strictly increasing timestamps, so `updated_at` orders snapshots even within one millisecond (unless `secondResolution`). */
   private stamp(): string {
+    if (this.secondResolution) {
+      this.lastStamp = Math.max(Math.floor(this.now().getTime() / 1000) * 1000, this.lastStamp);
+      return new Date(this.lastStamp).toISOString();
+    }
     this.lastStamp = Math.max(this.now().getTime(), this.lastStamp + 1);
     return new Date(this.lastStamp).toISOString();
   }

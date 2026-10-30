@@ -16,8 +16,15 @@ export const ExtractedEvidenceSchema = z.object({
 });
 export type ExtractedEvidence = z.infer<typeof ExtractedEvidenceSchema>;
 
-/** The extraction after code has verified or overridden it. `adjustments` records every time code disagreed. */
-export const SupplierEvidenceSchema = ExtractedEvidenceSchema.extend({ adjustments: z.array(z.string()) });
+/**
+ * The extraction after code has verified or overridden it. `adjustments` records every time code disagreed.
+ * `creditSource` is never read from a stored record or from the model: `effectiveEvidence` sets it, and only
+ * "manual" (an operator's own entry) is trusted to confirm receipt.
+ */
+export const SupplierEvidenceSchema = ExtractedEvidenceSchema.extend({
+  adjustments: z.array(z.string()),
+  creditSource: z.enum(["manual", "model"]).optional(),
+});
 export type SupplierEvidence = z.infer<typeof SupplierEvidenceSchema>;
 
 /** The ledger event written whenever evidence enters the system, by a person or by the model. */
@@ -32,8 +39,15 @@ export type RecordedEvidence = EvidenceRecorded & { at: string };
 
 /**
  * The evidence the policy acts on. Only an operator's `manual` entry resets the picture; every later record (from the
- * model or an agent) can only add caution: risk flags are OR-ed, any later statement credit is kept (preferring one that
- * matches `amountMinor`), and adjustments accumulate. A harmless message can never launder an earlier warning away.
+ * model or an agent) can only add caution.
+ *
+ * What is monotone, exactly: the three risk flags are OR-ed over the manual base and every later record, so no later
+ * record can clear one. The one field that can lower caution is `statementCredit`: on a PAID transfer a credit that
+ * matches the amount lifts an open non-receipt claim. So the credit is trusted for that (`creditSource: "manual"`)
+ * only when it comes from the operator's manual record AND no later record claims non-receipt again. A credit that a
+ * model or agent record carries (the message text behind it can be spoofed) is still kept, with `creditSource:
+ * "model"`: it can only add caution (a cancelled transfer the supplier says it received escalates), never lift a claim.
+ * Any `creditSource` stored in a record is ignored. Adjustments accumulate.
  */
 export function effectiveEvidence(events: LedgerEvent[], amountMinor?: number): RecordedEvidence | null {
   const records: RecordedEvidence[] = [];
@@ -45,20 +59,28 @@ export function effectiveEvidence(events: LedgerEvent[], amountMinor?: number): 
   const lastManual = records.findLastIndex((r) => r.source === "manual");
   const base = lastManual >= 0 ? records[lastManual]! : null;
   const later = records.slice(lastManual + 1);
-  if (later.length === 0) return base;
   const all = base ? [base, ...later] : later;
-  const newest = later.at(-1)!;
-  const credits = all.flatMap((r) => (r.evidence.statementCredit ? [r.evidence.statementCredit] : []));
-  const statementCredit = credits.find((c) => c.amountMinor === amountMinor) ?? credits.at(-1) ?? null;
+  const newest = all.at(-1);
+  if (!newest) return null;
+
+  const manualCredit = base?.evidence.statementCredit ?? null;
+  const laterCredits = later.flatMap((r) => (r.evidence.statementCredit ? [r.evidence.statementCredit] : []));
+  const matching = (c: { amountMinor: number }) => c.amountMinor === amountMinor;
+  const statementCredit =
+    (manualCredit && matching(manualCredit) ? manualCredit : null) ?? laterCredits.find(matching) ?? manualCredit ?? laterCredits.at(-1) ?? null;
+  const trusted = statementCredit !== null && statementCredit === manualCredit && !later.some((r) => r.evidence.claimsNonReceipt);
+
+  const { creditSource: _ignored, ...rest } = newest.evidence;
   return {
     ...newest,
     evidence: {
-      ...newest.evidence,
+      ...rest,
       claimsNonReceipt: all.some((r) => r.evidence.claimsNonReceipt),
       requestsDetailChange: all.some((r) => r.evidence.requestsDetailChange),
       containsEmbeddedInstructions: all.some((r) => r.evidence.containsEmbeddedInstructions),
       statementCredit,
       adjustments: all.flatMap((r) => r.evidence.adjustments),
+      ...(statementCredit === null ? {} : { creditSource: trusted ? ("manual" as const) : ("model" as const) }),
     },
   };
 }

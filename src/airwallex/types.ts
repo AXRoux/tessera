@@ -66,7 +66,12 @@ export class AwxNetworkError extends Error {
 export interface PayoutApi {
   createTransfer(request: CreateTransferRequest): Promise<Transfer>;
   getTransfer(id: string): Promise<Transfer>;
-  findTransferByRequestId(requestId: string): Promise<Transfer | null>;
+  /**
+   * The transfer created under `requestId`, if any. Airwallex searches only the last 30 days unless told otherwise, so
+   * callers pass `fromCreatedAt` (ISO 8601) at least as old as the intent: a lookup that misses a transfer because it
+   * is outside the default window would prove nothing.
+   */
+  findTransferByRequestId(requestId: string, fromCreatedAt?: string): Promise<Transfer | null>;
 }
 
 /** One wallet line. `net` is the signed effect on the balance (payouts negative, reversals positive). */

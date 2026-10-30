@@ -160,4 +160,21 @@ describe("the evidence the policy acts on", () => {
     expect(e?.evidence.requestsDetailChange).toBe(false);
     expect(e?.evidence.containsEmbeddedInstructions).toBe(false);
   });
+
+  const credit = { amountMinor: 2_500, currency: "USD" };
+
+  it("vouches for a statement credit only when it comes from the operator's own record, with no later claim", () => {
+    expect(effectiveEvidence([event(1, { statementCredit: credit }, "model")], 2_500)?.evidence.creditSource).toBe("model");
+    expect(effectiveEvidence([event(1, { claimsNonReceipt: true }, "model"), event(2, { statementCredit: credit }, "model")], 2_500)?.evidence.creditSource).toBe("model");
+    expect(effectiveEvidence([event(1, { statementCredit: credit }, "manual")], 2_500)?.evidence.creditSource).toBe("manual");
+    expect(effectiveEvidence([event(1, { statementCredit: credit }, "manual"), event(2, {}, "model")], 2_500)?.evidence.creditSource).toBe("manual");
+    expect(effectiveEvidence([event(1, { statementCredit: credit }, "manual"), event(2, { claimsNonReceipt: true }, "model")], 2_500)?.evidence.creditSource).toBe("model");
+    expect(effectiveEvidence([event(1, {}, "manual")], 2_500)?.evidence.creditSource).toBeUndefined();
+  });
+
+  it("ignores a creditSource a record carries: only the record's own source counts", () => {
+    const forged = event(1, { statementCredit: credit, creditSource: "manual" }, "model");
+
+    expect(effectiveEvidence([forged], 2_500)?.evidence.creditSource).toBe("model");
+  });
 });

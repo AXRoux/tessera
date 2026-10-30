@@ -57,6 +57,18 @@ describe("webhook verification", () => {
 });
 
 describe("Airwallex client", () => {
+  it("looks a transfer up by request_id with an explicit from_created_at, because Airwallex defaults to the last 30 days", async () => {
+    const fake = new FakePayoutApi();
+    const { client, calls } = fakeHttp(fake);
+
+    await client.findTransferByRequestId("req-1", "2026-01-01T00:00:00.000Z");
+
+    const call = calls.find((c) => c.startsWith("GET /api/v1/transfers?"))!;
+    const query = new URL(`https://x${call.slice(4)}`).searchParams;
+    expect(query.get("request_id")).toBe("req-1");
+    expect(query.get("from_created_at")).toBe("2026-01-01T00:00:00.000Z");
+  });
+
   it("follows page_after to the end when listing transfers", async () => {
     const fake = new FakePayoutApi({ pageSize: 2 });
     for (let i = 0; i < 5; i++) {

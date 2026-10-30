@@ -100,11 +100,25 @@ export class Commander {
       now: this.now(),
     };
     const decision = decide(facts, this.policy);
+    const previous = latest ?? null;
+    // What an approval from this assessment is bound to. Everything in it is a fact or a decision, never prose: the
+    // reasons say things like "Processing for 3h" and would make an approval go stale on the hour.
     const evidenceHash = sha256Hex(
       canonicalJson({
+        obligation: { id: obligation.id, amountMinor: obligation.amountMinor, currency: obligation.currency, status: obligation.status },
+        // The terms an approval proposes unless the approver overrides them: the latest attempt's, else the obligation's.
+        proposed: {
+          beneficiaryId: previous?.beneficiaryId ?? obligation.beneficiaryId,
+          method: previous?.method ?? obligation.method,
+          reason: previous?.reason ?? obligation.reason,
+        },
         evidence,
-        recommended: decision.recommended,
-        reasons: decision.reasons,
+        decision: {
+          recommended: decision.recommended,
+          allowed: decision.allowed,
+          blocked: decision.blocked.map((b) => b.action),
+          autoApprovable: decision.replacement?.autoApprovable ?? null,
+        },
         attempts: attempts.map((a) => ({ id: a.id, state: a.state, failureCode: a.failureCode })),
       }),
     );

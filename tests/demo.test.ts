@@ -48,6 +48,14 @@ describe("offline runtime", () => {
   it("warns when an Anthropic key has no model to go with it", () => {
     expect(buildRuntime({ TESSERA_OFFLINE: "1", ANTHROPIC_API_KEY: "sk-test" }).warnings).toEqual([expect.stringContaining("TESSERA_MODEL")]);
   });
+
+  it("never lets a public demo spend an Anthropic key: it runs the scripted agent and says the key is ignored", () => {
+    const runtime = buildRuntime({ TESSERA_OFFLINE: "1", TESSERA_PUBLIC_DEMO: "1", ANTHROPIC_API_KEY: "sk-test", TESSERA_MODEL: "claude-sonnet-5-5" });
+
+    expect(runtime.agent?.kind).toBe("scripted");
+    expect(runtime.warnings).toEqual([expect.stringContaining("ANTHROPIC_API_KEY is ignored")]);
+    expect(buildRuntime({ TESSERA_OFFLINE: "1", ANTHROPIC_API_KEY: "sk-test", TESSERA_MODEL: "claude-sonnet-5-5" }).agent?.kind).toBe("claude");
+  });
 });
 
 describe("beneficiary resolver", () => {

@@ -102,4 +102,36 @@ describe("evidence is monotone toward caution", () => {
     }
     expect(checked).toBeGreaterThan(5_000);
   });
+
+  it("never lets a statement credit make a held PAID transfer closable that a single record alone would not allow", () => {
+    // The one field that lowers caution: a matching credit lifts a non-receipt claim. Hold elapsed, so CLOSE is reachable.
+    const held = attempt("PAID", null, "PAID");
+    const heldFacts = (evidence: SupplierEvidence | null): IncidentFacts => ({ ...facts(held, evidence), paidObservedAt: new Date(NOW.getTime() - 48 * 3600_000).toISOString() });
+    const pool = allEvidence();
+    let seed = 11;
+    const rand = (n: number) => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return Math.floor(seed / 65_536) % n; // the high bits: the low ones of this generator cycle
+    };
+    const asEvent = (evidence: SupplierEvidence, source: "manual" | "model", seq: number): LedgerEvent => ({
+      seq, obligationId: "ob-1", type: "EVIDENCE_RECORDED", ts: NOW.toISOString(), prevHash: "", hash: "",
+      payload: { evidence, source, enteredBy: source === "manual" ? "ap@acme.example" : "agent:mcp", message: null },
+    });
+    const decisionOf = (records: Array<[SupplierEvidence, "manual" | "model"]>) =>
+      decide(heldFacts(effectiveEvidence(records.map(([e, s], i) => asEvent(e, s, i + 1)), 2_500)!.evidence));
+
+    let closable = 0;
+    for (let n = 0; n < 4_000; n++) {
+      // An operator's entry may open the sequence; everything after it comes from the model or an agent.
+      const records: Array<[SupplierEvidence, "manual" | "model"]> = Array.from({ length: 1 + rand(4) }, (_, i) => [
+        pool[rand(pool.length)]!, i === 0 && rand(3) === 0 ? "manual" : "model",
+      ]);
+      const combined = decisionOf(records);
+      if (combined.recommended === "CLOSE") closable++;
+      for (const single of records) {
+        if (decisionOf([single]).recommended !== "CLOSE") expect(combined.recommended).not.toBe("CLOSE");
+      }
+    }
+    expect(closable).toBeGreaterThan(100); // the property is exercised, not vacuous
+  });
 });

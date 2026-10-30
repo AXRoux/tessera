@@ -259,13 +259,17 @@ describe("recovery and human release", () => {
     expect(ledger.requireAttempt(attempt.id).state).toBe("LIVE");
   });
 
-  it("releases a transfer whose approval was rejected at Airwallex, since it never executed", async () => {
+  it("does not release a transfer held in an approval state: Airwallex lets it be resubmitted, so only CANCELLED frees the lock", async () => {
     const { gateway, api, obligation, ledger } = world();
     const { attempt } = await gateway.submit(approve(obligation));
     api.advance(attempt.transferId!, "APPROVAL_REJECTED");
     await gateway.sync();
     expect(ledger.requireAttempt(attempt.id).state).toBe("LIVE");
 
+    await expect(gateway.resolveAttempt({ attemptId: attempt.id, by: "ops@acme", note: NOTE })).rejects.toBeInstanceOf(StateConflict);
+    expect(ledger.requireAttempt(attempt.id).state).toBe("LIVE");
+
+    api.advance(attempt.transferId!, "CANCELLED");
     const released = await gateway.resolveAttempt({ attemptId: attempt.id, by: "ops@acme", note: NOTE });
 
     expect(released.state).toBe("DEAD");

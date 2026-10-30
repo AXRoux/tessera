@@ -3,14 +3,15 @@ import { z } from "zod";
 import { requireHumanNote } from "../approval/approval";
 import { canonicalJson, sha256Hex } from "../canonical";
 import { DuplicateLockError, StateConflict } from "../errors";
-import { replayAttempts } from "./events";
+import { replayAttempts, replayObligations, type ReplayedAttempt } from "./events";
 
 export type Method = "LOCAL" | "SWIFT";
 /**
  * INTENT: written before the network call. LIVE: Airwallex holds a non-terminal transfer (including FAILED, which is
- * not refunded until CANCELLED). PAID: Airwallex says paid; still not final. DEAD: CANCELLED, funds returned, or a
- * transfer that never executed and a person released. ABANDONED: no transfer exists (Airwallex definitively rejected
- * the create, or a person released an intent Airwallex has no record of).
+ * not refunded until CANCELLED, and approval states, which Airwallex lets a user resubmit). PAID: Airwallex says paid;
+ * still not final. DEAD: Airwallex shows CANCELLED, funds returned. ABANDONED: no transfer exists (Airwallex definitively
+ * rejected the create, or a person released an intent Airwallex has no record of); a transfer that turns up for one
+ * anyway is recorded as TRANSFER_AFTER_ABANDON and escalated, never adopted.
  */
 export type AttemptState = "INTENT" | "LIVE" | "PAID" | "DEAD" | "ABANDONED";
 export type ObligationStatus = "OPEN" | "PAYING" | "PAID" | "NEEDS_ACTION" | "ESCALATED" | "CLOSED";
@@ -105,8 +106,12 @@ export interface WebhookEventRecord {
   createdAt: string;
 }
 
+/**
+ * `rebaselinedAt` is set when an operator ever re-pinned the chain head (`Ledger.rebaselineChain`): the chain is
+ * intact from the genesis, but the recorded head and count were accepted on a person's word at that time.
+ */
 export type ChainVerification =
-  | { ok: true; head: string }
+  | { ok: true; head: string; rebaselinedAt?: string }
   | { ok: false; brokenAt: number | null; reason: string };
 
 interface HashRow {
@@ -248,6 +253,35 @@ const toInboxMessage = (row: InboxRow): InboxMessage => ({
   ...(row.statementText === null ? {} : { statementText: row.statementText }),
 });
 
+/**
+ * The first way an attempt row disagrees with what its own events say, or null. Fields the intent event did not record
+ * (ledgers written by older builds) are not compared.
+ */
+function attemptMismatch(attempt: Attempt, r: ReplayedAttempt): string | null {
+  if (r.state !== attempt.state || r.transferId !== attempt.transferId || r.awxStatus !== attempt.awxStatus) {
+    return `is ${attempt.state}/${attempt.awxStatus ?? "-"} in its table but ${r.state}/${r.awxStatus ?? "-"} by its events`;
+  }
+  const differs = (field: string, stored: unknown, expected: unknown): string | null =>
+    expected !== null && stored !== expected ? `has ${field} ${String(stored)} in its table but ${String(expected)} by its intent` : null;
+  const found =
+    differs("obligationId", attempt.obligationId, r.obligationId) ??
+    differs("seq", attempt.seq, r.seq) ??
+    differs("requestId", attempt.requestId, r.requestId) ??
+    differs("approvalNonce", attempt.approvalNonce, r.nonce) ??
+    (r.terms
+      ? differs("beneficiaryId", attempt.beneficiaryId, r.terms.beneficiaryId) ??
+        differs("amountMinor", attempt.amountMinor, r.terms.amountMinor) ??
+        differs("currency", attempt.currency, r.terms.currency) ??
+        differs("method", attempt.method, r.terms.method) ??
+        differs("reason", attempt.reason, r.terms.reason)
+      : null);
+  if (found) return found;
+  if (r.failureCodeVerifiable && (attempt.failureCode ?? null) !== r.failureCode) {
+    return `has failureCode ${attempt.failureCode ?? "none"} in its table but ${r.failureCode ?? "none"} by its events`;
+  }
+  return null;
+}
+
 export class Ledger {
   readonly db: Database;
   private depth = 0;
@@ -256,9 +290,7 @@ export class Ledger {
     this.db = new Database(path, { create: true });
     // busy_timeout first: another process (API + MCP share the file) may hold the lock while this one opens.
     this.db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;");
-    const hadChainHead = this.db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chain_head'").get() !== null;
-    this.db.exec(SCHEMA);
-    this.migrate(hadChainHead);
+    this.migrate();
   }
 
   close(): void {
@@ -276,9 +308,15 @@ export class Ledger {
     }
   }
 
-  /** Brings a ledger file written by an older build up to this schema. Idempotent; safe with several processes. */
-  private migrate(hadChainHead: boolean): void {
+  /**
+   * Creates the schema and brings a ledger file written by an older build up to it, in ONE write transaction: the
+   * `chain_head` table is created and pinned atomically, so a second process opening the same file can never see the
+   * table without its pin. Idempotent; safe with several processes.
+   */
+  private migrate(): void {
     this.tx(() => {
+      const hadChainHead = this.db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chain_head'").get() !== null;
+      this.db.exec(SCHEMA);
       const columns = this.db.query("PRAGMA table_info(attempts)").all() as Array<{ name: string }>;
       if (!columns.some((c) => c.name === "awxUpdatedAt")) this.db.exec("ALTER TABLE attempts ADD COLUMN awxUpdatedAt TEXT");
       // A file from before chain_head existed: pin today's tail so later deletions show.
@@ -399,12 +437,20 @@ export class Ledger {
     return this.db.query("SELECT 1 FROM attempts WHERE approvalNonce = ?").get(nonce) !== null;
   }
 
-  /** Attempts Airwallex holds a live or paid transfer for; the ones `sync` must keep polling. */
+  /**
+   * Attempts whose Airwallex transfer `sync` must keep polling: live or paid ones, and a released transfer that was
+   * only ever held in an approval state (older builds let a person release those; Airwallex lets such a transfer be
+   * edited and resubmitted, so it can still resume and pay).
+   */
   syncableAttempts(obligationId?: string): Attempt[] {
     const where = obligationId ? "AND obligationId = ?" : "";
     const params = obligationId ? [obligationId] : [];
     return this.db
-      .query(`SELECT * FROM attempts WHERE state IN ('LIVE','PAID') AND transferId IS NOT NULL ${where} ORDER BY createdAt`)
+      .query(
+        `SELECT * FROM attempts
+         WHERE (state IN ('LIVE','PAID') OR (state = 'DEAD' AND awxStatus IN ('APPROVAL_REJECTED','APPROVAL_BLOCKED','APPROVAL_RECALLED')))
+           AND transferId IS NOT NULL ${where} ORDER BY createdAt`,
+      )
       .all(...params) as Attempt[];
   }
 
@@ -444,6 +490,17 @@ export class Ledger {
         .run(...values, this.now().toISOString(), id);
     }
     return this.requireAttempt(id);
+  }
+
+  /**
+   * Compare-and-set INTENT -> ABANDONED. Null when the attempt is no longer an INTENT (another process adopted or
+   * released it first), in which case nothing is written.
+   */
+  abandonIntent(id: string, lastError?: string): Attempt | null {
+    const result = this.db
+      .query("UPDATE attempts SET state = 'ABANDONED', lastError = COALESCE(?, lastError), updatedAt = ? WHERE id = ? AND state = 'INTENT'")
+      .run(lastError ?? null, this.now().toISOString(), id);
+    return result.changes > 0 ? this.requireAttempt(id) : null;
   }
 
   // ---- closure certificates ----------------------------------------------
@@ -527,6 +584,11 @@ export class Ledger {
     return result.changes > 0;
   }
 
+  /** Whether this delivery was already handled. Recorded only after its sync succeeded, so a failed one is retried. */
+  webhookEventSeen(id: string): boolean {
+    return this.db.query("SELECT 1 FROM webhook_events WHERE id = ?").get(id) !== null;
+  }
+
   // ---- event chain -------------------------------------------------------
 
   /** Appends one event. Reading the last hash and inserting happen in one write transaction, so processes sharing the file cannot fork the chain. */
@@ -558,11 +620,25 @@ export class Ledger {
 
   /**
    * Recomputes the whole chain and checks the tables against it: every event links and hashes, nothing was cut off
-   * the tail, every certificate pins a head that is in the chain, and every attempt row matches a replay of its own
-   * events. `brokenAt` is the first bad event when there is one; `reason` always says what failed.
+   * the tail, every certificate pins a head that is in the chain, and every attempt and obligation row matches a
+   * replay of its own events (no row missing, none edited). `brokenAt` is the first bad event when there is one;
+   * `reason` always says what failed.
+   *
+   * Reads one consistent snapshot: a second process may append while this runs, and a WAL read transaction keeps
+   * the statements below from seeing half of that write.
    */
   verifyChain(): ChainVerification {
-    const rows = this.db.query("SELECT * FROM events ORDER BY seq").all() as EventRow[];
+    if (this.depth > 0) return this.verifySnapshot();
+    this.depth++;
+    try {
+      return this.db.transaction(() => this.verifySnapshot()).deferred();
+    } finally {
+      this.depth--;
+    }
+  }
+
+  /** Links and hashes only: the part of verification that does not depend on any table. */
+  private checkLinks(rows: EventRow[]): { ok: true; head: string; hashes: Set<string> } | { ok: false; brokenAt: number; reason: string } {
     const hashes = new Set<string>();
     let prev = GENESIS;
     for (const row of rows) {
@@ -572,6 +648,14 @@ export class Ledger {
       hashes.add(row.hash);
       prev = row.hash;
     }
+    return { ok: true, head: prev, hashes };
+  }
+
+  private verifySnapshot(): ChainVerification {
+    const rows = this.db.query("SELECT * FROM events ORDER BY seq").all() as EventRow[];
+    const links = this.checkLinks(rows);
+    if (!links.ok) return links;
+    const { head: prev, hashes } = links;
 
     const head = this.db.query("SELECT hash, count FROM chain_head WHERE id = 1").get() as HeadRow | null;
     if (head === null && rows.length > 0) return { ok: false, brokenAt: null, reason: "the chain head record is missing" };
@@ -600,18 +684,71 @@ export class Ledger {
       }
     }
 
-    const replayed = replayAttempts(events);
-    for (const attempt of this.db.query("SELECT * FROM attempts ORDER BY createdAt").all() as Attempt[]) {
-      const r = replayed.get(attempt.id);
-      if (!r) return { ok: false, brokenAt: null, reason: `attempt ${attempt.id} has no ATTEMPT_INTENT event` };
-      if (r.state !== attempt.state || r.transferId !== attempt.transferId || r.awxStatus !== attempt.awxStatus) {
-        return {
-          ok: false,
-          brokenAt: null,
-          reason: `attempt ${attempt.id} is ${attempt.state}/${attempt.awxStatus ?? "-"} in its table but ${r.state}/${r.awxStatus ?? "-"} by its events`,
-        };
+    const replayedObligations = replayObligations(events);
+    const obligations = this.db.query("SELECT * FROM obligations").all() as Obligation[];
+    const obligationIds = new Set(obligations.map((o) => o.id));
+    for (const id of replayedObligations.keys()) {
+      if (!obligationIds.has(id)) return { ok: false, brokenAt: null, reason: `obligation ${id} is in the history but missing from the obligations table` };
+    }
+    for (const obligation of obligations) {
+      const r = replayedObligations.get(obligation.id);
+      if (!r) return { ok: false, brokenAt: null, reason: `obligation ${obligation.id} has no OBLIGATION_CREATED event` };
+      for (const field of ["reference", "amountMinor", "currency", "beneficiaryId", "method", "reason"] as const) {
+        if (obligation[field] !== r[field]) {
+          return { ok: false, brokenAt: null, reason: `obligation ${obligation.id} has ${field} ${String(obligation[field])} in its table but ${String(r[field])} by its events` };
+        }
       }
     }
-    return { ok: true, head: prev };
+
+    const replayed = replayAttempts(events);
+    const attempts = this.db.query("SELECT * FROM attempts ORDER BY createdAt").all() as Attempt[];
+    const attemptIds = new Set(attempts.map((a) => a.id));
+    for (const id of replayed.keys()) {
+      if (!attemptIds.has(id)) return { ok: false, brokenAt: null, reason: `attempt ${id} is in the history but missing from the attempts table` };
+    }
+    for (const attempt of attempts) {
+      const r = replayed.get(attempt.id);
+      if (!r) return { ok: false, brokenAt: null, reason: `attempt ${attempt.id} has no ATTEMPT_INTENT event` };
+      const mismatch = attemptMismatch(attempt, r);
+      if (mismatch) return { ok: false, brokenAt: null, reason: `attempt ${attempt.id} ${mismatch}` };
+    }
+
+    const rebaselinedAt = events.findLast((e) => e.type === "CHAIN_REBASELINED")?.ts;
+    return { ok: true, head: prev, ...(rebaselinedAt ? { rebaselinedAt } : {}) };
+  }
+
+  /**
+   * An operator's explicit decision to accept the events as they are and re-pin the recorded head and count: the
+   * way out for a file whose `chain_head` fell behind (written by an older build that did not keep it, or opened
+   * mid-migration). Every link and hash must still verify; nothing here repairs an edited or cut chain, and it does
+   * not touch the tables. The decision itself is chained as `CHAIN_REBASELINED`, and `verifyChain` reports
+   * `rebaselinedAt` from then on. Deliberately not offered to agents or over the API.
+   */
+  rebaselineChain(by: string, note: string): ChainVerification {
+    requireHumanNote(by, note);
+    return this.tx(() => {
+      const rows = this.db.query("SELECT * FROM events ORDER BY seq").all() as EventRow[];
+      const links = this.checkLinks(rows);
+      if (!links.ok) throw new StateConflict(`cannot re-baseline a chain whose events do not verify: ${links.reason}`);
+      const head = this.db.query("SELECT hash, count FROM chain_head WHERE id = 1").get() as HeadRow | null;
+      if (head !== null && head.count === rows.length && head.hash === links.head) {
+        throw new StateConflict("the recorded chain head already matches the events; there is nothing to re-baseline");
+      }
+      this.append(null, "CHAIN_REBASELINED", {
+        by,
+        note,
+        recordedHead: head ? { hash: head.hash, count: head.count } : null,
+        eventsBefore: rows.length,
+        headBefore: rows.length > 0 ? links.head : null,
+      });
+      this.db
+        .query(
+          `INSERT INTO chain_head (id, hash, count)
+           SELECT 1, hash, (SELECT COUNT(*) FROM events) FROM events ORDER BY seq DESC LIMIT 1
+           ON CONFLICT (id) DO UPDATE SET hash = excluded.hash, count = excluded.count`,
+        )
+        .run();
+      return this.verifyChain();
+    });
   }
 }

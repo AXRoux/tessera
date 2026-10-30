@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { z } from "zod";
 import failureCodes from "../fixtures/failure-codes.json";
-import { AwxHttpError } from "../src/airwallex/types";
+import { AwxHttpError, AwxNetworkError } from "../src/airwallex/types";
 import { Closer } from "../src/closer/closer";
 import { Commander } from "../src/commander/commander";
 import { DEFAULT_POLICY } from "../src/commander/policy";
@@ -9,7 +9,7 @@ import type { ExtractRequest, StructuredModel } from "../src/commander/evidence"
 import { createHmac } from "node:crypto";
 import { createToolbox } from "../src/agent/toolbox";
 import type { AgentModel } from "../src/agent/loop";
-import { createApi, type ApiDeps, type Simulator } from "../src/server/api";
+import { createApi, MAX_REQUEST_BODY_BYTES, type ApiDeps, type Simulator } from "../src/server/api";
 import { resettable } from "../src/server/resettable";
 import {
   AttemptResolvedSchema,
@@ -404,7 +404,7 @@ describe("human releases", () => {
     expect((await a.call("POST", `/api/obligations/${id}/escalation/resolve`, { note: "called the supplier, the payment is fine" })).status).toBe(409);
   });
 
-  it("releases an attempt's lock only once Airwallex shows it never executed", async () => {
+  it("releases an attempt's lock only once Airwallex shows it CANCELLED, never while it is only held in an approval state", async () => {
     const a = apiWorld();
     const id = await openIncident(a);
     const other = await openIncident(a);
@@ -413,7 +413,12 @@ describe("human releases", () => {
 
     expect((await a.call("POST", `/api/obligations/${id}/attempts/${attempt.id}/resolve`, note)).status).toBe(409);
     expect((await a.call("POST", `/api/obligations/${other}/attempts/${attempt.id}/resolve`, note)).status).toBe(404);
+    // Airwallex documents APPROVAL_REJECTED as resumable (-> IN_APPROVAL): the transfer can still pay.
     a.api.advance(attempt.transferId!, "APPROVAL_REJECTED");
+    expect((await a.call("POST", `/api/obligations/${id}/attempts/${attempt.id}/resolve`, note)).status).toBe(409);
+    expect(a.ledger.requireAttempt(attempt.id).state).toBe("LIVE");
+
+    a.api.advance(attempt.transferId!, "CANCELLED");
     const released = await a.call("POST", `/api/obligations/${id}/attempts/${attempt.id}/resolve`, note);
 
     expect(released.status).toBe(200);
@@ -483,6 +488,66 @@ describe("Airwallex webhooks", () => {
     expect(again.status).toBe(200);
     expect(again.get("duplicate")).toBe(true);
     expect(a.ledger.events()).toHaveLength(eventsAfterFirst);
+  });
+
+  it("14. refuses on content-length alone, without reading the body", async () => {
+    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
+    let pulled = false;
+    const body = new ReadableStream<Uint8Array>({ pull() { pulled = true; } }, { highWaterMark: 0 });
+    const request = new Request("http://api.test/api/webhooks/airwallex", {
+      method: "POST", body, duplex: "half", headers: { "content-length": String(50 * 1024 * 1024), "x-timestamp": String(Date.now()), "x-signature": "00" },
+    } as RequestInit);
+
+    const response = await a.handle(request);
+
+    expect(response.status).toBe(413);
+    expect(pulled).toBe(false);
+  });
+
+  it("14. refuses a body over the cap even with no content-length to trust", async () => {
+    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
+    const big = "x".repeat(200 * 1024);
+
+    expect((await a.call("POST", "/api/webhooks/airwallex", big, null, sign(big))).status).toBe(413);
+  });
+
+  it("14. the server caps request bodies far below Bun's 128 MB default, and above every legitimate route", async () => {
+    let reached = 0;
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, maxRequestBodySize: MAX_REQUEST_BODY_BYTES, fetch: () => { reached++; return new Response("ok"); } });
+    try {
+      const huge = await fetch(`http://127.0.0.1:${server.port}/api/webhooks/airwallex`, { method: "POST", body: "x".repeat(1024 * 1024) });
+      const roomy = await fetch(`http://127.0.0.1:${server.port}/`, { method: "POST", body: "x".repeat(150 * 1024) });
+
+      expect(huge.status).toBe(413);
+      expect(reached).toBe(1); // only the legitimately sized request got through
+      expect(roomy.status).toBe(200);
+    } finally {
+      await server.stop(true);
+    }
+    expect(MAX_REQUEST_BODY_BYTES).toBeGreaterThan(2 * 20_000 * 4); // a full 20 000-char email plus statement, 4 bytes a character
+  });
+
+  it("15. a failed sync is not swallowed by the dedupe: the event stays retryable and is handled on redelivery", async () => {
+    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
+    const id = await openIncident(a);
+    const transferId = a.ledger.latestAttempt(id)!.transferId!;
+    a.api.advance(transferId, "PAID");
+    const body = JSON.stringify({ id: "evt_retry", name: "payout.transfer.paid", created_at: new Date().toISOString(), data: { object: { id: transferId } } });
+    const working = a.api.getTransfer.bind(a.api);
+    a.api.getTransfer = async () => { throw new AwxNetworkError("connection reset"); };
+
+    const failed = await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body));
+
+    expect(failed.status).toBe(503);
+    expect(a.ledger.webhookEventSeen("evt_retry")).toBe(false);
+    expect(a.ledger.latestAttempt(id)!.state).toBe("LIVE");
+
+    a.api.getTransfer = working;
+    const redelivered = await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body));
+    expect(redelivered.status).toBe(200);
+    expect(redelivered.get("duplicate")).toBe(false);
+    expect(a.ledger.latestAttempt(id)!.state).toBe("PAID");
+    expect((await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body))).get("duplicate")).toBe(true);
   });
 });
 

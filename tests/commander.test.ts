@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Commander } from "../src/commander/commander";
 import { effectiveEvidence, type SupplierEvidence } from "../src/commander/evidence";
+import { DEFAULT_POLICY } from "../src/commander/policy";
 import { ApprovalRejected, AutoReplacementRefused } from "../src/errors";
 import { approve, killedAttempt, SECRET, world, type World } from "./helpers/world";
 
@@ -203,5 +204,110 @@ describe("two-step human approval", () => {
     await expect(promise).rejects.toBeInstanceOf(ApprovalRejected);
     await expect(promise).rejects.toMatchObject({ reason: "stale_evidence" });
     expect(w.api.all).toHaveLength(1);
+  });
+});
+
+describe("12. the evidence hash is bound to the incident and the proposal", () => {
+  it("refuses a hash taken from another incident that looks the same", async () => {
+    const w = world();
+    const other = w.ledger.createObligation({
+      reference: "INV-2002", beneficiaryId: "ben-B", amountMinor: 99_900, currency: "USD", method: "LOCAL", reason: "goods_purchased",
+    });
+    const commander = commanderFor(w);
+    const seenOnA = await commander.assess(w.obligation.id);
+    const seenOnB = await commander.assess(other.id);
+
+    expect(seenOnA.evidenceHash).not.toBe(seenOnB.evidenceHash);
+    await expect(
+      commander.humanApproval({ obligationId: other.id, approver: "cfo@acme.example", note: "supplier confirmed by phone callback", evidenceHash: seenOnA.evidenceHash }),
+    ).rejects.toMatchObject({ name: "ApprovalRejected", reason: "stale_evidence" });
+    expect(w.api.all).toHaveLength(0);
+  });
+
+  it("does not change merely because an hour passes while a transfer processes", async () => {
+    const w = world();
+    await w.gateway.submit(approve(w.obligation));
+    let now = new Date();
+    const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET, now: () => now });
+
+    const early = await commander.assess(w.obligation.id);
+    now = new Date(now.getTime() + 3 * 3600_000);
+    const later = await commander.assess(w.obligation.id);
+
+    expect(later.decision.reasons).not.toEqual(early.decision.reasons); // the prose moved on ...
+    expect(later.evidenceHash).toBe(early.evidenceHash); // ... the decision it is bound to did not
+  });
+
+  it("changes when the decision changes, or the terms it would propose", async () => {
+    const w = world();
+    const { attempt } = await w.gateway.submit(approve(w.obligation));
+    const commander = commanderFor(w);
+    const processing = await commander.assess(w.obligation.id);
+
+    w.api.advance(attempt.transferId!, "FAILED", "91402");
+    w.api.advance(attempt.transferId!, "CANCELLED", "91402");
+    const cancelled = await commander.assess(w.obligation.id);
+    w.ledger.db.query("UPDATE attempts SET beneficiaryId = 'ben-B' WHERE id = ?").run(attempt.id);
+    const retargeted = await commander.assess(w.obligation.id);
+
+    expect(cancelled.evidenceHash).not.toBe(processing.evidenceHash);
+    expect(retargeted.evidenceHash).not.toBe(cancelled.evidenceHash);
+  });
+});
+
+describe("13. a later record's statement credit cannot lift a non-receipt claim", () => {
+  const record = (w: World, e: SupplierEvidence, source: "manual" | "model" = "model") =>
+    w.ledger.append(w.obligation.id, "EVIDENCE_RECORDED", { evidence: e, source, enteredBy: source === "manual" ? "ap@acme.example" : "agent:test", message: null });
+  const current = (w: World) => effectiveEvidence(w.ledger.events(w.obligation.id), w.obligation.amountMinor)?.evidence ?? null;
+  const credit = (w: World) => ({ amountMinor: w.obligation.amountMinor, currency: "USD" });
+  async function paidWorld(): Promise<World> {
+    const w = world();
+    const { attempt } = await w.gateway.submit(approve(w.obligation));
+    w.api.advance(attempt.transferId!, "PAID");
+    await w.gateway.sync();
+    return w;
+  }
+  const commanderHeld = (w: World) =>
+    new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET, policy: { ...DEFAULT_POLICY, paidHoldMs: 0 } });
+
+  it("keeps SEND_PROOF_TO_SUPPLIER when a model record brings a matching credit after a claim", async () => {
+    const w = await paidWorld();
+    record(w, evidence({ claimsNonReceipt: true }));
+    expect((await commanderHeld(w).assess(w.obligation.id, current(w))).decision.recommended).toBe("SEND_PROOF_TO_SUPPLIER");
+
+    record(w, evidence({ claimsNonReceipt: false, statementCredit: credit(w), summary: "spoofed statement" }));
+    const { decision } = await commanderHeld(w).assess(w.obligation.id, current(w));
+
+    expect(decision.recommended).toBe("SEND_PROOF_TO_SUPPLIER");
+    expect(decision.allowed).not.toContain("CLOSE");
+  });
+
+  it("lets a manual record carry the credit that confirms receipt", async () => {
+    const w = await paidWorld();
+    record(w, evidence({ claimsNonReceipt: true }));
+    record(w, evidence({ claimsNonReceipt: true, statementCredit: credit(w) }), "manual");
+
+    const { decision } = await commanderHeld(w).assess(w.obligation.id, current(w));
+
+    expect(decision.recommended).toBe("CLOSE");
+  });
+
+  it("withdraws that trust when a later record claims non-receipt again", async () => {
+    const w = await paidWorld();
+    record(w, evidence({ claimsNonReceipt: false, statementCredit: credit(w) }), "manual");
+    expect((await commanderHeld(w).assess(w.obligation.id, current(w))).decision.recommended).toBe("CLOSE");
+
+    record(w, evidence({ claimsNonReceipt: true }));
+    expect((await commanderHeld(w).assess(w.obligation.id, current(w))).decision.recommended).toBe("SEND_PROOF_TO_SUPPLIER");
+  });
+
+  it("still treats a model-carried credit as a reason for caution when the transfer was cancelled", async () => {
+    const w = world();
+    await killedAttempt(w, "91402");
+    record(w, evidence({ claimsNonReceipt: false, statementCredit: credit(w) }));
+
+    const { decision } = await commanderFor(w).assess(w.obligation.id, current(w));
+
+    expect(decision.recommended).toBe("ESCALATE");
   });
 });

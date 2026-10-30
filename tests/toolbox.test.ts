@@ -98,6 +98,24 @@ describe("toolbox", () => {
   });
 });
 
+describe("5. a triage agent cannot make an escalated obligation pay by assessing it", () => {
+  it("assess_incident runs recover, which looks the request_id up but never sends", async () => {
+    const w = world();
+    const toolbox = toolboxFor(w, { authority: "triage" });
+    w.api.faults.failBeforeCreate = 1;
+    const first = await w.gateway.submit(approve(w.obligation)); // an INTENT left behind by an outage
+    expect(first.outcome).toBe("PENDING_RECOVERY");
+    w.ledger.escalate(w.obligation.id, "supplier says the account changed");
+
+    const outcome = await toolbox.call("assess_incident", { incidentId: w.obligation.id });
+
+    expect(outcome.ok).toBe(true);
+    expect(w.api.all).toHaveLength(0);
+    expect(w.api.createCalls).toBe(1);
+    expect(w.ledger.requireAttempt(first.attempt.id).state).toBe("INTENT");
+  });
+});
+
 
 describe("toolbox boundaries", () => {
   it("leaves no audit event on an incident outside its scope", async () => {

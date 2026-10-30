@@ -126,6 +126,9 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
     evidence?.statementCredit != null &&
     evidence.statementCredit.currency === obligation.currency &&
     evidence.statementCredit.amountMinor === obligation.amountMinor;
+  // A credit can only add caution (see the cancelled-transfer branch) unless an operator entered it: a statement that
+  // arrived by message can be spoofed, so on a PAID transfer it never lifts a supplier's non-receipt claim.
+  const creditConfirmsReceipt = statementShowsCredit && evidence?.creditSource === "manual";
 
   // 2. The state of the latest attempt.
   switch (latest.state) {
@@ -176,14 +179,14 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
 
     case "PAID": {
       refuse("REPLACE", "The money has left your account and may be sitting at the supplier's bank.");
-      if (evidence?.claimsNonReceipt && !statementShowsCredit) {
+      if (evidence?.claimsNonReceipt && !creditConfirmsReceipt) {
         fromState = "SEND_PROOF_TO_SUPPLIER";
         candidates.push("SEND_PROOF_TO_SUPPLIER", "ESCALATE", "WAIT");
         raise("ATTENTION");
         reasons.push("Airwallex reports the payment as made, yet the supplier says nothing arrived. Send proof of payment and ask their bank to trace it. Do not pay again.");
         break;
       }
-      if (statementShowsCredit) reasons.push("The supplier's own statement shows the credit, which confirms receipt.");
+      if (creditConfirmsReceipt) reasons.push("The supplier's own statement, entered by an operator, shows the credit, which confirms receipt.");
       const heldMs = facts.paidObservedAt ? now.getTime() - Date.parse(facts.paidObservedAt) : 0;
       if (facts.paidObservedAt && heldMs >= policy.paidHoldMs) {
         fromState = "CLOSE";

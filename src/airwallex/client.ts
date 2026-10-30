@@ -74,8 +74,10 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
     return this.parse(TransferSchema, await this.request("GET", `/api/v1/transfers/${encodeURIComponent(id)}`));
   }
 
-  async findTransferByRequestId(requestId: string): Promise<Transfer | null> {
-    const body = await this.request("GET", "/api/v1/transfers", { query: { request_id: requestId } });
+  async findTransferByRequestId(requestId: string, fromCreatedAt?: string): Promise<Transfer | null> {
+    const query: Record<string, string> = { request_id: requestId };
+    if (fromCreatedAt !== undefined) query.from_created_at = fromCreatedAt;
+    const body = await this.request("GET", "/api/v1/transfers", { query });
     return this.parse(TransferListSchema, body).items[0] ?? null;
   }
 
