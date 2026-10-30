@@ -13,10 +13,15 @@
     "api": "bun run src/server/main.ts",
     "mcp": "bun run src/agent/mcp-main.ts",
     "agent": "bun run scripts/agent-demo.ts",
-    "redteam": "bun run scripts/redteam.ts"
+    "redteam": "bun run scripts/redteam.ts",
+    "demo": "bun run scripts/dev.ts --offline",
+    "dev": "bun run scripts/dev.ts",
+    "setup": "bun run scripts/setup.ts",
+    "scale": "bun run scripts/scale.ts",
+    "smoke:offline": "bun run scripts/offline-smoke.ts"
   },
   "dependencies": {
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",

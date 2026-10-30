@@ -7,7 +7,7 @@ on:
 
 jobs:
   core:
-    name: core · typecheck, tests, red team
+    name: core · typecheck, tests, red team, offline smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +19,8 @@ jobs:
       - run: bun test
       # Offline and deterministic: needs no keys. Fails the build if any attack gets through.
       - run: bun run redteam
+      # The offline demo end to end in-process: seed, scripted agent run, invariant and hash chain.
+      - run: bun run scripts/offline-smoke.ts
 
   web:
     name: web · build, typecheck

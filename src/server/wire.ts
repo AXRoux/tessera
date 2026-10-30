@@ -97,6 +97,10 @@ export const IncidentListSchema = z.object({ items: z.array(IncidentSummarySchem
 
 export const PendingDraftSchema = DraftRecordedSchema.extend({ seq: z.number().int(), at: z.string() });
 
+/** A supplier message waiting in the incident's inbox. `read` means an EVIDENCE_RECORDED event references it. */
+export const InboxItemSchema = z.object({ id: z.string(), from: z.string(), receivedAt: z.string(), read: z.boolean() });
+export type InboxItem = z.infer<typeof InboxItemSchema>;
+
 export const IncidentViewSchema = z.object({
   obligation: ObligationSchema,
   attempts: z.array(AttemptSchema),
@@ -105,15 +109,61 @@ export const IncidentViewSchema = z.object({
   /** A supplier reply an agent drafted that no person has dealt with yet. */
   draft: PendingDraftSchema.nullable(),
   assessment: z.object({ decision: DecisionSchema, evidenceHash: z.string() }).nullable(),
+  /**
+   * The hash of the assessment the decision on this page came from; send it back with an approval. Null only when the
+   * assessment itself failed (then `assessmentError` says why and nothing can be approved).
+   */
+  evidenceHash: z.string().nullable(),
   assessmentError: z.string().nullable(),
+  inbox: z.array(InboxItemSchema),
   certificate: SignedCertificateSchema.nullable(),
   chain: z.object({ ok: z.boolean(), brokenAt: z.number().int().nullable() }),
   paidHoldMs: z.number(),
 });
 export type IncidentView = z.infer<typeof IncidentViewSchema>;
 
-export const HealthSchema = z.object({ ok: z.boolean(), model: z.boolean(), sandbox: z.boolean(), operator: z.string() });
+export const HealthSchema = z.object({
+  ok: z.boolean(),
+  /** A reader for supplier messages is available (Claude, or the offline keyword reader). */
+  model: z.boolean(),
+  /** Simulator controls are on: the Airwallex sandbox, or the offline fake. */
+  sandbox: z.boolean(),
+  /** Simulated Airwallex in-process; no money and no network. */
+  offline: z.boolean(),
+  /** POST /api/webhooks/airwallex is accepting signed events. */
+  webhooks: z.boolean(),
+  operator: z.string(),
+  /** Who drives agent runs: Claude, the deterministic scripted agent (not Claude), or nobody. */
+  agent: z.enum(["claude", "scripted"]).nullable(),
+});
 export type Health = z.infer<typeof HealthSchema>;
+
+/** Board numbers, derived from ledger events only. */
+export const MetricsSchema = z.object({
+  incidents: z.number().int(),
+  open: z.number().int(),
+  escalated: z.number().int(),
+  certified: z.number().int(),
+  autoReplaced: z.number().int(),
+  /** Money-moving requests refused by code: agent replace refusals, human approve/replace refusals, duplicate locks. */
+  paymentsRefused: z.number().int(),
+  /** Minor units of the refused requests, per currency. */
+  refusedAmountMinor: z.record(z.string(), z.number().int()),
+  /** Every agent tool call that code refused, money-moving or not. */
+  agentRefusals: z.number().int(),
+  /** Median of certificate time minus obligation creation over certified incidents. */
+  medianResolutionMs: z.number().nullable(),
+});
+export type Metrics = z.infer<typeof MetricsSchema>;
+
+export const SeedResultSchema = z.object({
+  seeded: z.array(z.object({ id: z.string(), reference: z.string(), expected: z.string() })),
+});
+export type SeedResult = z.infer<typeof SeedResultSchema>;
+
+export const InboxCreatedSchema = z.object({ id: z.string() });
+export const EscalationResolvedSchema = z.object({ status: ObligationSchema.shape.status });
+export const AttemptResolvedSchema = z.object({ attemptId: z.string(), state: AttemptStateSchema });
 
 /**
  * What the console receives while an agent works. One server-sent event per step, so the page can show the agent's
@@ -129,7 +179,7 @@ export const AgentStreamEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("done"), steps: z.number().int(), calls: z.number().int(), refused: z.number().int(),
-    stoppedBecause: z.enum(["finished", "step_limit", "aborted"]),
+    stoppedBecause: z.enum(["finished", "step_limit", "call_limit", "aborted"]),
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
@@ -139,6 +189,8 @@ export type AgentStreamEvent = z.infer<typeof AgentStreamEventSchema>;
 export const ProblemSchema = z.object({
   error: z.string(),
   message: z.string(),
+  /** Machine-readable refusal reason when there is one, e.g. "stale_evidence" on an approval of facts that moved. */
+  code: z.string().optional(),
   reasons: z.array(z.string()).optional(),
   blockers: z.array(z.string()).optional(),
 });

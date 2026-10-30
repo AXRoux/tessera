@@ -5,9 +5,21 @@ import { AwxHttpError } from "../src/airwallex/types";
 import { Closer } from "../src/closer/closer";
 import { Commander } from "../src/commander/commander";
 import type { ExtractRequest, StructuredModel } from "../src/commander/evidence";
-import { createApi, type Simulator } from "../src/server/api";
-import { HealthSchema, IncidentListSchema, IncidentViewSchema, ProblemSchema } from "../src/server/wire";
-import { FakePayoutApi } from "./helpers/fake-awx";
+import { createHmac } from "node:crypto";
+import type { AgentModel } from "../src/agent/loop";
+import { createApi, type ApiDeps, type Simulator } from "../src/server/api";
+import {
+  AttemptResolvedSchema,
+  EscalationResolvedSchema,
+  HealthSchema,
+  IncidentListSchema,
+  IncidentViewSchema,
+  InboxCreatedSchema,
+  MetricsSchema,
+  ProblemSchema,
+  SeedResultSchema,
+} from "../src/server/wire";
+import { FakePayoutApi } from "../src/airwallex/fake";
 import { SECRET, world, type World } from "./helpers/world";
 
 const TOKEN = "operator-token-for-tests";
@@ -52,24 +64,29 @@ class Reply {
 }
 
 interface ApiWorld extends World {
-  call(method: string, path: string, body?: unknown, token?: string | null): Promise<Reply>;
+  handle(request: Request): Promise<Response>;
+  call(method: string, path: string, body?: unknown, token?: string | null, headers?: Record<string, string>): Promise<Reply>;
 }
 
-function apiWorld(options: { paidHoldMs?: number; model?: StructuredModel | null; simulator?: (api: FakePayoutApi) => Simulator } = {}): ApiWorld {
+function apiWorld(
+  options: { paidHoldMs?: number; model?: StructuredModel | null; simulator?: (api: FakePayoutApi) => Simulator; deps?: Partial<ApiDeps> } = {},
+): ApiWorld {
   const w = world();
   const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET });
-  const closer = new Closer({ ledger: w.ledger, api: w.api, secret: SECRET, paidHoldMs: options.paidHoldMs ?? 0 });
+  const closer = new Closer({ ledger: w.ledger, api: w.api, gateway: w.gateway, secret: SECRET, paidHoldMs: options.paidHoldMs ?? 0 });
   const handle = createApi({
     ledger: w.ledger, gateway: w.gateway, commander, closer,
     model: options.model ?? null, simulator: options.simulator?.(w.api) ?? simulatorFor(w.api),
     token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", paidHoldMs: options.paidHoldMs ?? 0,
+    ...options.deps,
   });
   return {
     ...w,
-    async call(method, path, body, token = TOKEN) {
-      const headers: Record<string, string> = { "content-type": "application/json" };
+    handle,
+    async call(method, path, body, token = TOKEN, extraHeaders: Record<string, string> = {}) {
+      const headers: Record<string, string> = { "content-type": "application/json", ...extraHeaders };
       if (token !== null) headers["x-tessera-token"] = token;
-      const init: RequestInit = { method, headers, body: body === undefined ? undefined : JSON.stringify(body) };
+      const init: RequestInit = { method, headers, body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body) };
       const response = await handle(new Request(`http://api.test${path}`, init));
       return new Reply(response.status, await response.json().catch(() => null));
     },
@@ -103,7 +120,7 @@ describe("access", () => {
     const handle = createApi({
       ledger: a.ledger, gateway: a.gateway,
       commander: new Commander({ ledger: a.ledger, gateway: a.gateway, balances: a.api, secret: SECRET }),
-      closer: new Closer({ ledger: a.ledger, api: a.api, secret: SECRET }),
+      closer: new Closer({ ledger: a.ledger, api: a.api, gateway: a.gateway, secret: SECRET }),
       model: null, simulator: null, token: TOKEN, operator: "ops", beneficiaryId: "ben-A", paidHoldMs: 0,
     });
 
@@ -126,6 +143,18 @@ describe("incidents", () => {
     expect(list.get("items")).toContainEqual(
       expect.objectContaining({ id, status: "PAYING", attemptCount: 1, latest: expect.objectContaining({ state: "LIVE" }) }),
     );
+  });
+
+  it("never gives two invoices the same reference, because the Closer finds stray payments by reference", async () => {
+    const a = apiWorld();
+
+    const ids = await Promise.all(Array.from({ length: 25 }, () => openIncident(a)));
+    const refs = ids.map((id) => a.ledger.requireObligation(id).reference);
+
+    expect(new Set(refs).size).toBe(25);
+    const reused = await a.call("POST", "/api/obligations", { amount: 25, reference: refs[0] });
+    expect(reused.status).toBe(409);
+    expect(a.api.all).toHaveLength(25);
   });
 
   it("tells the operator to wait, and when to look again, while the transfer is inside its window", async () => {
@@ -193,10 +222,15 @@ describe("actions", () => {
     const id = await openIncident(a);
     await a.call("POST", `/api/obligations/${id}/simulate`, { status: "FAILED", failureType: "DUPLICATION_RETURN" });
 
-    const vague = await a.call("POST", `/api/obligations/${id}/approve`, { note: "ok" });
-    expect(vague.status).toBe(409);
+    const evidenceHash = String((await a.call("GET", `/api/obligations/${id}`)).get("assessment.evidenceHash"));
+    const vague = await a.call("POST", `/api/obligations/${id}/approve`, { note: "ok", evidenceHash });
+    expect(vague.status).toBe(400);
 
-    const real = await a.call("POST", `/api/obligations/${id}/approve`, { note: "supplier bank confirmed no credit by callback" });
+    const stale = await a.call("POST", `/api/obligations/${id}/approve`, { note: "supplier bank confirmed no credit by callback", evidenceHash: "0".repeat(64) });
+    expect(stale.status).not.toBe(201);
+    expect(a.ledger.attemptsFor(id)).toHaveLength(1);
+
+    const real = await a.call("POST", `/api/obligations/${id}/approve`, { note: "supplier bank confirmed no credit by callback", evidenceHash });
     expect(real.status).toBe(201);
     const intent = a.ledger.events(id).filter((e) => e.type === "ATTEMPT_INTENT").at(-1)!;
     expect(intent.payload).toMatchObject({ mode: "HUMAN", approver: "ops@acme.example" });
@@ -306,5 +340,209 @@ describe("supplier evidence", () => {
     const id = await openIncident(a);
 
     expect((await a.call("POST", `/api/obligations/${id}/evidence/read`, { email: "hello" })).status).toBe(503);
+  });
+});
+
+describe("approval against what the operator saw", () => {
+  it("refuses an approval of a stale assessment with 409 stale_evidence, on the record, and pays nothing", async () => {
+    const a = apiWorld();
+    const id = await openIncident(a);
+    await a.call("POST", `/api/obligations/${id}/simulate`, { status: "FAILED", failureType: "DUPLICATION_RETURN" });
+    const seen = (await a.call("GET", `/api/obligations/${id}`)).parse(IncidentViewSchema);
+    expect(seen.evidenceHash).toBe(seen.assessment!.evidenceHash);
+
+    // The facts move after the operator looked: a manual statement credit changes the assessment.
+    await a.call("POST", `/api/obligations/${id}/evidence`, {
+      claimsNonReceipt: false, requestsDetailChange: false, referencesObligation: true,
+      containsEmbeddedInstructions: false, statementCreditMinor: 2_500, summary: "statement shows the credit",
+    });
+    const stale = await a.call("POST", `/api/obligations/${id}/approve`, { note: "supplier confirmed nothing arrived by phone", evidenceHash: seen.evidenceHash });
+
+    expect(stale.status).toBe(409);
+    expect(stale.parse(ProblemSchema).code).toBe("stale_evidence");
+    expect(a.ledger.attemptsFor(id)).toHaveLength(1);
+    expect(a.ledger.events(id).at(-1)).toMatchObject({ type: "PAYMENT_REFUSED", payload: { by: "ops@acme.example", route: "approve", error: "ApprovalRejected" } });
+  });
+});
+
+describe("human releases", () => {
+  it("resolves an escalation only with a written note, then re-derives the status", async () => {
+    const a = apiWorld();
+    const id = await openIncident(a);
+    a.ledger.escalate(id, "agent:test: unsure");
+
+    expect((await a.call("POST", `/api/obligations/${id}/escalation/resolve`, { note: "ok" })).status).toBe(400);
+    const resolved = await a.call("POST", `/api/obligations/${id}/escalation/resolve`, { note: "called the supplier, the payment is fine" });
+
+    expect(resolved.status).toBe(200);
+    expect(resolved.parse(EscalationResolvedSchema).status).toBe("PAYING");
+    expect(a.ledger.events(id).some((e) => e.type === "ESCALATION_RESOLVED")).toBe(true);
+    expect((await a.call("POST", `/api/obligations/${id}/escalation/resolve`, { note: "called the supplier, the payment is fine" })).status).toBe(409);
+  });
+
+  it("releases an attempt's lock only once Airwallex shows it never executed", async () => {
+    const a = apiWorld();
+    const id = await openIncident(a);
+    const other = await openIncident(a);
+    const attempt = a.ledger.latestAttempt(id)!;
+    const note = { note: "Airwallex support confirmed the rejection" };
+
+    expect((await a.call("POST", `/api/obligations/${id}/attempts/${attempt.id}/resolve`, note)).status).toBe(409);
+    expect((await a.call("POST", `/api/obligations/${other}/attempts/${attempt.id}/resolve`, note)).status).toBe(404);
+    a.api.advance(attempt.transferId!, "APPROVAL_REJECTED");
+    const released = await a.call("POST", `/api/obligations/${id}/attempts/${attempt.id}/resolve`, note);
+
+    expect(released.status).toBe(200);
+    expect(released.parse(AttemptResolvedSchema)).toEqual({ attemptId: attempt.id, state: "DEAD" });
+  });
+});
+
+describe("supplier inbox", () => {
+  it("files pasted text and .eml uploads, and marks a message read once the reader has it by id", async () => {
+    const model = new ScriptedModel({
+      claimsNonReceipt: true, requestsDetailChange: false, referencesObligation: false, statementCredit: null,
+      containsEmbeddedInstructions: false, summary: "says it has not arrived",
+    });
+    const a = apiWorld({ model });
+    const id = await openIncident(a);
+
+    const pasted = await a.call("POST", `/api/obligations/${id}/inbox`, { from: "ar@northwind.example", email: "It has not arrived yet." });
+    const eml = await a.call("POST", `/api/obligations/${id}/inbox`, { email: "From: Priya <ar@northwind.example>\nSubject: Where is it\n\nStill nothing." });
+    const anonymous = await a.call("POST", `/api/obligations/${id}/inbox`, { email: "no sender here" });
+    const html = await a.call("POST", `/api/obligations/${id}/inbox`, { email: "From: a@b.example\nContent-Type: text/html\n\n<p>x</p>" });
+
+    expect(pasted.status).toBe(201);
+    expect(anonymous.status).toBe(400);
+    expect(html.status).toBe(400);
+    const messageId = pasted.parse(InboxCreatedSchema).id;
+    const uploaded = a.ledger.inboxMessages(id).find((m) => m.id === eml.parse(InboxCreatedSchema).id)!;
+    expect(uploaded).toMatchObject({ from: "ar@northwind.example", email: "Subject: Where is it\n\nStill nothing." });
+
+    expect((await a.call("POST", `/api/obligations/${id}/evidence/read`, { messageId })).status).toBe(201);
+    const view = (await a.call("GET", `/api/obligations/${id}`)).parse(IncidentViewSchema);
+
+    expect(Object.fromEntries(view.inbox.map((m) => [m.id, m.read]))).toEqual({ [messageId]: true, [uploaded.id]: false });
+    expect(view.evidence?.evidence.claimsNonReceipt).toBe(true);
+    expect((await a.call("POST", `/api/obligations/${id}/evidence/read`, { messageId: "nope" })).status).toBe(404);
+  });
+});
+
+describe("Airwallex webhooks", () => {
+  const SECRET_WH = "whsec_test_secret";
+  const sign = (body: string, timestamp = String(Date.now())) => ({
+    "x-timestamp": timestamp,
+    "x-signature": createHmac("sha256", SECRET_WH).update(timestamp + body).digest("hex"),
+  });
+
+  it("is off (404) without a secret, and needs a valid signature rather than the operator token", async () => {
+    expect((await apiWorld().call("POST", "/api/webhooks/airwallex", "{}", null)).status).toBe(404);
+    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
+    const body = JSON.stringify({ id: "evt_1", name: "payout.transfer.paid", created_at: new Date().toISOString(), data: { object: { id: "t" } } });
+
+    expect((await a.call("POST", "/api/webhooks/airwallex", body, null, { "x-timestamp": String(Date.now()), "x-signature": "00" })).status).toBe(401);
+  });
+
+  it("re-reads the transfer on the first delivery and ignores a redelivery", async () => {
+    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
+    const id = await openIncident(a);
+    const transferId = a.ledger.latestAttempt(id)!.transferId!;
+    a.api.advance(transferId, "PAID");
+    const body = JSON.stringify({ id: "evt_2", name: "payout.transfer.paid", created_at: new Date().toISOString(), data: { object: { id: transferId } } });
+
+    const first = await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body));
+    expect(first.status).toBe(200);
+    expect(first.get("duplicate")).toBe(false);
+    expect(a.ledger.latestAttempt(id)!.state).toBe("PAID");
+    const eventsAfterFirst = a.ledger.events().length;
+
+    const again = await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body));
+    expect(again.status).toBe(200);
+    expect(again.get("duplicate")).toBe(true);
+    expect(a.ledger.events()).toHaveLength(eventsAfterFirst);
+  });
+});
+
+describe("demo seeding", () => {
+  it("is forbidden where there is no simulator, so never against production", async () => {
+    expect((await apiWorld({ deps: { simulator: null } }).call("POST", "/api/demo/seed")).status).toBe(403);
+  });
+
+  it("seeds the six ACME incidents where the simulator is on", async () => {
+    const a = apiWorld({ paidHoldMs: 3_600_000 });
+
+    const seeded = (await a.call("POST", "/api/demo/seed")).parse(SeedResultSchema).seeded;
+
+    expect(seeded.map((s) => s.reference.slice(0, 9))).toEqual(["ACME-1041", "ACME-1042", "ACME-1043", "ACME-1044", "ACME-1045", "ACME-1046"]);
+    expect(a.ledger.inboxMessages()).toHaveLength(3);
+    expect(a.ledger.latestAttempt(seeded[1]!.id)!.state).toBe("DEAD");
+  });
+});
+
+describe("metrics", () => {
+  it("counts refusals, money held back, replacements, escalations and time to certify from the ledger", async () => {
+    const a = apiWorld();
+    const duplicate = await openIncident(a);
+    await a.call("POST", `/api/obligations/${duplicate}/simulate`, { status: "FAILED", failureType: "DUPLICATION_RETURN" });
+    expect((await a.call("POST", `/api/obligations/${duplicate}/replace`)).status).toBe(409);
+    a.ledger.escalate(duplicate, "possible duplicate");
+    const transient = await openIncident(a);
+    await a.call("POST", `/api/obligations/${transient}/simulate`, { status: "FAILED", failureType: "CHANNEL_TIMEOUT" });
+    expect((await a.call("POST", `/api/obligations/${transient}/replace`)).status).toBe(201);
+    expect((await a.call("POST", `/api/obligations/${transient}/replace`)).status).toBe(409);
+    const paid = await openIncident(a);
+    await a.call("POST", `/api/obligations/${paid}/simulate`, { status: "PAID" });
+    await a.call("POST", `/api/obligations/${paid}/close`);
+
+    const metrics = (await a.call("GET", "/api/metrics")).parse(MetricsSchema);
+
+    expect(metrics).toMatchObject({
+      incidents: 4, open: 3, escalated: 1, certified: 1, autoReplaced: 1, paymentsRefused: 2, refusedAmountMinor: { USD: 5_000 }, agentRefusals: 0,
+    });
+    expect(metrics.medianResolutionMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("reports health with the offline and agent flags the console shows", async () => {
+    const scripted: AgentModel = { converse: async () => ({ content: [{ type: "text", text: "done" }], stopReason: "end_turn" }) };
+    const health = (await apiWorld({ deps: { offline: true, agent: { model: scripted, actor: "agent:scripted", kind: "scripted" } } }).call("GET", "/api/health")).parse(HealthSchema);
+
+    expect(health).toMatchObject({ offline: true, agent: "scripted", webhooks: false, sandbox: true });
+  });
+});
+
+describe("one agent run at a time", () => {
+  function gated() {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const model: AgentModel = {
+      async converse() {
+        await gate;
+        return { content: [{ type: "text", text: "done" }], stopReason: "end_turn" };
+      },
+    };
+    return { model, release };
+  }
+
+  it("lets exactly one of two simultaneous runs start", async () => {
+    const { model, release } = gated();
+    const a = apiWorld({ deps: { agent: { model, actor: "agent:test", kind: "scripted" } } });
+
+    const post = () =>
+      a.handle(new Request("http://api.test/api/agent/run", { method: "POST", headers: { "x-tessera-token": TOKEN }, body: "{}" }));
+
+    const [first, second] = await Promise.all([post(), post()]);
+
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+    release();
+    await Promise.all([first.text(), second.text()]);
+  });
+
+  it("frees the run when a request is refused before streaming", async () => {
+    const { model, release } = gated();
+    const a = apiWorld({ deps: { agent: { model, actor: "agent:test", kind: "scripted" } } });
+
+    expect((await a.call("POST", "/api/agent/run", { incidentId: "missing" })).status).toBe(404);
+    expect((await a.call("POST", "/api/agent/run", { mode: "nonsense" })).status).toBe(400);
+    release();
+    expect((await a.call("POST", "/api/agent/run", {})).status).toBe(200);
   });
 });
