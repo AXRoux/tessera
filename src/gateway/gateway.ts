@@ -5,7 +5,7 @@ import {
   type PayoutApi,
   type Transfer,
 } from "../airwallex/types";
-import { verifyApproval, type Approval, type ApprovalPayload } from "../approval/approval";
+import { isWrittenNote, requireHumanNote, verifyApproval, type Approval, type ApprovalPayload } from "../approval/approval";
 import { lookupFailure } from "../domain/playbook";
 import {
   ApprovalRejected,
@@ -13,8 +13,10 @@ import {
   LedgerMismatchError,
   ObligationNotPayable,
   ReplacementDenied,
+  StateConflict,
 } from "../errors";
-import type { Attempt, AttemptState, Ledger } from "../ledger/ledger";
+import { classifyStatus } from "../ledger/events";
+import type { Attempt, AttemptPatch, AttemptState, Ledger } from "../ledger/ledger";
 import { fromMinor, toMinor } from "../money";
 
 export type SubmitOutcome =
@@ -37,24 +39,33 @@ export interface GatewayConfig {
   newRequestId?: () => string;
   /** Airwallex dedupes request_ids for 7 days; stop re-sending long before that. */
   maxIntentAgeMs?: number;
+  /** Waits between rate-limited resends of a create. Tests pass a recorder. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+export interface ResolveAttemptInput {
+  attemptId: string;
+  /** The named person releasing the lock. */
+  by: string;
+  /** Why, in writing (the same rule as a human approval note). */
+  note: string;
 }
 
 /** Airwallex's duplicate_request_id error names the transfer that already used the request_id. */
 const DuplicateBodySchema = z.looseObject({ details: z.looseObject({ id: z.string() }) });
+const AttemptRefSchema = z.looseObject({ attemptId: z.string() });
 
 const KNOWN_STATUSES = [
   "SCHEDULED", "IN_APPROVAL", "APPROVAL_RECALLED", "APPROVAL_REJECTED", "APPROVAL_BLOCKED",
   "OVERDUE", "PROCESSING", "SENT", "PAID", "FAILED", "CANCELLED",
 ];
 
-/**
- * Unknown statuses keep the lock. FAILED also keeps it: the money is only back once Airwallex reaches CANCELLED.
- */
-function classify(status: string): Extract<AttemptState, "LIVE" | "PAID" | "DEAD"> {
-  if (status === "PAID") return "PAID";
-  if (status === "CANCELLED") return "DEAD";
-  return "LIVE";
-}
+/** Statuses of a transfer that never left the account: a person may release its lock once Airwallex confirms it. */
+export const NEVER_EXECUTED_STATUSES: readonly string[] = ["APPROVAL_REJECTED", "APPROVAL_BLOCKED", "APPROVAL_RECALLED"];
+
+/** Resends of a rate-limited create (same request_id) before treating the outcome as ambiguous. */
+const RATE_LIMIT_RETRIES = 3;
+const MAX_RATE_LIMIT_WAIT_MS = 30_000;
 
 /** Any 4xx other than 408/429 means Airwallex did not process the request. */
 const isDefinitiveRejection = (error: AwxHttpError): boolean =>
@@ -69,7 +80,7 @@ function changeSatisfied(change: "BENEFICIARY" | "REASON" | "METHOD" | undefined
 
 function checkReplacement(prev: Attempt, p: ApprovalPayload): void {
   const entry = lookupFailure(prev.failureCode);
-  const humanVouches = p.mode === "HUMAN" && (p.note?.trim().length ?? 0) >= 10;
+  const humanVouches = p.mode === "HUMAN" && isWrittenNote(p.note);
   if (entry.replace === "AUTO") return;
   if (entry.replace === "AFTER_CHANGE" && (humanVouches || changeSatisfied(entry.change, prev, p))) return;
   if (entry.replace === "FORBIDDEN" && humanVouches) return;
@@ -89,6 +100,7 @@ export class PayoutGateway {
   private readonly now: () => Date;
   private readonly newRequestId: () => string;
   private readonly maxIntentAgeMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(config: GatewayConfig) {
     if (config.approvalSecret.length < 32) throw new Error("approval secret must be at least 32 characters");
@@ -98,6 +110,7 @@ export class PayoutGateway {
     this.now = config.now ?? (() => new Date());
     this.newRequestId = config.newRequestId ?? (() => crypto.randomUUID());
     this.maxIntentAgeMs = config.maxIntentAgeMs ?? 24 * 3600_000;
+    this.sleep = config.sleep ?? ((ms) => Bun.sleep(ms));
   }
 
   /**
@@ -109,10 +122,13 @@ export class PayoutGateway {
     return this.execute(this.begin(payload));
   }
 
-  /** Resolves attempts left in INTENT by a crash or outage. Safe to run repeatedly. */
-  async recover(): Promise<SubmitResult[]> {
+  /**
+   * Resolves attempts left in INTENT by a crash or outage, for one obligation or all of them. Safe to run repeatedly:
+   * an intent too old to re-send is looked up only, and escalated to a person once (not on every run).
+   */
+  async recover(obligationId?: string): Promise<SubmitResult[]> {
     const results: SubmitResult[] = [];
-    for (const attempt of this.ledger.intentAttempts()) {
+    for (const attempt of this.ledger.intentAttempts(obligationId)) {
       const age = this.now().getTime() - Date.parse(attempt.createdAt);
       let found: Transfer | null = null;
       try {
@@ -125,9 +141,9 @@ export class PayoutGateway {
       if (found) {
         results.push({ outcome: "ADOPTED_AFTER_AMBIGUITY", attempt: this.adopt(attempt, this.checked(attempt, found), "recover_lookup") });
       } else if (age > this.maxIntentAgeMs) {
-        // Cannot prove the transfer does not exist, so the lock stays and a person decides.
-        this.ledger.escalate(attempt.obligationId, `attempt ${attempt.id} unresolved for ${Math.round(age / 3600_000)}h`);
-        results.push({ outcome: "PENDING_RECOVERY", attempt });
+        // Cannot prove the transfer does not exist, so the lock stays and a person decides (resolveAttempt).
+        this.escalateStaleIntent(attempt, age);
+        results.push({ outcome: "PENDING_RECOVERY", attempt: this.ledger.requireAttempt(attempt.id) });
       } else {
         results.push(await this.execute(attempt));
       }
@@ -145,10 +161,80 @@ export class PayoutGateway {
     return updated;
   }
 
+  /**
+   * A webhook is only a hint: the transfer is re-read from Airwallex and adopted like any sync. A transfer the
+   * ledger never created (by transfer id or request_id) returns null and changes nothing.
+   */
+  async syncTransfer(transferId: string): Promise<Attempt | null> {
+    const known = this.ledger.attemptByTransferId(transferId);
+    let transfer: Transfer;
+    try {
+      transfer = await this.api.getTransfer(transferId);
+    } catch (error) {
+      if (!known && error instanceof AwxHttpError && error.status === 404) return null;
+      throw error;
+    }
+    const attempt = known ?? (transfer.request_id ? this.ledger.attemptByRequestId(transfer.request_id) : null);
+    if (!attempt || attempt.state === "ABANDONED") return null;
+    return this.adopt(attempt, this.checked(attempt, transfer), "webhook");
+  }
+
+  /**
+   * Human-only release of a lock, after re-verifying at Airwallex. An INTENT Airwallex has no transfer for becomes
+   * ABANDONED; a CANCELLED transfer, or one that was never executed (approval rejected, blocked or recalled), becomes
+   * DEAD. Anything else is a live transfer whose lock cannot be released, and this throws.
+   */
+  async resolveAttempt(input: ResolveAttemptInput): Promise<Attempt> {
+    requireHumanNote(input.by, input.note);
+    const attempt = this.ledger.requireAttempt(input.attemptId);
+    this.requireVerifiedLedger(attempt.obligationId);
+    let to: AttemptState;
+    if (attempt.state === "INTENT") {
+      const found = await this.api.findTransferByRequestId(attempt.requestId);
+      if (found) {
+        const adopted = this.adopt(attempt, this.checked(attempt, found), "resolve_lookup");
+        throw new StateConflict(`Airwallex holds transfer ${found.id} (${found.status}) for this request_id; it is now attempt state ${adopted.state}, not released`);
+      }
+      to = "ABANDONED";
+    } else if (attempt.state === "LIVE" || attempt.state === "PAID") {
+      const transfer = this.checked(attempt, await this.api.getTransfer(attempt.transferId!));
+      this.adopt(attempt, transfer, "resolve_lookup");
+      if (transfer.status !== "CANCELLED" && !NEVER_EXECUTED_STATUSES.includes(transfer.status)) {
+        throw new StateConflict(`transfer ${transfer.id} is ${transfer.status} at Airwallex; a live transfer's lock cannot be released`);
+      }
+      to = "DEAD";
+    } else {
+      throw new StateConflict(`attempt ${attempt.id} is already ${attempt.state}; there is no lock to release`);
+    }
+
+    return this.ledger.tx(() => {
+      this.requireVerifiedLedger(attempt.obligationId);
+      const current = this.ledger.requireAttempt(attempt.id);
+      const from = attempt.state;
+      if (current.state !== from && current.state !== to) {
+        throw new StateConflict(`attempt ${attempt.id} moved to ${current.state} while it was being verified; check it again`);
+      }
+      const updated = this.ledger.updateAttempt(current.id, { state: to });
+      this.ledger.append(current.obligationId, "ATTEMPT_RESOLVED", { attemptId: current.id, by: input.by, note: input.note, from, to });
+      this.ledger.refreshObligationStatus(current.obligationId);
+      return updated;
+    });
+  }
+
   // ---- phase 1: durable intent ------------------------------------------------
+
+  /**
+   * Nothing moves money or releases a lock on a ledger that does not verify: an attempt row edited to DEAD would
+   * otherwise free the lock for a second payment.
+   */
+  private requireVerifiedLedger(obligationId: string): void {
+    const chain = this.ledger.verifyChain();
+    if (!chain.ok) throw new ObligationNotPayable(obligationId, `ledger does not verify (${chain.reason}); a person must investigate`);
+  }
 
   private begin(p: ApprovalPayload): Attempt {
     return this.ledger.tx(() => {
+      this.requireVerifiedLedger(p.obligationId);
       const obligation = this.ledger.getObligation(p.obligationId);
       if (!obligation) throw new ObligationNotPayable(p.obligationId, "unknown obligation");
       if (obligation.status === "CLOSED") throw new ObligationNotPayable(obligation.id, "obligation is closed");
@@ -160,25 +246,29 @@ export class PayoutGateway {
         throw new ApprovalRejected("terms_mismatch", "approval amount/currency differs from the obligation");
       }
 
-      const prev = this.ledger.latestAttempt(obligation.id);
-      if (prev && (prev.state === "INTENT" || prev.state === "LIVE" || prev.state === "PAID")) {
+      const attempts = this.ledger.attemptsFor(obligation.id);
+      const latest = attempts.at(-1) ?? null;
+      if (latest && (latest.state === "INTENT" || latest.state === "LIVE" || latest.state === "PAID")) {
         throw new DuplicateLockError(obligation.id);
       }
-      if ((prev?.id ?? null) !== p.replacesAttemptId) {
-        throw new ApprovalRejected("stale", `approval replaces ${p.replacesAttemptId}, latest attempt is ${prev?.id ?? "none"}`);
+      if ((latest?.id ?? null) !== p.replacesAttemptId) {
+        throw new ApprovalRejected("stale", `approval replaces ${p.replacesAttemptId}, latest attempt is ${latest?.id ?? "none"}`);
       }
 
-      if (!prev) {
+      // An ABANDONED attempt never reached Airwallex, so it neither counts as a first payment nor resets the playbook:
+      // the rules are those of the latest attempt that really existed.
+      const settled = attempts.findLast((a) => a.state !== "ABANDONED") ?? null;
+      if (!settled) {
         if (p.beneficiaryId !== obligation.beneficiaryId || p.method !== obligation.method || p.reason !== obligation.reason) {
           throw new ApprovalRejected("terms_mismatch", "first attempt must use the obligation's own terms");
         }
-      } else if (prev.state === "DEAD") {
-        checkReplacement(prev, p);
+      } else if (settled.state === "DEAD") {
+        checkReplacement(settled, p);
       }
 
       const attempt = this.ledger.insertAttempt({
         obligationId: obligation.id,
-        seq: (prev?.seq ?? 0) + 1,
+        seq: (latest?.seq ?? 0) + 1,
         requestId: this.newRequestId(),
         beneficiaryId: p.beneficiaryId,
         amountMinor: p.amountMinor,
@@ -193,8 +283,8 @@ export class PayoutGateway {
         attemptId: attempt.id,
         seq: attempt.seq,
         requestId: attempt.requestId,
-        replaces: prev?.id ?? null,
-        replacesFailureCode: prev?.failureCode ?? null,
+        replaces: latest?.id ?? null,
+        replacesFailureCode: settled?.failureCode ?? null,
         mode: p.mode,
         approver: p.approver,
         note: p.note ?? null,
@@ -210,6 +300,7 @@ export class PayoutGateway {
 
   private async execute(attempt: Attempt): Promise<SubmitResult> {
     const obligation = this.ledger.requireObligation(attempt.obligationId);
+    // Same-currency payouts only: the wallet pays in the currency it owes, and the Closer refuses anything else.
     const request: CreateTransferRequest = {
       request_id: attempt.requestId,
       beneficiary_id: attempt.beneficiaryId,
@@ -222,7 +313,7 @@ export class PayoutGateway {
     };
 
     try {
-      const transfer = await this.api.createTransfer(request);
+      const transfer = await this.create(request);
       return { outcome: "CREATED", attempt: this.adopt(attempt, this.checked(attempt, transfer), "create") };
     } catch (error) {
       if (error instanceof LedgerMismatchError) throw error;
@@ -235,6 +326,18 @@ export class PayoutGateway {
         }
       }
       return this.resolveAmbiguity(attempt, error);
+    }
+  }
+
+  /** A 429 was not processed: resend the same request_id after the wait Airwallex asked for, a few times at most. */
+  private async create(request: CreateTransferRequest): Promise<Transfer> {
+    for (let retry = 0; ; retry++) {
+      try {
+        return await this.api.createTransfer(request);
+      } catch (error) {
+        if (!(error instanceof AwxHttpError) || error.status !== 429 || retry >= RATE_LIMIT_RETRIES) throw error;
+        await this.sleep(Math.min(error.retryAfterMs ?? 1_000 * 2 ** retry, MAX_RATE_LIMIT_WAIT_MS));
+      }
     }
   }
 
@@ -266,6 +369,22 @@ export class PayoutGateway {
     return { outcome: "PENDING_RECOVERY", attempt: this.ledger.requireAttempt(attempt.id) };
   }
 
+  /** Escalates an intent too old to re-send, once per attempt: later runs see the INTENT_STALE event and stay quiet. */
+  private escalateStaleIntent(attempt: Attempt, ageMs: number): void {
+    this.ledger.tx(() => {
+      const already = this.ledger
+        .events(attempt.obligationId)
+        .some((e) => e.type === "INTENT_STALE" && AttemptRefSchema.safeParse(e.payload).data?.attemptId === attempt.id);
+      if (already) return;
+      const hours = Math.round(ageMs / 3600_000);
+      this.ledger.append(attempt.obligationId, "INTENT_STALE", { attemptId: attempt.id, requestId: attempt.requestId, ageHours: hours });
+      this.ledger.escalate(
+        attempt.obligationId,
+        `attempt ${attempt.id} unresolved for ${hours}h and Airwallex has no transfer for its request_id; a person must release it`,
+      );
+    });
+  }
+
   // ---- state transitions -------------------------------------------------------
 
   /** A transfer sharing our request_id but not our terms is never adopted: the lock holds and a person looks. */
@@ -290,27 +409,37 @@ export class PayoutGateway {
     return this.ledger.tx(() => {
       const current = this.ledger.requireAttempt(attempt.id);
       if (current.state === "DEAD") {
-        if (transfer.status !== "CANCELLED") {
+        if (transfer.status !== "CANCELLED" && transfer.status !== current.awxStatus) {
           this.ledger.append(current.obligationId, "STATUS_AFTER_DEAD", { attemptId: current.id, transferId: transfer.id, status: transfer.status });
         }
         return current;
       }
+      // Overlapping syncs: a snapshot older than the one already applied must not roll the status back.
+      const stale = transfer.updated_at !== undefined && current.awxUpdatedAt !== null &&
+        Date.parse(transfer.updated_at) < Date.parse(current.awxUpdatedAt);
+      if (stale) return current;
 
-      const next = classify(transfer.status);
+      const next = classifyStatus(transfer.status);
+      const changed = current.awxStatus !== transfer.status;
       const feeCurrency = transfer.fee_currency ?? transfer.transfer_currency;
       const payerCurrency = transfer.source_currency ?? transfer.transfer_currency;
-      const updated = this.ledger.updateAttempt(current.id, {
+      const patch: AttemptPatch = {
         state: next,
         transferId: transfer.id,
         awxStatus: transfer.status,
+        awxUpdatedAt: transfer.updated_at,
         failureCode: transfer.failure?.code ?? current.failureCode ?? undefined,
         failureMessage: transfer.failure?.message ?? current.failureMessage ?? undefined,
         feeMinor: toMinor(transfer.fee_amount, feeCurrency),
         payerPaysMinor: transfer.amount_payer_pays === undefined ? undefined : toMinor(transfer.amount_payer_pays, payerCurrency),
         lastError: null,
-      });
+      };
+      // A poll that saw nothing new writes nothing, so the row (and the Closer's fingerprint of it) stays put.
+      const keys = Object.keys(patch) as Array<keyof AttemptPatch>;
+      if (!keys.some((key) => patch[key] !== undefined && patch[key] !== current[key])) return current;
+      const updated = this.ledger.updateAttempt(current.id, patch);
 
-      if (current.awxStatus !== transfer.status) {
+      if (changed) {
         this.ledger.append(current.obligationId, "TRANSFER_STATUS", {
           attemptId: current.id,
           transferId: transfer.id,
@@ -319,9 +448,9 @@ export class PayoutGateway {
           via,
           failureCode: transfer.failure?.code ?? null,
         });
-      }
-      if (!KNOWN_STATUSES.includes(transfer.status)) {
-        this.ledger.append(current.obligationId, "UNKNOWN_STATUS", { attemptId: current.id, status: transfer.status });
+        if (!KNOWN_STATUSES.includes(transfer.status)) {
+          this.ledger.append(current.obligationId, "UNKNOWN_STATUS", { attemptId: current.id, status: transfer.status });
+        }
       }
       if (current.state === "PAID" && next !== "PAID") {
         this.ledger.append(current.obligationId, "LATE_FAILURE", {
@@ -330,6 +459,13 @@ export class PayoutGateway {
           status: transfer.status,
           failureCode: transfer.failure?.code ?? null,
         });
+        // A certificate that says "paid" is no longer true: withdraw it and hand the incident to a person.
+        if (this.ledger.getCertificateJson(current.obligationId)) {
+          this.ledger.revokeCertificate(
+            current.obligationId,
+            `certified payment failed late: transfer ${transfer.id} moved from PAID to ${transfer.status}`,
+          );
+        }
       }
       this.ledger.refreshObligationStatus(current.obligationId);
       return updated;

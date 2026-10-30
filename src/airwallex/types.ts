@@ -25,7 +25,8 @@ export const TransferSchema = z.looseObject({
 });
 export type Transfer = z.infer<typeof TransferSchema>;
 
-export const TransferListSchema = z.looseObject({ items: z.array(TransferSchema) });
+/** One page of transfers. `page_after` is the cursor for the next page; absent or null on the last one. */
+export const TransferListSchema = z.looseObject({ items: z.array(TransferSchema), page_after: z.string().nullish() });
 
 export interface CreateTransferRequest {
   request_id: string;
@@ -40,7 +41,14 @@ export interface CreateTransferRequest {
 
 /** A definite HTTP answer from Airwallex. 4xx (except 408/429) means the request was not processed. */
 export class AwxHttpError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string, readonly body: unknown) {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly body: unknown,
+    /** From a 429's Retry-After header: how long Airwallex asked us to wait. */
+    readonly retryAfterMs?: number,
+  ) {
     super(`${status} ${code}: ${message}`);
     this.name = "AwxHttpError";
   }
@@ -90,4 +98,49 @@ export const BalanceListSchema = z.array(z.looseObject({ currency: z.string(), a
 /** Spendable wallet balance in major units. The Commander checks it before proposing a replacement. */
 export interface BalanceApi {
   getAvailableBalance(currency: string): Promise<number>;
+}
+
+export interface Beneficiary {
+  id: string;
+  nickname?: string;
+}
+
+/** A US company account paid by LOCAL (ACH) transfer in USD. */
+export interface NewUsBeneficiary {
+  nickname: string;
+  companyName: string;
+  accountNumber: string;
+  /** ABA routing number. */
+  routingNumber: string;
+}
+
+/** The sandbox supplier the demos pay; account and ABA routing number are from Airwallex's create-beneficiary example. */
+export const SPIKE_SUPPLIER: NewUsBeneficiary = {
+  nickname: "spike-us-supplier",
+  companyName: "Spike Supplies Inc",
+  accountNumber: "50001121",
+  routingNumber: "021000021",
+};
+
+/** A German company account paid by SWIFT in EUR. */
+export interface NewEuBeneficiary {
+  nickname: string;
+  companyName: string;
+  iban: string;
+  swiftCode: string;
+}
+
+/** The EUR sandbox supplier. A synthetic IBAN with a valid checksum (the standard DE example) and a real-format BIC. */
+export const SPIKE_EU_SUPPLIER: NewEuBeneficiary = {
+  nickname: "spike-eu-supplier",
+  companyName: "Spike Lieferungen GmbH",
+  iban: "DE89370400440532013000",
+  swiftCode: "COBADEFFXXX",
+};
+
+/** The two shapes `bun run setup` creates: US/USD/LOCAL and DE/EUR/SWIFT. */
+export interface BeneficiaryApi {
+  listBeneficiaries(): Promise<Beneficiary[]>;
+  createBeneficiary(input: NewUsBeneficiary): Promise<Beneficiary>;
+  createEuBeneficiary(input: NewEuBeneficiary): Promise<Beneficiary>;
 }

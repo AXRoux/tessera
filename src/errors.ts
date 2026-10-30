@@ -11,6 +11,7 @@ export type ApprovalRejectReason =
   | "expired"
   | "replayed"
   | "stale"
+  | "stale_evidence"
   | "terms_mismatch";
 
 export class ApprovalRejected extends Error {
@@ -63,5 +64,23 @@ export class DraftRejected extends Error {
   constructor(message: string) {
     super(message);
     this.name = "DraftRejected";
+  }
+}
+
+/** The requested change does not apply to the record's current state (e.g. resolving an escalation that is not open). */
+export class StateConflict extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StateConflict";
+  }
+}
+
+export type WebhookRejectReason = "missing_header" | "bad_signature" | "stale" | "malformed";
+
+/** An inbound Airwallex webhook failed verification. Nothing in it is acted on. */
+export class WebhookRejected extends Error {
+  constructor(readonly reason: WebhookRejectReason, message: string) {
+    super(`webhook rejected (${reason}): ${message}`);
+    this.name = "WebhookRejected";
   }
 }

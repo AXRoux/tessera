@@ -2,7 +2,7 @@
  * Real-sandbox walkthrough of one incident:
  * pay -> SENT -> PAID (lock holds) -> late bank return -> replacement denied by policy -> human-approved replacement
  * -> Closer refuses inside the hold window, then reconciles against Airwallex's wallet lines and certifies.
- * Requires a beneficiary nicknamed "spike-us-supplier" (US/USD/LOCAL) in the sandbox, or SMOKE_BENEFICIARY_ID.
+ * Requires a beneficiary nicknamed "spike-us-supplier" (US/USD/LOCAL) in the sandbox (`bun run setup`), or TESSERA_BENEFICIARY_ID.
  */
 import { AirwallexClient } from "../src/airwallex/client";
 import { issueApproval, newNonce, type Approval, type ApprovalPayload } from "../src/approval/approval";
@@ -11,6 +11,7 @@ import { Closer } from "../src/closer/closer";
 import { DuplicateLockError, NotClosable, ReplacementDenied } from "../src/errors";
 import { PayoutGateway } from "../src/gateway/gateway";
 import { Ledger, type Obligation } from "../src/ledger/ledger";
+import { resolveBeneficiary } from "../src/server/runtime";
 
 const secret = process.env.TESSERA_APPROVAL_SECRET;
 if (!secret) throw new Error("TESSERA_APPROVAL_SECRET is not set");
@@ -19,9 +20,7 @@ const client = AirwallexClient.fromEnv();
 const ledger = new Ledger(":memory:");
 const gateway = new PayoutGateway({ ledger, api: client, approvalSecret: secret });
 
-const beneficiaryId =
-  process.env.SMOKE_BENEFICIARY_ID ?? (await client.listBeneficiaries()).find((b) => b.nickname === "spike-us-supplier")?.id;
-if (!beneficiaryId) throw new Error("no beneficiary: create one nicknamed spike-us-supplier or set SMOKE_BENEFICIARY_ID");
+const beneficiaryId = await resolveBeneficiary(client);
 
 const obligation = ledger.createObligation({
   reference: `SMK-${Date.now().toString(36).toUpperCase()}`,
@@ -126,7 +125,7 @@ show("transfers at Airwallex", transfers.map((t) => `${t.id.slice(0, 8)}:${t.sta
 
 step("7. The Closer: PAID is not final, so the default 24h hold window refuses to close");
 try {
-  await new Closer({ ledger, api: client, secret }).close(obligation.id);
+  await new Closer({ ledger, api: client, gateway, secret }).close(obligation.id);
   throw new Error("BUG: closed inside the hold window");
 } catch (error) {
   if (!(error instanceof NotClosable)) throw error;
@@ -134,7 +133,7 @@ try {
 }
 
 step("8. Hold shortened for the demo; the Closer reconciles every wallet line and certifies");
-const certificate = await new Closer({ ledger, api: client, secret, paidHoldMs: 0 }).close(obligation.id);
+const certificate = await new Closer({ ledger, api: client, gateway, secret, paidHoldMs: 0 }).close(obligation.id);
 const { totals } = certificate.body;
 show("supplier received", `${totals.paidMinor / 100} USD (owed ${obligation.amountMinor / 100})`);
 show("fees (both attempts)", `${totals.feesMinor / 100} USD`);

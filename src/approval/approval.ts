@@ -34,6 +34,18 @@ export interface Approval {
 
 export const newNonce = (): string => randomBytes(16).toString("hex");
 
+/** A person's written reason: at least 10 characters once trimmed, so a one-word note like "ok" is refused. */
+export const WRITTEN_NOTE_MIN_CHARS = 10;
+export const isWrittenNote = (note: string | null | undefined): boolean => (note?.trim().length ?? 0) >= WRITTEN_NOTE_MIN_CHARS;
+
+/** Human-only actions (releasing a lock, clearing an escalation) need a named person and a written note. */
+export function requireHumanNote(by: string, note: string): void {
+  if (by.trim().length === 0) throw new ApprovalRejected("malformed", "name the person taking this action");
+  if (!isWrittenNote(note)) {
+    throw new ApprovalRejected("malformed", `write a note of at least ${WRITTEN_NOTE_MIN_CHARS} characters explaining the action`);
+  }
+}
+
 const macOf = (payload: ApprovalPayload, secret: string): string =>
   createHmac("sha256", secret).update(canonicalJson(payload)).digest("hex");
 

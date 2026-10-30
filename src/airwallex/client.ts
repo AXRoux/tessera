@@ -6,9 +6,13 @@ import {
   FinancialTransactionListSchema,
   TransferListSchema,
   TransferSchema,
+  type Beneficiary,
+  type BeneficiaryApi,
   type CreateTransferRequest,
   type FinancialTransaction,
   type BalanceApi,
+  type NewEuBeneficiary,
+  type NewUsBeneficiary,
   type PayoutApi,
   type ReconciliationApi,
   type Transfer,
@@ -22,14 +26,32 @@ export interface ClientOptions {
   timeoutMs?: number;
   /** Sandbox allows 10 req/s per endpoint; 120ms spacing stays under it. */
   minIntervalMs?: number;
+  /** Waits for pacing and retries. Tests pass a recorder. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const LoginSchema = z.object({ token: z.string() });
 const ErrorBodySchema = z.looseObject({ code: z.string().optional(), message: z.string().optional() });
+const BeneficiarySchema = z.looseObject({ id: z.string(), nickname: z.string().nullish() });
+const BeneficiaryListSchema = z.looseObject({ items: z.array(BeneficiarySchema) });
 const TOKEN_TTL_MS = 25 * 60_000; // tokens last 30 minutes
+const MAX_RETRY_WAIT_MS = 30_000;
+/** Stops a cursor loop that never ends (a server bug), rather than paging forever. */
+const MAX_PAGES = 500;
 
-export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi {
+/** Retry-After is either delay-seconds or an HTTP date. */
+function parseRetryAfter(header: string | null, now: number): number | undefined {
+  if (header === null || header.trim() === "") return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(header);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
+}
+
+export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi, BeneficiaryApi {
   private token: { value: string; expiresAt: number } | null = null;
+  /** The login in flight, shared by every caller that needs a token meanwhile (one login, not one per request). */
+  private login: Promise<string> | null = null;
   private nextSlot = 0;
 
   constructor(private readonly opts: ClientOptions) {}
@@ -72,7 +94,7 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
         return;
       } catch (error) {
         if (error instanceof AwxHttpError && error.status >= 500 && attempt < 3) {
-          await Bun.sleep(900 * (attempt + 1));
+          await this.sleep(900 * (attempt + 1));
           continue;
         }
         throw error;
@@ -80,15 +102,82 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
     }
   }
 
-  async listBeneficiaries(): Promise<Array<{ id: string; nickname?: string }>> {
+  async listBeneficiaries(): Promise<Beneficiary[]> {
     const body = await this.request("GET", "/api/v1/beneficiaries", { query: { page_size: "100" } });
-    return z.looseObject({ items: z.array(z.looseObject({ id: z.string(), nickname: z.string().optional() })) }).parse(body).items;
+    return this.parse(BeneficiaryListSchema, body).items.map((b) => ({ id: b.id, ...(b.nickname ? { nickname: b.nickname } : {}) }));
   }
 
-  /** Transfers created since `fromCreatedAt` (ISO 8601). Used to prove no duplicate exists for a reference. */
+  /**
+   * Creates a US company beneficiary paid by LOCAL (ACH) in USD, for `bun run setup`. Not retried: a retry could
+   * create two. Callers look the nickname up first.
+   */
+  async createBeneficiary(input: NewUsBeneficiary): Promise<Beneficiary> {
+    const body = await this.request("POST", "/api/v1/beneficiaries/create", {
+      body: {
+        beneficiary: {
+          entity_type: "COMPANY",
+          company_name: input.companyName,
+          address: { country_code: "US", city: "Seattle", state: "Washington", postcode: "98104", street_address: "412 5th Avenue" },
+          bank_details: {
+            account_currency: "USD",
+            account_name: input.companyName,
+            account_number: input.accountNumber,
+            account_routing_type1: "aba",
+            account_routing_value1: input.routingNumber,
+            bank_country_code: "US",
+            local_clearing_system: "ACH",
+          },
+        },
+        nickname: input.nickname,
+        transfer_methods: ["LOCAL"],
+      },
+    });
+    // The create response nests the record id at the top level next to `beneficiary`.
+    const created = this.parse(z.looseObject({ id: z.string() }), body);
+    return { id: created.id, nickname: input.nickname };
+  }
+
+  /** Creates a German company beneficiary paid by SWIFT in EUR, for `bun run setup`. Not retried, like the US one. */
+  async createEuBeneficiary(input: NewEuBeneficiary): Promise<Beneficiary> {
+    const body = await this.request("POST", "/api/v1/beneficiaries/create", {
+      body: {
+        beneficiary: {
+          entity_type: "COMPANY",
+          company_name: input.companyName,
+          address: { country_code: "DE", city: "Berlin", postcode: "10115", street_address: "Invalidenstrasse 1" },
+          bank_details: {
+            account_currency: "EUR",
+            account_name: input.companyName,
+            iban: input.iban,
+            swift_code: input.swiftCode,
+            bank_country_code: "DE",
+          },
+        },
+        nickname: input.nickname,
+        transfer_methods: ["SWIFT"],
+      },
+    });
+    const created = this.parse(z.looseObject({ id: z.string() }), body);
+    return { id: created.id, nickname: input.nickname };
+  }
+
+  /**
+   * Every transfer created since `fromCreatedAt` (ISO 8601), following `page_after` to the last page. Used to prove
+   * no duplicate exists for a reference, so stopping at page one would be a false "none found".
+   */
   async listTransfers(fromCreatedAt: string): Promise<Transfer[]> {
-    const body = await this.request("GET", "/api/v1/transfers", { query: { from_created_at: fromCreatedAt, page_size: "200" } });
-    return this.parse(TransferListSchema, body).items;
+    const transfers: Transfer[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const query: Record<string, string> = { from_created_at: fromCreatedAt, page_size: "200" };
+      if (cursor !== null) query.page = cursor;
+      const body = this.parse(TransferListSchema, await this.request("GET", "/api/v1/transfers", { query }));
+      transfers.push(...body.items);
+      const next = body.page_after ?? null;
+      if (next === null || next === cursor || body.items.length === 0) return transfers;
+      cursor = next;
+    }
+    throw new AwxNetworkError(`listing transfers did not end after ${MAX_PAGES} pages`);
   }
 
   /** Wallet lines booked against one transfer (payout, fee, reversal). */
@@ -116,22 +205,35 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
     const now = Date.now();
     const wait = this.nextSlot - now;
     this.nextSlot = Math.max(now, this.nextSlot) + (this.opts.minIntervalMs ?? 120);
-    if (wait > 0) await Bun.sleep(wait);
+    if (wait > 0) await this.sleep(wait);
   }
 
-  private async ensureToken(): Promise<string> {
-    if (this.token && this.token.expiresAt > Date.now()) return this.token.value;
-    const body = await this.send("POST", "/api/v1/authentication/login", {
-      headers: { "x-client-id": this.opts.clientId, "x-api-key": this.opts.apiKey },
-    });
-    const { token } = this.parse(LoginSchema, body);
-    this.token = { value: token, expiresAt: Date.now() + TOKEN_TTL_MS };
-    return token;
+  /** One login at a time: concurrent callers with an expired token share the same request. */
+  private ensureToken(): Promise<string> {
+    if (this.token && this.token.expiresAt > Date.now()) return Promise.resolve(this.token.value);
+    this.login ??= (async () => {
+      try {
+        const body = await this.send("POST", "/api/v1/authentication/login", {
+          headers: { "x-client-id": this.opts.clientId, "x-api-key": this.opts.apiKey },
+        });
+        const { token } = this.parse(LoginSchema, body);
+        this.token = { value: token, expiresAt: Date.now() + TOKEN_TTL_MS };
+        return token;
+      } finally {
+        this.login = null;
+      }
+    })();
+    return this.login;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return (this.opts.sleep ?? Bun.sleep)(ms);
   }
 
   /**
-   * Re-logs in once on 401. GETs retry on 429/5xx/network errors. Mutating calls are never retried here:
-   * only the gateway, which owns the request_id, may decide what an ambiguous create means.
+   * Re-logs in once on 401. GETs retry on 429/5xx/network errors, waiting at least as long as a Retry-After asks.
+   * Mutating calls are never retried here: only the gateway, which owns the request_id, may decide what an
+   * ambiguous create means.
    */
   private async request(
     method: "GET" | "POST",
@@ -144,13 +246,16 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
         return await this.send(method, path, { ...opts, headers: { authorization: `Bearer ${token}` } });
       } catch (error) {
         if (error instanceof AwxHttpError && error.status === 401 && attempt === 0) {
-          this.token = null;
+          // Only drop the token this request used; another caller may already have logged in again.
+          if (this.token?.value === token) this.token = null;
           continue;
         }
         const retryable =
           error instanceof AwxNetworkError || (error instanceof AwxHttpError && (error.status === 429 || error.status >= 500));
         if (method === "GET" && retryable && attempt < 3) {
-          await Bun.sleep(250 * 2 ** attempt + Math.random() * 100);
+          const backoff = 250 * 2 ** attempt + Math.random() * 100;
+          const asked = error instanceof AwxHttpError ? (error.retryAfterMs ?? 0) : 0;
+          await this.sleep(Math.min(Math.max(backoff, asked), MAX_RETRY_WAIT_MS));
           continue;
         }
         throw error;
@@ -196,6 +301,7 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
       (error.success && error.data.code) || "unknown",
       (error.success && error.data.message) || response.statusText,
       json,
+      parseRetryAfter(response.headers.get("retry-after"), Date.now()),
     );
   }
 }

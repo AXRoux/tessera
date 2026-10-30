@@ -1,7 +1,7 @@
+import { FakePayoutApi } from "../../src/airwallex/fake";
 import { issueApproval, newNonce, type Approval, type ApprovalPayload } from "../../src/approval/approval";
 import { PayoutGateway } from "../../src/gateway/gateway";
 import { Ledger, type Attempt, type Obligation } from "../../src/ledger/ledger";
-import { FakePayoutApi } from "./fake-awx";
 
 export const SECRET = "test-secret-test-secret-test-secret-32";
 

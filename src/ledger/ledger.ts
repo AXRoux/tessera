@@ -1,12 +1,16 @@
 import { Database } from "bun:sqlite";
+import { z } from "zod";
+import { requireHumanNote } from "../approval/approval";
 import { canonicalJson, sha256Hex } from "../canonical";
-import { DuplicateLockError } from "../errors";
+import { DuplicateLockError, StateConflict } from "../errors";
+import { replayAttempts } from "./events";
 
 export type Method = "LOCAL" | "SWIFT";
 /**
  * INTENT: written before the network call. LIVE: Airwallex holds a non-terminal transfer (including FAILED, which is
- * not refunded until CANCELLED). PAID: Airwallex says paid; still not final. DEAD: CANCELLED, funds returned.
- * ABANDONED: Airwallex definitively rejected the create, so no transfer exists.
+ * not refunded until CANCELLED). PAID: Airwallex says paid; still not final. DEAD: CANCELLED, funds returned, or a
+ * transfer that never executed and a person released. ABANDONED: no transfer exists (Airwallex definitively rejected
+ * the create, or a person released an intent Airwallex has no record of).
  */
 export type AttemptState = "INTENT" | "LIVE" | "PAID" | "DEAD" | "ABANDONED";
 export type ObligationStatus = "OPEN" | "PAYING" | "PAID" | "NEEDS_ACTION" | "ESCALATED" | "CLOSED";
@@ -38,6 +42,8 @@ export interface Attempt {
   state: AttemptState;
   transferId: string | null;
   awxStatus: string | null;
+  /** Airwallex's `updated_at` for the snapshot behind `awxStatus`; an older snapshot is never applied over it. */
+  awxUpdatedAt: string | null;
   failureCode: string | null;
   failureMessage: string | null;
   feeMinor: number | null;
@@ -76,9 +82,32 @@ export type NewAttempt = Pick<
 export type AttemptPatch = Partial<
   Pick<
     Attempt,
-    "state" | "transferId" | "awxStatus" | "failureCode" | "failureMessage" | "feeMinor" | "payerPaysMinor" | "lastError"
+    | "state" | "transferId" | "awxStatus" | "awxUpdatedAt" | "failureCode" | "failureMessage" | "feeMinor" | "payerPaysMinor"
+    | "lastError"
   >
 >;
+
+/** A supplier message waiting in the inbox. Its text is untrusted: the ledger chains only its hash and length. */
+export interface InboxMessage {
+  id: string;
+  incidentId: string;
+  from: string;
+  receivedAt: string;
+  email: string;
+  statementText?: string;
+}
+
+/** A verified Airwallex webhook delivery, as far as the ledger needs it for dedupe. */
+export interface WebhookEventRecord {
+  id: string;
+  name: string;
+  transferId: string | null;
+  createdAt: string;
+}
+
+export type ChainVerification =
+  | { ok: true; head: string }
+  | { ok: false; brokenAt: number | null; reason: string };
 
 interface HashRow {
   hash: string;
@@ -86,11 +115,33 @@ interface HashRow {
 interface JsonRow {
   json: string;
 }
+interface HeadRow {
+  hash: string;
+  count: number;
+}
+interface CertificateRow {
+  obligationId: string;
+  hash: string;
+  json: string;
+  createdAt: string;
+}
+interface InboxRow {
+  id: string;
+  incidentId: string;
+  sender: string;
+  receivedAt: string;
+  email: string;
+  statementText: string | null;
+}
+type EventRow = Omit<LedgerEvent, "payload"> & { payload: string };
 
 const GENESIS = sha256Hex("tessera-genesis");
 const PATCHABLE = [
-  "state", "transferId", "awxStatus", "failureCode", "failureMessage", "feeMinor", "payerPaysMinor", "lastError",
+  "state", "transferId", "awxStatus", "awxUpdatedAt", "failureCode", "failureMessage", "feeMinor", "payerPaysMinor", "lastError",
 ] as const;
+
+const PinnedHeadSchema = z.looseObject({ body: z.looseObject({ eventChainHead: z.string() }) });
+const ClosedPayloadSchema = z.looseObject({ certificateHash: z.string() });
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS obligations (
@@ -119,6 +170,7 @@ CREATE TABLE IF NOT EXISTS attempts (
   state TEXT NOT NULL CHECK (state IN ('INTENT','LIVE','PAID','DEAD','ABANDONED')),
   transferId TEXT UNIQUE,
   awxStatus TEXT,
+  awxUpdatedAt TEXT,
   failureCode TEXT,
   failureMessage TEXT,
   feeMinor INTEGER,
@@ -141,13 +193,60 @@ CREATE TABLE IF NOT EXISTS events (
   prevHash TEXT NOT NULL,
   hash TEXT NOT NULL
 );
+-- The last hash and the event count, written in the same transaction as each event: deleting the tail shows.
+CREATE TABLE IF NOT EXISTS chain_head (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  hash TEXT NOT NULL,
+  count INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS certificates (
   obligationId TEXT PRIMARY KEY REFERENCES obligations(id),
   hash TEXT NOT NULL,
   json TEXT NOT NULL,
   createdAt TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS revoked_certificates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  obligationId TEXT NOT NULL REFERENCES obligations(id),
+  hash TEXT NOT NULL,
+  json TEXT NOT NULL,
+  createdAt TEXT NOT NULL,
+  revokedAt TEXT NOT NULL,
+  reason TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS inbox (
+  id TEXT PRIMARY KEY,
+  incidentId TEXT NOT NULL REFERENCES obligations(id),
+  sender TEXT NOT NULL,
+  receivedAt TEXT NOT NULL,
+  email TEXT NOT NULL,
+  statementText TEXT
+);
+CREATE TABLE IF NOT EXISTS webhook_events (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  transferId TEXT,
+  createdAt TEXT NOT NULL,
+  receivedAt TEXT NOT NULL
+);
 `;
+
+/** Status implied by the latest attempt, ignoring the sticky CLOSED and ESCALATED. */
+function statusFor(latest: Attempt | null): ObligationStatus {
+  if (latest?.state === "INTENT" || latest?.state === "LIVE") return "PAYING";
+  if (latest?.state === "PAID") return "PAID";
+  if (latest?.state === "DEAD") return "NEEDS_ACTION";
+  return "OPEN";
+}
+
+const toInboxMessage = (row: InboxRow): InboxMessage => ({
+  id: row.id,
+  incidentId: row.incidentId,
+  from: row.sender,
+  receivedAt: row.receivedAt,
+  email: row.email,
+  ...(row.statementText === null ? {} : { statementText: row.statementText }),
+});
 
 export class Ledger {
   readonly db: Database;
@@ -155,8 +254,11 @@ export class Ledger {
 
   constructor(path = ":memory:", private readonly now: () => Date = () => new Date()) {
     this.db = new Database(path, { create: true });
-    this.db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+    // busy_timeout first: another process (API + MCP share the file) may hold the lock while this one opens.
+    this.db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;");
+    const hadChainHead = this.db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chain_head'").get() !== null;
     this.db.exec(SCHEMA);
+    this.migrate(hadChainHead);
   }
 
   close(): void {
@@ -172,6 +274,21 @@ export class Ledger {
     } finally {
       this.depth--;
     }
+  }
+
+  /** Brings a ledger file written by an older build up to this schema. Idempotent; safe with several processes. */
+  private migrate(hadChainHead: boolean): void {
+    this.tx(() => {
+      const columns = this.db.query("PRAGMA table_info(attempts)").all() as Array<{ name: string }>;
+      if (!columns.some((c) => c.name === "awxUpdatedAt")) this.db.exec("ALTER TABLE attempts ADD COLUMN awxUpdatedAt TEXT");
+      // A file from before chain_head existed: pin today's tail so later deletions show.
+      if (!hadChainHead) {
+        this.db.exec(
+          `INSERT OR IGNORE INTO chain_head (id, hash, count)
+           SELECT 1, hash, (SELECT COUNT(*) FROM events) FROM events ORDER BY seq DESC LIMIT 1`,
+        );
+      }
+    });
   }
 
   // ---- obligations -------------------------------------------------------
@@ -224,15 +341,27 @@ export class Ledger {
     });
   }
 
+  /**
+   * A named person clears an escalation with a written note. Status is re-derived from the latest attempt (or CLOSED
+   * again if a live certificate still stands).
+   */
+  resolveEscalation(obligationId: string, by: string, note: string): Obligation {
+    requireHumanNote(by, note);
+    return this.tx(() => {
+      const obligation = this.requireObligation(obligationId);
+      if (obligation.status !== "ESCALATED") throw new StateConflict(`obligation ${obligationId} is ${obligation.status}, not escalated`);
+      const next = this.getCertificateJson(obligationId) ? "CLOSED" : statusFor(this.latestAttempt(obligationId));
+      this.setObligationStatus(obligationId, next);
+      this.append(obligationId, "ESCALATION_RESOLVED", { by, note, previousReason: obligation.escalationReason });
+      return this.requireObligation(obligationId);
+    });
+  }
+
   /** Derives status from the latest attempt. CLOSED and ESCALATED are sticky: only an explicit human action clears them. */
   refreshObligationStatus(id: string): void {
     const obligation = this.requireObligation(id);
     if (obligation.status === "CLOSED" || obligation.status === "ESCALATED") return;
-    const latest = this.latestAttempt(id);
-    let next: ObligationStatus = "OPEN";
-    if (latest?.state === "INTENT" || latest?.state === "LIVE") next = "PAYING";
-    else if (latest?.state === "PAID") next = "PAID";
-    else if (latest?.state === "DEAD") next = "NEEDS_ACTION";
+    const next = statusFor(this.latestAttempt(id));
     if (next !== obligation.status) this.setObligationStatus(id, next);
   }
 
@@ -258,6 +387,14 @@ export class Ledger {
       .get(obligationId) as Attempt | null;
   }
 
+  attemptByTransferId(transferId: string): Attempt | null {
+    return this.db.query("SELECT * FROM attempts WHERE transferId = ?").get(transferId) as Attempt | null;
+  }
+
+  attemptByRequestId(requestId: string): Attempt | null {
+    return this.db.query("SELECT * FROM attempts WHERE requestId = ?").get(requestId) as Attempt | null;
+  }
+
   nonceUsed(nonce: string): boolean {
     return this.db.query("SELECT 1 FROM attempts WHERE approvalNonce = ?").get(nonce) !== null;
   }
@@ -271,8 +408,10 @@ export class Ledger {
       .all(...params) as Attempt[];
   }
 
-  intentAttempts(): Attempt[] {
-    return this.db.query("SELECT * FROM attempts WHERE state = 'INTENT' ORDER BY createdAt").all() as Attempt[];
+  intentAttempts(obligationId?: string): Attempt[] {
+    const where = obligationId ? "AND obligationId = ?" : "";
+    const params = obligationId ? [obligationId] : [];
+    return this.db.query(`SELECT * FROM attempts WHERE state = 'INTENT' ${where} ORDER BY createdAt`).all(...params) as Attempt[];
   }
 
   insertAttempt(input: NewAttempt): Attempt {
@@ -315,23 +454,97 @@ export class Ledger {
       .run(obligationId, hash, json, this.now().toISOString());
   }
 
+  /** The live certificate only; a revoked one is kept in `revoked_certificates` for the record. */
   getCertificateJson(obligationId: string): string | null {
     const row = this.db.query("SELECT json FROM certificates WHERE obligationId = ?").get(obligationId) as JsonRow | null;
     return row?.json ?? null;
   }
 
+  /**
+   * Withdraws a certificate that is no longer true (a certified payment failed late). The obligation is escalated:
+   * a person decides what happens next, and a fresh close is possible once it reconciles again.
+   */
+  revokeCertificate(obligationId: string, reason: string): void {
+    this.tx(() => {
+      const row = this.db.query("SELECT * FROM certificates WHERE obligationId = ?").get(obligationId) as CertificateRow | null;
+      if (!row) throw new StateConflict(`obligation ${obligationId} has no certificate to revoke`);
+      this.db
+        .query(
+          `INSERT INTO revoked_certificates (obligationId, hash, json, createdAt, revokedAt, reason)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(row.obligationId, row.hash, row.json, row.createdAt, this.now().toISOString(), reason);
+      this.db.query("DELETE FROM certificates WHERE obligationId = ?").run(obligationId);
+      this.append(obligationId, "CERTIFICATE_REVOKED", { certificateHash: row.hash, reason });
+      this.escalate(obligationId, reason);
+    });
+  }
+
+  // ---- supplier inbox ----------------------------------------------------
+
+  /** Files a supplier message. The chain records who sent it, its hash and its length; never the text itself. */
+  addInboxMessage(input: Omit<InboxMessage, "id" | "receivedAt"> & { receivedAt?: string }): InboxMessage {
+    return this.tx(() => {
+      this.requireObligation(input.incidentId);
+      const message: InboxMessage = {
+        id: crypto.randomUUID(),
+        incidentId: input.incidentId,
+        from: input.from,
+        receivedAt: input.receivedAt ?? this.now().toISOString(),
+        email: input.email,
+        ...(input.statementText === undefined ? {} : { statementText: input.statementText }),
+      };
+      this.db
+        .query("INSERT INTO inbox (id, incidentId, sender, receivedAt, email, statementText) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(message.id, message.incidentId, message.from, message.receivedAt, message.email, message.statementText ?? null);
+      this.append(message.incidentId, "INBOX_RECEIVED", {
+        messageId: message.id,
+        from: message.from,
+        sha256: sha256Hex(canonicalJson({ email: message.email, statementText: message.statementText ?? null })),
+        chars: message.email.length + (message.statementText?.length ?? 0),
+      });
+      return message;
+    });
+  }
+
+  /** Oldest first; messages filed in the same millisecond keep the order they were filed in. */
+  inboxMessages(incidentId?: string): InboxMessage[] {
+    const rows = (
+      incidentId
+        ? this.db.query("SELECT * FROM inbox WHERE incidentId = ? ORDER BY receivedAt, rowid").all(incidentId)
+        : this.db.query("SELECT * FROM inbox ORDER BY receivedAt, rowid").all()
+    ) as InboxRow[];
+    return rows.map(toInboxMessage);
+  }
+
+  // ---- webhooks ----------------------------------------------------------
+
+  /** Records a webhook delivery by its event id. True the first time it is seen; Airwallex redelivers. */
+  recordWebhookEvent(event: WebhookEventRecord): boolean {
+    const result = this.db
+      .query("INSERT OR IGNORE INTO webhook_events (id, name, transferId, createdAt, receivedAt) VALUES (?, ?, ?, ?, ?)")
+      .run(event.id, event.name, event.transferId, event.createdAt, this.now().toISOString());
+    return result.changes > 0;
+  }
+
   // ---- event chain -------------------------------------------------------
 
+  /** Appends one event. Reading the last hash and inserting happen in one write transaction, so processes sharing the file cannot fork the chain. */
   append(obligationId: string | null, type: string, payload: unknown): LedgerEvent {
-    const last = this.db.query("SELECT hash FROM events ORDER BY seq DESC LIMIT 1").get() as HashRow | null;
-    const prevHash = last?.hash ?? GENESIS;
-    const ts = this.now().toISOString();
-    const body = canonicalJson(payload);
-    const hash = sha256Hex(`${prevHash}|${ts}|${obligationId ?? ""}|${type}|${body}`);
-    const result = this.db
-      .query("INSERT INTO events (obligationId, type, payload, ts, prevHash, hash) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(obligationId, type, body, ts, prevHash, hash);
-    return { seq: Number(result.lastInsertRowid), obligationId, type, payload: JSON.parse(body), ts, prevHash, hash };
+    return this.tx(() => {
+      const last = this.db.query("SELECT hash FROM events ORDER BY seq DESC LIMIT 1").get() as HashRow | null;
+      const prevHash = last?.hash ?? GENESIS;
+      const ts = this.now().toISOString();
+      const body = canonicalJson(payload);
+      const hash = sha256Hex(`${prevHash}|${ts}|${obligationId ?? ""}|${type}|${body}`);
+      const result = this.db
+        .query("INSERT INTO events (obligationId, type, payload, ts, prevHash, hash) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(obligationId, type, body, ts, prevHash, hash);
+      this.db
+        .query("INSERT INTO chain_head (id, hash, count) VALUES (1, ?, 1) ON CONFLICT (id) DO UPDATE SET hash = excluded.hash, count = count + 1")
+        .run(hash);
+      return { seq: Number(result.lastInsertRowid), obligationId, type, payload: JSON.parse(body), ts, prevHash, hash };
+    });
   }
 
   events(obligationId?: string): LedgerEvent[] {
@@ -339,20 +552,65 @@ export class Ledger {
       obligationId
         ? this.db.query("SELECT * FROM events WHERE obligationId = ? ORDER BY seq").all(obligationId)
         : this.db.query("SELECT * FROM events ORDER BY seq").all()
-    ) as Array<Omit<LedgerEvent, "payload"> & { payload: string }>;
+    ) as EventRow[];
     return rows.map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
   }
 
-  /** Recomputes the whole chain. `brokenAt` is the first event whose stored hash or link does not match. */
-  verifyChain(): { ok: true; head: string } | { ok: false; brokenAt: number } {
-    const rows = this.db.query("SELECT * FROM events ORDER BY seq").all() as Array<
-      Omit<LedgerEvent, "payload"> & { payload: string }
-    >;
+  /**
+   * Recomputes the whole chain and checks the tables against it: every event links and hashes, nothing was cut off
+   * the tail, every certificate pins a head that is in the chain, and every attempt row matches a replay of its own
+   * events. `brokenAt` is the first bad event when there is one; `reason` always says what failed.
+   */
+  verifyChain(): ChainVerification {
+    const rows = this.db.query("SELECT * FROM events ORDER BY seq").all() as EventRow[];
+    const hashes = new Set<string>();
     let prev = GENESIS;
     for (const row of rows) {
+      if (row.prevHash !== prev) return { ok: false, brokenAt: row.seq, reason: `event ${row.seq} does not link to the event before it` };
       const expected = sha256Hex(`${prev}|${row.ts}|${row.obligationId ?? ""}|${row.type}|${row.payload}`);
-      if (row.prevHash !== prev || row.hash !== expected) return { ok: false, brokenAt: row.seq };
+      if (row.hash !== expected) return { ok: false, brokenAt: row.seq, reason: `event ${row.seq} was altered` };
+      hashes.add(row.hash);
       prev = row.hash;
+    }
+
+    const head = this.db.query("SELECT hash, count FROM chain_head WHERE id = 1").get() as HeadRow | null;
+    if (head === null && rows.length > 0) return { ok: false, brokenAt: null, reason: "the chain head record is missing" };
+    if (head !== null && head.count !== rows.length) {
+      return { ok: false, brokenAt: null, reason: `${head.count} events were written but ${rows.length} remain` };
+    }
+    if (head !== null && head.hash !== prev) return { ok: false, brokenAt: null, reason: "the last event is not the recorded chain head" };
+
+    const events = rows.map((row) => ({ ...row, payload: JSON.parse(row.payload) as unknown }));
+    const certified = new Set<string>();
+    for (const event of events) {
+      const closed = event.type === "CLOSED" ? ClosedPayloadSchema.safeParse(event.payload) : null;
+      if (closed?.success) certified.add(closed.data.certificateHash);
+    }
+    const live = this.db.query("SELECT obligationId, hash, json FROM certificates").all() as CertificateRow[];
+    const revoked = this.db.query("SELECT obligationId, hash, json FROM revoked_certificates").all() as CertificateRow[];
+    for (const certificate of [...live, ...revoked]) {
+      const pinned = PinnedHeadSchema.safeParse(JSON.parse(certificate.json));
+      if (!pinned.success || !hashes.has(pinned.data.body.eventChainHead)) {
+        return { ok: false, brokenAt: null, reason: `the certificate for obligation ${certificate.obligationId} pins a history that is not in the chain` };
+      }
+    }
+    for (const certificate of live) {
+      if (!certified.has(certificate.hash)) {
+        return { ok: false, brokenAt: null, reason: `the certificate for obligation ${certificate.obligationId} has no CLOSED event` };
+      }
+    }
+
+    const replayed = replayAttempts(events);
+    for (const attempt of this.db.query("SELECT * FROM attempts ORDER BY createdAt").all() as Attempt[]) {
+      const r = replayed.get(attempt.id);
+      if (!r) return { ok: false, brokenAt: null, reason: `attempt ${attempt.id} has no ATTEMPT_INTENT event` };
+      if (r.state !== attempt.state || r.transferId !== attempt.transferId || r.awxStatus !== attempt.awxStatus) {
+        return {
+          ok: false,
+          brokenAt: null,
+          reason: `attempt ${attempt.id} is ${attempt.state}/${attempt.awxStatus ?? "-"} in its table but ${r.state}/${r.awxStatus ?? "-"} by its events`,
+        };
+      }
     }
     return { ok: true, head: prev };
   }

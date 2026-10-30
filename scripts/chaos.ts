@@ -13,6 +13,7 @@ import { issueApproval, newNonce, type Approval } from "../src/approval/approval
 import { DuplicateLockError } from "../src/errors";
 import { PayoutGateway } from "../src/gateway/gateway";
 import { Ledger } from "../src/ledger/ledger";
+import { resolveBeneficiary } from "../src/server/runtime";
 
 type KillPoint = "before" | "after";
 
@@ -55,8 +56,7 @@ async function scenario(when: KillPoint): Promise<boolean> {
   mkdirSync(".data", { recursive: true });
   for (const suffix of ["", "-wal", "-shm"]) rmSync(db + suffix, { force: true });
 
-  const beneficiaryId = (await client.listBeneficiaries()).find((b) => b.nickname === "spike-us-supplier")?.id;
-  if (!beneficiaryId) throw new Error("no spike-us-supplier beneficiary in the sandbox");
+  const beneficiaryId = await resolveBeneficiary(client);
 
   const ledger = new Ledger(db);
   const obligation = ledger.createObligation({

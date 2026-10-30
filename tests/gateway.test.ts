@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
+import type { PayoutApi } from "../src/airwallex/types";
 import { newNonce, type ApprovalPayload } from "../src/approval/approval";
-import { ApprovalRejected, DuplicateLockError, LedgerMismatchError, ReplacementDenied } from "../src/errors";
+import { ApprovalRejected, DuplicateLockError, LedgerMismatchError, ReplacementDenied, StateConflict } from "../src/errors";
 import { PayoutGateway } from "../src/gateway/gateway";
 import { approve, killedAttempt, SECRET, world } from "./helpers/world";
+
+const NOTE = "checked the Airwallex dashboard with the supplier on the phone";
 
 describe("exactly-once payout", () => {
   it("creates one transfer and records the fee Airwallex reports", async () => {
@@ -39,6 +42,24 @@ describe("exactly-once payout", () => {
     ledger.insertAttempt(attempt(1));
 
     expect(() => ledger.insertAttempt(attempt(2))).toThrow(DuplicateLockError);
+  });
+
+  it("refuses to pay on a ledger whose attempt row was edited to release the lock", async () => {
+    const { gateway, api, obligation, ledger } = world();
+    const { attempt } = await gateway.submit(approve(obligation));
+    api.advance(attempt.transferId!, "PAID");
+    await gateway.sync();
+
+    ledger.db.query("UPDATE attempts SET state = 'DEAD', failureCode = '91402' WHERE id = ?").run(attempt.id);
+
+    await expect(gateway.submit(approve(obligation, { replacesAttemptId: attempt.id }))).rejects.toMatchObject({
+      name: "ObligationNotPayable",
+      message: expect.stringContaining("ledger does not verify"),
+    });
+    await expect(gateway.resolveAttempt({ attemptId: attempt.id, by: "ops@acme", note: NOTE })).rejects.toMatchObject({
+      name: "ObligationNotPayable",
+    });
+    expect(api.all).toHaveLength(1);
   });
 
   it("rejects an approval that has already been spent", async () => {
@@ -129,7 +150,7 @@ describe("ambiguous outcomes", () => {
     expect(ledger.latestAttempt(obligation.id)!.state).toBe("INTENT");
   });
 
-  it("releases the lock when Airwallex definitively rejects the create, allowing a corrected retry", async () => {
+  it("releases the lock when Airwallex definitively rejects the create; the retry is still a first payment on the obligation's terms", async () => {
     const { gateway, api, obligation, ledger } = world();
     api.faults.rejectCreate = 1;
 
@@ -138,11 +159,162 @@ describe("ambiguous outcomes", () => {
     expect(rejected.attempt.state).toBe("ABANDONED");
     expect(ledger.requireObligation(obligation.id).status).toBe("OPEN");
 
+    await expect(
+      gateway.submit(approve(obligation, { replacesAttemptId: rejected.attempt.id, beneficiaryId: "ben-ELSEWHERE" })),
+    ).rejects.toMatchObject({ name: "ApprovalRejected", reason: "terms_mismatch" });
     const retry = await gateway.submit(approve(obligation, { replacesAttemptId: rejected.attempt.id }));
 
     expect(retry.outcome).toBe("CREATED");
     expect(retry.attempt.seq).toBe(2);
     expect(api.all).toHaveLength(1);
+  });
+
+  it("resends the same request_id after a 429, waiting as Retry-After asks, and creates exactly one transfer", async () => {
+    const { ledger, api, obligation } = world();
+    const waits: number[] = [];
+    const gateway = new PayoutGateway({ ledger, api, approvalSecret: SECRET, sleep: async (ms) => void waits.push(ms) });
+    api.faults.rateLimitCreate = 2;
+
+    const { outcome, attempt } = await gateway.submit(approve(obligation));
+
+    expect(outcome).toBe("CREATED");
+    expect(api.createCalls).toBe(3);
+    expect(api.all).toHaveLength(1);
+    expect(api.all[0]!.request_id).toBe(attempt.requestId);
+    expect(waits).toEqual([1_000, 1_000]);
+  });
+
+  it("stops resending after three 429s and keeps the lock for recovery", async () => {
+    const { ledger, api, obligation } = world();
+    const gateway = new PayoutGateway({ ledger, api, approvalSecret: SECRET, sleep: async () => undefined });
+    api.faults.rateLimitCreate = 10;
+
+    const { outcome, attempt } = await gateway.submit(approve(obligation));
+
+    expect(outcome).toBe("PENDING_RECOVERY");
+    expect(attempt.state).toBe("INTENT");
+    expect(api.createCalls).toBe(4);
+    expect(api.all).toHaveLength(0);
+  });
+});
+
+describe("recovery and human release", () => {
+  it("recovers one obligation without touching another's stuck intent", async () => {
+    const { gateway, api, obligation, ledger } = world();
+    const other = ledger.createObligation({
+      reference: "INV-2002", beneficiaryId: "ben-A", amountMinor: 5_000, currency: "USD", method: "LOCAL", reason: "professional_business_services",
+    });
+    api.faults.failBeforeCreate = 2;
+    await gateway.submit(approve(obligation));
+    await gateway.submit(approve(other));
+
+    const results = await gateway.recover(obligation.id);
+
+    expect(results.map((r) => r.attempt.obligationId)).toEqual([obligation.id]);
+    expect(ledger.latestAttempt(other.id)!.state).toBe("INTENT");
+  });
+
+  it("escalates an intent too old to re-send once, then a person releases it after Airwallex confirms no transfer", async () => {
+    const { ledger, api, obligation } = world();
+    let now = new Date();
+    const gateway = new PayoutGateway({ ledger, api, approvalSecret: SECRET, now: () => now });
+    api.faults.failBeforeCreate = 1;
+    const first = await gateway.submit(approve(obligation));
+    expect(first.outcome).toBe("PENDING_RECOVERY");
+    now = new Date(Date.now() + 25 * 3600_000);
+
+    await gateway.recover();
+    await gateway.recover();
+
+    expect(ledger.events(obligation.id).filter((e) => e.type === "ESCALATED")).toHaveLength(1);
+    expect(api.createCalls).toBe(1);
+    await expect(gateway.resolveAttempt({ attemptId: first.attempt.id, by: "ops@acme", note: "ok" })).rejects.toBeInstanceOf(ApprovalRejected);
+
+    const released = await gateway.resolveAttempt({ attemptId: first.attempt.id, by: "ops@acme", note: NOTE });
+
+    expect(released.state).toBe("ABANDONED");
+    expect(ledger.events(obligation.id).at(-1)).toMatchObject({ type: "ATTEMPT_RESOLVED", payload: { by: "ops@acme", from: "INTENT", to: "ABANDONED" } });
+    expect(ledger.verifyChain().ok).toBe(true);
+    expect(ledger.resolveEscalation(obligation.id, "ops@acme", NOTE).status).toBe("OPEN");
+  });
+
+  it("adopts instead of releasing an intent Airwallex does hold a transfer for", async () => {
+    const { gateway, api, obligation } = world();
+    api.faults.loseResponseAfterCreate = 1;
+    api.faults.failLookup = 1;
+    const { attempt } = await gateway.submit(approve(obligation));
+
+    await expect(gateway.resolveAttempt({ attemptId: attempt.id, by: "ops@acme", note: NOTE })).rejects.toBeInstanceOf(StateConflict);
+
+    expect(api.all).toHaveLength(1);
+    expect((await gateway.sync(obligation.id))[0]!.state).toBe("LIVE");
+  });
+
+  it("refuses to release the lock of a live transfer", async () => {
+    const { gateway, obligation, ledger } = world();
+    const { attempt } = await gateway.submit(approve(obligation));
+
+    await expect(gateway.resolveAttempt({ attemptId: attempt.id, by: "ops@acme", note: NOTE })).rejects.toBeInstanceOf(StateConflict);
+
+    expect(ledger.requireAttempt(attempt.id).state).toBe("LIVE");
+  });
+
+  it("releases a transfer whose approval was rejected at Airwallex, since it never executed", async () => {
+    const { gateway, api, obligation, ledger } = world();
+    const { attempt } = await gateway.submit(approve(obligation));
+    api.advance(attempt.transferId!, "APPROVAL_REJECTED");
+    await gateway.sync();
+    expect(ledger.requireAttempt(attempt.id).state).toBe("LIVE");
+
+    const released = await gateway.resolveAttempt({ attemptId: attempt.id, by: "ops@acme", note: NOTE });
+
+    expect(released.state).toBe("DEAD");
+    expect(ledger.requireObligation(obligation.id).status).toBe("NEEDS_ACTION");
+    expect(ledger.verifyChain().ok).toBe(true);
+  });
+});
+
+describe("webhooks and overlapping syncs", () => {
+  it("treats a webhook as a hint: re-reads the transfer and adopts it, and ignores transfers it never created", async () => {
+    const { gateway, api, obligation } = world();
+    const { attempt } = await gateway.submit(approve(obligation));
+    api.advance(attempt.transferId!, "PAID");
+
+    const adopted = await gateway.syncTransfer(attempt.transferId!);
+
+    expect(adopted!.state).toBe("PAID");
+    expect(await gateway.syncTransfer("not-ours")).toBeNull();
+  });
+
+  it("never rolls a status back when an older snapshot arrives after a newer one", async () => {
+    const { gateway, api, obligation, ledger } = world();
+    const { attempt } = await gateway.submit(approve(obligation));
+    api.advance(attempt.transferId!, "SENT");
+    const sentSnapshot = await api.getTransfer(attempt.transferId!);
+    api.advance(attempt.transferId!, "PAID");
+    await gateway.sync();
+    const slow: PayoutApi = {
+      createTransfer: (request) => api.createTransfer(request),
+      getTransfer: async () => structuredClone(sentSnapshot),
+      findTransferByRequestId: (requestId) => api.findTransferByRequestId(requestId),
+    };
+    const eventsBefore = ledger.events(obligation.id).length;
+
+    await new PayoutGateway({ ledger, api: slow, approvalSecret: SECRET }).sync();
+
+    expect(ledger.requireAttempt(attempt.id)).toMatchObject({ state: "PAID", awxStatus: "PAID" });
+    expect(ledger.events(obligation.id)).toHaveLength(eventsBefore);
+  });
+
+  it("records an unrecognized status once, not on every sync", async () => {
+    const { gateway, api, obligation, ledger } = world();
+    const { attempt } = await gateway.submit(approve(obligation));
+    api.advance(attempt.transferId!, "QUANTUM_SUPERPOSITION");
+
+    await gateway.sync();
+    await gateway.sync();
+
+    expect(ledger.events(obligation.id).filter((e) => e.type === "UNKNOWN_STATUS")).toHaveLength(1);
   });
 });
 
@@ -277,5 +449,19 @@ describe("replacement policy", () => {
       approve(w.obligation, { replacesAttemptId: dead.id, mode: "HUMAN", approver: "cfo@acme", note: "verified by callback" }),
     );
     expect(outcome).toBe("CREATED");
+  });
+
+  it("does not let an abandoned attempt reset the playbook: a possible duplicate still needs a person", async () => {
+    const w = world();
+    const dead = await killedAttempt(w, "91301");
+    w.api.faults.rejectCreate = 1;
+    const vouched = await w.gateway.submit(
+      approve(w.obligation, { replacesAttemptId: dead.id, mode: "HUMAN", approver: "ops@acme", note: "supplier bank confirmed non-receipt by phone" }),
+    );
+    expect(vouched.outcome).toBe("REJECTED");
+
+    await expect(w.gateway.submit(approve(w.obligation, { replacesAttemptId: vouched.attempt.id }))).rejects.toBeInstanceOf(ReplacementDenied);
+
+    expect(w.api.all).toHaveLength(1);
   });
 });

@@ -25,13 +25,16 @@ const CertificateAttemptSchema = z.object({
   requestId: z.string(),
   transferId: z.string().nullable(),
   state: AttemptStateSchema,
+  /** Airwallex's status at close (version 2 on). */
+  awxStatus: z.string().nullable().optional(),
   failureCode: z.string().nullable(),
   expected: WalletLinesSchema.nullable(),
   actual: WalletLinesSchema.nullable(),
 });
 
+/** Version 2 adds the Airwallex status of every attempt and of the settled transfer; version 1 certificates still verify. */
 export const ClosureCertificateBodySchema = z.object({
-  version: z.literal(1),
+  version: z.union([z.literal(1), z.literal(2)]),
   obligationId: z.string(),
   reference: z.string(),
   currency: z.string(),
@@ -39,6 +42,8 @@ export const ClosureCertificateBodySchema = z.object({
   beneficiaryId: z.string(),
   settledAttemptId: z.string(),
   settledTransferId: z.string(),
+  /** Re-read from Airwallex inside the close: a certificate is only issued while the transfer is PAID there. */
+  settledAwxStatus: z.literal("PAID").optional(),
   attempts: z.array(CertificateAttemptSchema),
   totals: TotalsSchema,
   /** Head of the event chain just before this certificate; pins the whole history to it. */

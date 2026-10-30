@@ -1,29 +1,58 @@
+import failureCodes from "../../fixtures/failure-codes.json";
 import {
   AwxHttpError,
   AwxNetworkError,
+  type BalanceApi,
+  type Beneficiary,
+  type BeneficiaryApi,
   type CreateTransferRequest,
   type FinancialTransaction,
-  type BalanceApi,
+  type NewEuBeneficiary,
+  type NewUsBeneficiary,
   type PayoutApi,
   type ReconciliationApi,
   type Transfer,
-} from "../../src/airwallex/types";
+} from "./types";
+
+/** Sandbox failure_type -> failure code, as captured from the sandbox simulator. */
+const FAILURES = new Map(failureCodes.map((row) => [row.failureType, row]));
+
+export interface FakePayoutApiOptions {
+  now?: () => Date;
+  /** Transfers per page of `listTransfersPage`; the real API pages too, so callers must follow the cursor. */
+  pageSize?: number;
+  beneficiaries?: Beneficiary[];
+}
 
 /**
  * In-memory Airwallex with the behaviors the gateway and Closer depend on, verified against the real sandbox:
  * request_id dedupe (400 duplicate_request_id carrying the existing id), lookup by request_id, 404 on unknown ids,
- * fees read from the response, and wallet lines per transfer (PAYOUT and FEE on create, PAYOUT_REVERSAL on CANCELLED).
- * Faults count down per call.
+ * fees read from the response, wallet lines per transfer (PAYOUT and FEE on create, PAYOUT_REVERSAL on CANCELLED),
+ * `created_at`/`updated_at` on every snapshot, and cursor-paged transfer listing. `advance` plays the sandbox
+ * simulator, so the offline demo runs on this too. Faults count down per call.
  */
-export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi {
+export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi, BeneficiaryApi {
   readonly transfers = new Map<string, Transfer>();
   /** Wallet lines by transfer id. Tests may edit these to simulate a booking Airwallex got wrong. */
   readonly wallet = new Map<string, FinancialTransaction[]>();
   /** Available balance per currency in major units. Unlisted currencies are well funded. */
   readonly balances = new Map<string, number>();
+  readonly beneficiaries: Beneficiary[];
   private readonly byRequest = new Map<string, string>();
+  private readonly now: () => Date;
+  private readonly pageSize: number;
+  private lastStamp = 0;
   createCalls = 0;
-  faults = { failBeforeCreate: 0, loseResponseAfterCreate: 0, rejectCreate: 0, failLookup: 0 };
+  faults = { failBeforeCreate: 0, loseResponseAfterCreate: 0, rejectCreate: 0, failLookup: 0, rateLimitCreate: 0 };
+
+  constructor(options: FakePayoutApiOptions = {}) {
+    this.now = options.now ?? (() => new Date());
+    this.pageSize = options.pageSize ?? 100;
+    this.beneficiaries = options.beneficiaries ?? [
+      { id: "ben-A", nickname: "spike-us-supplier" },
+      { id: "ben-B", nickname: "spike-us-supplier-alt" },
+    ];
+  }
 
   get all(): Transfer[] {
     return [...this.transfers.values()];
@@ -31,6 +60,10 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi {
 
   async createTransfer(request: CreateTransferRequest): Promise<Transfer> {
     this.createCalls++;
+    if (this.faults.rateLimitCreate > 0) {
+      this.faults.rateLimitCreate--;
+      throw new AwxHttpError(429, "too_many_requests", "rate limit exceeded", { code: "too_many_requests" }, 1_000);
+    }
     if (this.faults.failBeforeCreate > 0) {
       this.faults.failBeforeCreate--;
       throw new AwxNetworkError("connection refused");
@@ -48,6 +81,7 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi {
     }
 
     const fee = request.transfer_method === "SWIFT" ? 13.33 : 3;
+    const stamp = this.stamp();
     const transfer: Transfer = {
       id: crypto.randomUUID(),
       request_id: request.request_id,
@@ -61,6 +95,8 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi {
       fee_currency: request.transfer_currency,
       amount_payer_pays: Math.round((request.transfer_amount + fee) * 100) / 100,
       reference: request.reference,
+      created_at: stamp,
+      updated_at: stamp,
     };
     this.transfers.set(transfer.id, transfer);
     this.byRequest.set(request.request_id, transfer.id);
@@ -89,12 +125,19 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi {
     return id ? structuredClone(this.transfers.get(id)!) : null;
   }
 
-  /** Test control: move a transfer the way the sandbox simulator does. */
-  advance(transferId: string, status: string, failureCode?: string): void {
+  /**
+   * The sandbox simulator: moves a transfer to `status`. `failureType` is a sandbox failure_type (mapped to its
+   * captured failure code) or a failure code itself.
+   */
+  advance(transferId: string, status: string, failureType?: string): void {
     const transfer = this.transfers.get(transferId);
     if (!transfer) throw new Error(`unknown transfer ${transferId}`);
     transfer.status = status;
-    if (failureCode) transfer.failure = { code: failureCode, message: "simulated failure" };
+    transfer.updated_at = this.stamp();
+    if (failureType) {
+      const known = FAILURES.get(failureType);
+      transfer.failure = { code: known?.code ?? failureType, message: known?.message ?? "simulated failure" };
+    }
     if (status === "CANCELLED") this.book(transfer, "PAYOUT_REVERSAL", transfer.transfer_amount);
   }
 
@@ -102,12 +145,44 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi {
     return structuredClone(this.wallet.get(sourceId) ?? []);
   }
 
-  async listTransfers(_fromCreatedAt: string): Promise<Transfer[]> {
-    return structuredClone(this.all);
+  /** One page of transfers created at or after `fromCreatedAt`, oldest first; `page` is the previous `page_after`. */
+  listTransfersPage(fromCreatedAt: string, page?: string): { items: Transfer[]; page_after: string | null } {
+    const from = Date.parse(fromCreatedAt);
+    const matching = this.all.filter((t) => t.created_at === undefined || Date.parse(t.created_at) >= from);
+    const start = page === undefined ? 0 : Number(page);
+    const end = start + this.pageSize;
+    return { items: structuredClone(matching.slice(start, end)), page_after: end < matching.length ? String(end) : null };
+  }
+
+  async listTransfers(fromCreatedAt: string): Promise<Transfer[]> {
+    const transfers: Transfer[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const { items, page_after } = this.listTransfersPage(fromCreatedAt, cursor);
+      transfers.push(...items);
+      if (page_after === null) return transfers;
+      cursor = page_after;
+    }
   }
 
   async getAvailableBalance(currency: string): Promise<number> {
     return this.balances.get(currency) ?? 1_000_000;
+  }
+
+  async listBeneficiaries(): Promise<Beneficiary[]> {
+    return structuredClone(this.beneficiaries);
+  }
+
+  async createBeneficiary(input: NewUsBeneficiary): Promise<Beneficiary> {
+    const beneficiary = { id: crypto.randomUUID(), nickname: input.nickname };
+    this.beneficiaries.push(beneficiary);
+    return structuredClone(beneficiary);
+  }
+
+  async createEuBeneficiary(input: NewEuBeneficiary): Promise<Beneficiary> {
+    const beneficiary = { id: crypto.randomUUID(), nickname: input.nickname };
+    this.beneficiaries.push(beneficiary);
+    return structuredClone(beneficiary);
   }
 
   /** Books one wallet line against a transfer. */
@@ -125,5 +200,11 @@ export class FakePayoutApi implements PayoutApi, ReconciliationApi, BalanceApi {
       status,
     });
     this.wallet.set(transfer.id, lines);
+  }
+
+  /** Strictly increasing timestamps, so `updated_at` orders snapshots even within one millisecond. */
+  private stamp(): string {
+    this.lastStamp = Math.max(this.now().getTime(), this.lastStamp + 1);
+    return new Date(this.lastStamp).toISOString();
   }
 }
