@@ -38,6 +38,8 @@ export interface ConverseRequest {
   system: string;
   messages: Message[];
   tools: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>;
+  /** Cancels the in-flight request (and any retry wait) when the caller walks away. */
+  signal?: AbortSignal;
 }
 export interface ConverseResult {
   content: Block[];
@@ -73,7 +75,7 @@ export class AnthropicModel implements StructuredModel {
     return new AnthropicModel({ apiKey, model });
   }
 
-  async extract<T>(request: ExtractRequest<T>): Promise<T> {
+  async extract<T>(request: ExtractRequest<T>, signal?: AbortSignal): Promise<T> {
     const { $schema: _ignored, ...inputSchema } = z.toJSONSchema(request.schema) as Record<string, unknown>;
     const body = JSON.stringify({
       model: this.opts.model,
@@ -86,7 +88,7 @@ export class AnthropicModel implements StructuredModel {
       tool_choice: { type: "auto" },
     });
 
-    const json = await this.post(body);
+    const json = await this.post(body, signal);
     const parsed = ResponseSchema.safeParse(json);
     const call = parsed.success ? parsed.data.content.find((b) => b.type === "tool_use" && b.name === request.toolName) : undefined;
     if (!call) throw new ModelError("model returned no tool call", null);
@@ -107,6 +109,7 @@ export class AnthropicModel implements StructuredModel {
         tools: request.tools,
         tool_choice: { type: "auto" },
       }),
+      request.signal,
     );
     const parsed = ConverseResponseSchema.safeParse(json);
     if (!parsed.success) throw new ModelError("model returned a response this client cannot read", null);
@@ -116,20 +119,23 @@ export class AnthropicModel implements StructuredModel {
     return { content, stopReason: parsed.data.stop_reason ?? null };
   }
 
-  private async post(body: string): Promise<unknown> {
+  private async post(body: string, signal?: AbortSignal): Promise<unknown> {
     const url = `${this.opts.baseUrl ?? "https://api.anthropic.com"}/v1/messages`;
     for (let attempt = 0; ; attempt++) {
+      if (signal?.aborted) throw new ModelError("model request aborted", null);
       let response: Response;
       try {
+        const timeout = AbortSignal.timeout(this.opts.timeoutMs ?? 60_000);
         response = await (this.opts.fetch ?? fetch)(url, {
           method: "POST",
           headers: { "content-type": "application/json", "x-api-key": this.opts.apiKey, "anthropic-version": "2023-06-01" },
           body,
-          signal: AbortSignal.timeout(this.opts.timeoutMs ?? 60_000),
+          signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         });
       } catch (cause) {
+        if (signal?.aborted) throw new ModelError("model request aborted", null);
         if (attempt < 2) {
-          await Bun.sleep((this.opts.retryBaseMs ?? 500) * 2 ** attempt);
+          await abortableSleep((this.opts.retryBaseMs ?? 500) * 2 ** attempt, signal);
           continue;
         }
         throw new ModelError(`model request failed: ${cause instanceof Error ? cause.message : "network error"}`, null);
@@ -137,11 +143,26 @@ export class AnthropicModel implements StructuredModel {
 
       if (response.ok) return response.json();
       if (RETRYABLE.has(response.status) && attempt < 2) {
-        await Bun.sleep((this.opts.retryBaseMs ?? 500) * 2 ** attempt);
+        await abortableSleep((this.opts.retryBaseMs ?? 500) * 2 ** attempt, signal);
         continue;
       }
       const error = ErrorSchema.safeParse(await response.json().catch(() => ({})));
       throw new ModelError(`model API ${response.status}: ${(error.success && error.data.error?.message) || response.statusText}`, response.status);
     }
   }
+}
+
+/** A retry back-off that ends early, with a ModelError, if the caller aborts. */
+async function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return Bun.sleep(ms);
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const done = () => {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", done);
+    resolve();
+  };
+  const timer = setTimeout(done, ms);
+  signal.addEventListener("abort", done, { once: true });
+  await promise;
+  if (signal.aborted) throw new ModelError("model request aborted", null);
 }

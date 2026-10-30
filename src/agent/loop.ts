@@ -17,7 +17,7 @@ export type AgentEvent =
 export interface AgentRun {
   steps: number;
   finalText: string;
-  stoppedBecause: "finished" | "step_limit" | "aborted";
+  stoppedBecause: "finished" | "step_limit" | "call_limit" | "aborted";
   calls: Array<{ tool: string; input: unknown; outcome: ToolOutcome }>;
 }
 
@@ -28,6 +28,8 @@ export interface AgentOptions {
   task: string;
   /** Hard ceiling on model turns. A runaway agent stops here. */
   maxSteps?: number;
+  /** Hard ceiling on tool calls across the run; one turn can ask for many, so steps alone do not bound the work. */
+  maxCalls?: number;
   onEvent?: (event: AgentEvent) => void;
   /** Stops the run before the next model turn or tool call, for example when the person who started it walks away. */
   signal?: AbortSignal;
@@ -36,6 +38,7 @@ export interface AgentOptions {
 export async function runAgent(options: AgentOptions): Promise<AgentRun> {
   const { model, toolbox, system, task, onEvent } = options;
   const maxSteps = options.maxSteps ?? 24;
+  const maxCalls = options.maxCalls ?? 40;
   const tools = toolbox.specs.map((s) => ({ name: s.name, description: s.description, input_schema: s.inputSchema }));
   const messages: Message[] = [{ role: "user", content: task }];
   const calls: AgentRun["calls"] = [];
@@ -43,7 +46,13 @@ export async function runAgent(options: AgentOptions): Promise<AgentRun> {
 
   for (let step = 1; step <= maxSteps; step++) {
     if (options.signal?.aborted) return { steps: step - 1, finalText, stoppedBecause: "aborted", calls };
-    const turn = await model.converse({ system, messages, tools });
+    let turn: ConverseResult;
+    try {
+      turn = await model.converse({ system, messages, tools, ...(options.signal ? { signal: options.signal } : {}) });
+    } catch (error) {
+      if (options.signal?.aborted) return { steps: step, finalText, stoppedBecause: "aborted", calls };
+      throw error;
+    }
     messages.push({ role: "assistant", content: turn.content });
 
     const text = turn.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n").trim();
@@ -58,6 +67,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentRun> {
     const results: Block[] = [];
     for (const use of uses) {
       if (options.signal?.aborted) return { steps: step, finalText, stoppedBecause: "aborted", calls };
+      if (calls.length >= maxCalls) return { steps: step, finalText, stoppedBecause: "call_limit", calls };
       onEvent?.({ type: "call", id: use.id, tool: use.name, input: use.input });
       const outcome = await toolbox.call(use.name, use.input);
       calls.push({ tool: use.name, input: use.input, outcome });

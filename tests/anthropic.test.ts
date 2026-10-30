@@ -54,6 +54,19 @@ describe("model transport", () => {
     await expect(ask(modelWith(fetchFn))).rejects.toBeInstanceOf(ModelError);
   });
 
+  it("aborts an in-flight request promptly when the caller's signal fires", async () => {
+    const hanging = ((_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason)))) as unknown as typeof fetch;
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20);
+    const started = Date.now();
+
+    const call = modelWith(hanging).extract({ system: "s", user: "u", schema: Answer, toolName: "record", toolDescription: "d" }, controller.signal);
+
+    await expect(call).rejects.toMatchObject({ name: "ModelError", message: "model request aborted" });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it("never puts the API key in an error", async () => {
     const { fetchFn } = scripted({ status: 401, body: { error: { message: "invalid x-api-key" } } });
 

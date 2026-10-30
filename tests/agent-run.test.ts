@@ -24,12 +24,12 @@ const use = (id: string, name: string, input: unknown): Block => ({ type: "tool_
 function rig(agent: AgentModel | null, options: { sandbox?: boolean } = {}) {
   const w = world();
   const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET });
-  const closer = new Closer({ ledger: w.ledger, api: w.api, secret: SECRET, paidHoldMs: 0 });
+  const closer = new Closer({ ledger: w.ledger, api: w.api, gateway: w.gateway, secret: SECRET, paidHoldMs: 0 });
   const handle = createApi({
     ledger: w.ledger, gateway: w.gateway, commander, closer, model: null,
     simulator: options.sandbox ? { advance: async () => undefined } : null,
     token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", paidHoldMs: 0,
-    agent: agent ? { model: agent, actor: "agent:test" } : null,
+    agent: agent ? { model: agent, actor: "agent:test", kind: "scripted" } : null,
   });
   const post = (body: unknown, token: string | null = TOKEN) =>
     handle(new Request("http://api.test/api/agent/run", {
@@ -66,11 +66,11 @@ describe("a scoped run", () => {
       reference: "INV-2002", beneficiaryId: "ben-A", amountMinor: 5_000, currency: "USD", method: "LOCAL", reason: "professional_business_services",
     });
     const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET });
-    const closer = new Closer({ ledger: w.ledger, api: w.api, secret: SECRET, paidHoldMs: 0 });
+    const closer = new Closer({ ledger: w.ledger, api: w.api, gateway: w.gateway, secret: SECRET, paidHoldMs: 0 });
     const handle = createApi({
       ledger: w.ledger, gateway: w.gateway, commander, closer, model: null, simulator: null,
       token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", paidHoldMs: 0,
-      agent: { model: script(...turns(w.obligation.id, other.id)), actor: "agent:test" },
+      agent: { model: script(...turns(w.obligation.id, other.id)), actor: "agent:test", kind: "scripted" },
     });
     const post = (body: unknown) =>
       handle(new Request("http://api.test/api/agent/run", {
@@ -100,7 +100,7 @@ describe("a scoped run", () => {
     expect(seen.at(-1)).toMatchObject({ type: "done", calls: 3, refused: 1, stoppedBecause: "finished" });
     expect(w.api.all).toHaveLength(1);
     expect(w.ledger.requireObligation(w.obligation.id).status).toBe("ESCALATED");
-    expect(w.ledger.events(w.obligation.id).filter((e) => e.type === "AGENT_TOOL_CALL").map((e) => (e.payload as { actor: string }).actor)).toEqual(["agent:test", "agent:test"]);
+    expect(w.ledger.events(w.obligation.id).filter((e) => e.type === "AGENT_TOOL_CALL").map((e) => (e.payload as { actor: string }).actor)).toEqual(["agent:test", "agent:test", "agent:test"]);
   });
 
   it("cannot see or touch an incident outside its scope", async () => {
@@ -116,6 +116,7 @@ describe("a scoped run", () => {
     expect(results[1]).toMatchObject({ ok: false, kind: "invalid" });
     expect(results[2]).toMatchObject({ ok: false, kind: "invalid" });
     expect(w.ledger.requireObligation(other.id).status).toBe("OPEN");
+    expect(w.ledger.events(other.id).some((e) => e.type === "AGENT_TOOL_CALL")).toBe(false);
   });
 
   it("will not let the agent supply message text of its own", async () => {
@@ -207,11 +208,11 @@ describe("adversary mode", () => {
       };
     })();
     const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET });
-    const closer = new Closer({ ledger: w.ledger, api: w.api, secret: SECRET, paidHoldMs: 0 });
+    const closer = new Closer({ ledger: w.ledger, api: w.api, gateway: w.gateway, secret: SECRET, paidHoldMs: 0 });
     const handle = createApi({
       ledger: w.ledger, gateway: w.gateway, commander, closer, model: null, simulator: { advance: async () => undefined },
       token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", paidHoldMs: 0,
-      agent: { model: attacker, actor: "agent:claude" },
+      agent: { model: attacker, actor: "agent:claude", kind: "claude" },
     });
 
     const response = await handle(new Request("http://api.test/api/agent/run", {

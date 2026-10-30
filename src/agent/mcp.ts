@@ -33,13 +33,22 @@ const fail = (id: JsonRpcRequest["id"], code: number, message: string): JsonRpcR
   jsonrpc: "2.0", id: id ?? null, error: { code, message },
 });
 
-/** Handles one parsed message. Returns null for notifications, which take no reply. */
+/** Handles one parsed message. Notifications (no id) are never executed and never answered. */
 export async function handleMessage(toolbox: Toolbox, message: unknown): Promise<JsonRpcResponse | null> {
   if (message === null || typeof message !== "object" || Array.isArray(message)) return fail(null, -32600, "invalid request");
   const request = message as JsonRpcRequest;
-  const isNotification = request.id === undefined;
-  if (typeof request.method !== "string") return isNotification ? null : fail(request.id, -32600, "missing method");
+  // notifications/initialized, notifications/cancelled, ...: accepted silently, and nothing runs on their behalf.
+  if (request.id === undefined) return null;
+  if (typeof request.method !== "string") return fail(request.id, -32600, "missing method");
+  try {
+    return await dispatchRequest(toolbox, request);
+  } catch (error) {
+    // A handler failure (a busy database, say) answers this request; the server keeps serving the next one.
+    return fail(request.id, -32603, `internal error: ${error instanceof Error ? error.message : "unknown"}`);
+  }
+}
 
+async function dispatchRequest(toolbox: Toolbox, request: JsonRpcRequest): Promise<JsonRpcResponse> {
   switch (request.method) {
     case "initialize": {
       const asked = request.params?.protocolVersion;
@@ -59,18 +68,21 @@ export async function handleMessage(toolbox: Toolbox, message: unknown): Promise
           name: s.name,
           description: s.description,
           inputSchema: s.inputSchema,
-          annotations: { readOnlyHint: s.readOnly, destructiveHint: false, openWorldHint: false },
+          annotations: s.annotations,
         })),
       });
     case "tools/call": {
       const name = request.params?.name;
       if (typeof name !== "string") return fail(request.id, -32602, "tools/call needs a tool name");
       const outcome = await toolbox.call(name, request.params?.arguments ?? {});
-      return ok(request.id, { content: [{ type: "text", text: JSON.stringify(outcome, null, 2) }], isError: !outcome.ok });
+      return ok(request.id, {
+        content: [{ type: "text", text: JSON.stringify(outcome, null, 2) }],
+        structuredContent: outcome,
+        isError: !outcome.ok,
+      });
     }
     default:
-      // Notifications (notifications/initialized, notifications/cancelled, ...) are accepted silently.
-      return isNotification ? null : fail(request.id, -32601, `method not found: ${request.method}`);
+      return fail(request.id, -32601, `method not found: ${request.method}`);
   }
 }
 
