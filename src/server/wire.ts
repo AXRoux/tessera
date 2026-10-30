@@ -90,6 +90,10 @@ export const IncidentSummarySchema = z.object({
     .object({ seq: z.number().int(), state: AttemptStateSchema, awxStatus: z.string().nullable(), failureCode: z.string().nullable() })
     .nullable(),
   updatedAt: z.string(),
+  /** What an agent last did on this incident (a verdict, refused or not), read from the ledger's audit events. */
+  lastAgentAction: z.object({ actor: z.string(), tool: z.string(), outcome: z.string(), at: z.string() }).nullable(),
+  /** Why a person is needed, most urgent reason first; null when nothing is waiting for one. */
+  attention: z.object({ kind: z.enum(["ESCALATED", "NEEDS_ACTION", "DRAFT"]), reason: z.string() }).nullable(),
 });
 export type IncidentSummary = z.infer<typeof IncidentSummarySchema>;
 
@@ -135,6 +139,8 @@ export const HealthSchema = z.object({
   operator: z.string(),
   /** Who drives agent runs: Claude, the deterministic scripted agent (not Claude), or nobody. */
   agent: z.enum(["claude", "scripted"]).nullable(),
+  /** The offline demo can be reset to empty (POST /api/demo/reset). Never true against the sandbox. */
+  canReset: z.boolean(),
 });
 export type Health = z.infer<typeof HealthSchema>;
 

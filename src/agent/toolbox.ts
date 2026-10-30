@@ -392,16 +392,9 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       annotations: hints({ idempotentHint: true, openWorldHint: true }),
       operatorOnly: true,
       run: async ({ incidentId }) => {
-        const o = requireIncident(incidentId);
-        // The Closer proves the books tie; it does not know the supplier is disputing receipt. The Commander does, so an
-        // agent cannot use the Closer to certify over a decision that has not allowed it. An already certified incident
-        // just returns its certificate.
-        if (o.status !== "CLOSED") {
-          const { decision } = await commander.assess(incidentId, recordedEvidence(incidentId));
-          if (!decision.allowed.includes("CLOSE")) {
-            throw new NotClosable(incidentId, [`the assessment does not allow closing (allowed: ${decision.allowed.join(", ") || "nothing"})`, ...decision.reasons]);
-          }
-        }
+        requireIncident(incidentId);
+        // The same rule the operator's close route follows: the Commander must allow CLOSE before the Closer is asked.
+        await commander.assertCloseAllowed(incidentId, recordedEvidence(incidentId));
         const certificate = await closer.close(incidentId);
         return { closed: true, certificateHash: certificate.hash, totals: certificate.body.totals };
       },

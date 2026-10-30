@@ -4,35 +4,65 @@
  *
  *   bun run api                         live: Airwallex (sandbox by default) and, with a key, Claude
  *   TESSERA_OFFLINE=1 bun run api       simulated Airwallex in-process, scripted agent unless a Claude key is set
+ *                                       (can be reset to empty from the console; TESSERA_DEMO_IDLE_RESET_MS resets it when idle)
  */
 import { createApi } from "./api";
+import { resettable, type Instance } from "./resettable";
 import { buildRuntime, resolveBeneficiary } from "./runtime";
 
-const runtime = buildRuntime();
-const { offline, dbPath, paidHoldMs, api, simulator, ledger, gateway, commander, closer, model, agent, webhookSecret } = runtime;
-for (const warning of runtime.warnings) console.warn(`warning: ${warning}`);
+const first = buildRuntime();
+for (const warning of first.warnings) console.warn(`warning: ${warning}`);
 
-if (!runtime.apiToken) throw new Error("TESSERA_API_TOKEN is not set (see .env.example)");
-const token = runtime.apiToken;
+if (!first.apiToken) throw new Error("TESSERA_API_TOKEN is not set (see .env.example)");
+// Chosen once: a reset builds a fresh runtime, and the console must keep working through it.
+const token = first.apiToken;
 const operator = process.env.TESSERA_OPERATOR ?? "operator";
 const port = Number(process.env.TESSERA_API_PORT ?? 4010);
 const sweepSetting = process.env.TESSERA_SWEEP_MS?.trim();
 const sweepMs = sweepSetting ? Number(sweepSetting) : 60_000;
 if (!Number.isSafeInteger(sweepMs) || sweepMs < 0) throw new Error(`TESSERA_SWEEP_MS must be a whole number of milliseconds >= 0 (got "${sweepSetting}")`);
+const idleSetting = process.env.TESSERA_DEMO_IDLE_RESET_MS?.trim();
+const idleResetMs = idleSetting ? Number(idleSetting) : 0;
+if (!Number.isSafeInteger(idleResetMs) || idleResetMs < 0) throw new Error(`TESSERA_DEMO_IDLE_RESET_MS must be a whole number of milliseconds >= 0 (got "${idleSetting}")`);
+if (idleResetMs > 0 && !first.offline) throw new Error("TESSERA_DEMO_IDLE_RESET_MS only applies to the offline demo: a live ledger is never thrown away");
 
-const beneficiaryId = await resolveBeneficiary(api);
+// The first instance is the runtime built above (so startup builds one, not two); every reset builds a fresh one.
+let pending: typeof first | null = first;
+let recoveredAtStart = 0;
+const nextRuntime = () => {
+  const runtime = pending ?? buildRuntime({ ...process.env, TESSERA_API_TOKEN: token });
+  pending = null;
+  return runtime;
+};
 
-// Anything left in INTENT by a crash is resolved before we accept traffic.
-const resolved = await gateway.recover();
+async function build(): Promise<Instance> {
+  const isFirst = pending !== null;
+  const { offline, api, simulator, ledger, gateway, commander, closer, model, agent, paidHoldMs, webhookSecret } = nextRuntime();
+  const beneficiaryId = await resolveBeneficiary(api);
+  // Anything left in INTENT by a crash is resolved before we accept traffic.
+  const resolved = await gateway.recover();
+  if (isFirst) recoveredAtStart = resolved.length;
+  return {
+    handle: createApi({
+      ledger, gateway, commander, closer, model, simulator, token, operator, beneficiaryId, paidHoldMs, agent, offline, webhookSecret,
+      reset: offline ? () => demo.reset() : undefined,
+    }),
+    sweep: async () => {
+      await gateway.recover();
+      await gateway.sync();
+    },
+  };
+}
+
+const demo = await resettable(build);
+const { offline, dbPath, paidHoldMs, simulator, model, agent, webhookSecret } = first;
 
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port,
   // Agent runs stream for a minute or more; the default 10s idle timer would cut them off between model turns.
   idleTimeout: 255,
-  fetch: createApi({
-    ledger, gateway, commander, closer, model, simulator, token, operator, beneficiaryId, paidHoldMs, agent, offline, webhookSecret,
-  }),
+  fetch: demo.handle,
 });
 
 /**
@@ -45,8 +75,7 @@ if (sweepMs > 0) {
     if (sweeping) return;
     sweeping = true;
     try {
-      await gateway.recover();
-      await gateway.sync();
+      await demo.sweep();
     } catch (error) {
       console.error("sweep failed", error instanceof Error ? error.message : error);
     } finally {
@@ -55,11 +84,18 @@ if (sweepMs > 0) {
   }, sweepMs);
 }
 
+// A shared public demo is left in whatever state the last visitor made of it; start the next one clean.
+if (idleResetMs > 0) {
+  setInterval(() => {
+    if (demo.idleMs() > idleResetMs) void demo.reset().then(() => console.log("demo was idle; reset to empty"));
+  }, Math.min(30_000, idleResetMs)).unref();
+}
+
 const agentLabel = agent ? (agent.kind === "scripted" ? "scripted, not Claude" : `Claude (${process.env.TESSERA_MODEL})`) : "off";
 const readerLabel = model ? (agent?.kind === "scripted" ? "offline keyword reader, not Claude" : "Claude") : "off";
 console.log(`tessera api  http://${server.hostname}:${server.port}${offline ? "  ·  OFFLINE: simulated Airwallex, no money moves" : ""}`);
-console.log(`  ledger ${dbPath}  |  recovered ${resolved.length} unresolved attempt(s)  |  hold ${paidHoldMs}ms`);
-console.log(`  agent ${agentLabel}  |  reader ${readerLabel}  |  simulator ${simulator ? "on" : "off"}  |  webhooks ${webhookSecret ? "on" : "off"}  |  sweep ${sweepMs > 0 ? `${sweepMs}ms` : "off"}`);
-if (runtime.generatedToken) {
+console.log(`  ledger ${dbPath}  |  recovered ${recoveredAtStart} unresolved attempt(s)  |  hold ${paidHoldMs}ms`);
+console.log(`  agent ${agentLabel}  |  reader ${readerLabel}  |  simulator ${simulator ? "on" : "off"}  |  webhooks ${webhookSecret ? "on" : "off"}  |  sweep ${sweepMs > 0 ? `${sweepMs}ms` : "off"}${offline ? `  |  reset on${idleResetMs > 0 ? ` (idle ${idleResetMs}ms)` : ""}` : ""}`);
+if (first.generatedToken) {
   console.log(`  generated API token for this process (set TESSERA_API_TOKEN to choose one): ${token}`);
 }

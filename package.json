@@ -17,6 +17,8 @@
     "demo": "bun run scripts/dev.ts --offline",
     "dev": "bun run scripts/dev.ts",
     "setup": "bun run scripts/setup.ts",
+    "doctor": "bun run scripts/doctor.ts",
+    "webhook:ping": "bun run scripts/webhook-ping.ts",
     "scale": "bun run scripts/scale.ts",
     "smoke:offline": "bun run scripts/offline-smoke.ts"
   },

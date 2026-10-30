@@ -4,10 +4,13 @@ import failureCodes from "../fixtures/failure-codes.json";
 import { AwxHttpError } from "../src/airwallex/types";
 import { Closer } from "../src/closer/closer";
 import { Commander } from "../src/commander/commander";
+import { DEFAULT_POLICY } from "../src/commander/policy";
 import type { ExtractRequest, StructuredModel } from "../src/commander/evidence";
 import { createHmac } from "node:crypto";
+import { createToolbox } from "../src/agent/toolbox";
 import type { AgentModel } from "../src/agent/loop";
 import { createApi, type ApiDeps, type Simulator } from "../src/server/api";
+import { resettable } from "../src/server/resettable";
 import {
   AttemptResolvedSchema,
   EscalationResolvedSchema,
@@ -72,7 +75,8 @@ function apiWorld(
   options: { paidHoldMs?: number; model?: StructuredModel | null; simulator?: (api: FakePayoutApi) => Simulator; deps?: Partial<ApiDeps> } = {},
 ): ApiWorld {
   const w = world();
-  const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET });
+  // One hold window for both, as in the runtime: what the Commander waits for is what the Closer enforces.
+  const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET, policy: { ...DEFAULT_POLICY, paidHoldMs: options.paidHoldMs ?? 0 } });
   const closer = new Closer({ ledger: w.ledger, api: w.api, gateway: w.gateway, secret: SECRET, paidHoldMs: options.paidHoldMs ?? 0 });
   const handle = createApi({
     ledger: w.ledger, gateway: w.gateway, commander, closer,
@@ -244,7 +248,27 @@ describe("actions", () => {
     const blocked = await a.call("POST", `/api/obligations/${id}/close`);
 
     expect(blocked.status).toBe(409);
-    expect(blocked.get("blockers")).toContainEqual(expect.stringMatching(/^PAID is not final/));
+    expect(blocked.get("blockers")).toContainEqual(expect.stringMatching(/^Paid is not final/));
+  });
+
+  it("refuses an operator's close while the supplier is disputing receipt, and allows it once the operator records that it is settled", async () => {
+    const a = apiWorld();
+    const id = await openIncident(a);
+    await a.call("POST", `/api/obligations/${id}/simulate`, { status: "PAID" });
+    const evidence = (claimsNonReceipt: boolean) => ({
+      claimsNonReceipt, requestsDetailChange: false, referencesObligation: true, containsEmbeddedInstructions: false,
+      statementCreditMinor: null, summary: claimsNonReceipt ? "supplier says nothing arrived" : "supplier confirmed receipt by phone",
+    });
+
+    await a.call("POST", `/api/obligations/${id}/evidence`, evidence(true));
+    const refused = await a.call("POST", `/api/obligations/${id}/close`);
+
+    expect(refused.status).toBe(409);
+    expect(refused.get("blockers")).toContainEqual(expect.stringMatching(/does not allow closing/));
+    expect(a.ledger.getCertificateJson(id)).toBeNull();
+
+    await a.call("POST", `/api/obligations/${id}/evidence`, evidence(false));
+    expect((await a.call("POST", `/api/obligations/${id}/close`)).status).toBe(200);
   });
 
   it("closes a reconciled payment and serves a certificate that matches", async () => {
@@ -544,5 +568,81 @@ describe("one agent run at a time", () => {
     expect((await a.call("POST", "/api/agent/run", { mode: "nonsense" })).status).toBe(400);
     release();
     expect((await a.call("POST", "/api/agent/run", {})).status).toBe(200);
+  });
+});
+
+describe("what the board is told about agents and people", () => {
+  const agentOn = (a: ApiWorld) =>
+    createToolbox({
+      ledger: a.ledger, gateway: a.gateway, model: null, actor: "agent:test", acceptClientText: false,
+      commander: new Commander({ ledger: a.ledger, gateway: a.gateway, balances: a.api, secret: SECRET, policy: { ...DEFAULT_POLICY, paidHoldMs: 0 } }),
+      closer: new Closer({ ledger: a.ledger, api: a.api, gateway: a.gateway, secret: SECRET, paidHoldMs: 0 }),
+    });
+  const summaryOf = async (a: ApiWorld, id: string) =>
+    (await a.call("GET", "/api/obligations")).parse(IncidentListSchema).items.find((i) => i.id === id)!;
+
+  it("shows an agent's verdict, and why a person is needed once it hands the incident over", async () => {
+    const a = apiWorld();
+    const id = await openIncident(a);
+    expect(await summaryOf(a, id)).toMatchObject({ lastAgentAction: null, attention: null });
+    const agent = agentOn(a);
+
+    await agent.call("assess_incident", { incidentId: id });
+    expect((await summaryOf(a, id)).lastAgentAction).toBeNull();
+
+    await agent.call("escalate_to_human", { incidentId: id, reason: "supplier disputes the amount" });
+    const handed = await summaryOf(a, id);
+
+    expect(handed.lastAgentAction).toMatchObject({ actor: "agent:test", tool: "escalate_to_human", outcome: "ok" });
+    expect(handed.attention).toMatchObject({ kind: "ESCALATED", reason: expect.stringContaining("supplier disputes the amount") });
+  });
+
+  it("shows a refused attempt as the agent's last verdict, so a hostile agent is visible on the board", async () => {
+    const a = apiWorld();
+    const id = await openIncident(a);
+
+    await agentOn(a).call("replace_payment", { incidentId: id });
+
+    expect((await summaryOf(a, id)).lastAgentAction).toMatchObject({ tool: "replace_payment", outcome: "refused" });
+  });
+
+  it("asks for a decision when a failed payment is back in the wallet, and for a send when a reply is drafted", async () => {
+    const a = apiWorld();
+    const duplicate = await openIncident(a);
+    await a.call("POST", `/api/obligations/${duplicate}/simulate`, { status: "FAILED", failureType: "DUPLICATION_RETURN" });
+
+    expect((await summaryOf(a, duplicate)).attention).toMatchObject({ kind: "NEEDS_ACTION", reason: expect.stringContaining("91301") });
+
+    const waiting = await openIncident(a);
+    await agentOn(a).call("draft_supplier_reply", { incidentId: waiting, kind: "STATUS", message: "Thanks for getting in touch. The payment is still in transit and we are watching it." });
+
+    expect((await summaryOf(a, waiting)).attention).toMatchObject({ kind: "DRAFT" });
+  });
+});
+
+describe("starting the offline demo over", () => {
+  const references = async (call: (method: string, path: string) => Promise<Response>) =>
+    (await (await call("GET", "/api/obligations")).json() as { items: Array<{ reference: string }> }).items.map((i) => i.reference);
+
+  it("throws the old state away, keeps the same operator token working, and can be seeded again", async () => {
+    const demo = await resettable(async () => ({ handle: apiWorld({ deps: { reset: () => demo.reset() } }).handle, sweep: async () => {} }));
+    const call = (method: string, path: string) => demo.handle(new Request(`http://api.test${path}`, { method, headers: { "x-tessera-token": TOKEN } }));
+
+    expect((await call("POST", "/api/demo/seed")).status).toBe(201);
+    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(6);
+
+    expect((await call("POST", "/api/demo/reset")).status).toBe(200);
+    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(0);
+
+    expect((await call("POST", "/api/demo/seed")).status).toBe(201);
+    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(6);
+  });
+
+  it("is refused where there is nothing to throw away, and says so in health", async () => {
+    const live = apiWorld();
+
+    expect((await live.call("POST", "/api/demo/reset")).status).toBe(403);
+    expect((await live.call("GET", "/api/health")).parse(HealthSchema).canReset).toBe(false);
+    expect((await apiWorld({ deps: { reset: async () => {} } }).call("GET", "/api/health")).parse(HealthSchema).canReset).toBe(true);
   });
 });

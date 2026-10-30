@@ -35,6 +35,7 @@ import type { Ledger, Obligation } from "../ledger/ledger";
 import { toMinor } from "../money";
 import { EmlNotPlainText, parseEml } from "./eml";
 import { computeMetrics } from "./metrics";
+import { attentionOf, lastAgentAction } from "./attention";
 import type { AgentStreamEvent, Health, IncidentSummary, IncidentView, SeedResult } from "./wire";
 
 /** Sandbox or offline only: moves a transfer through Airwallex's simulator (or the fake's). Kept behind one interface so it can be removed. */
@@ -74,6 +75,8 @@ export interface ApiDeps {
   offline?: boolean;
   /** Endpoint secret for POST /api/webhooks/airwallex. Absent means the route answers 404. */
   webhookSecret?: string | null;
+  /** Offline demo only: throw the in-memory state away and start empty. Absent means the route answers 403. */
+  reset?: () => Promise<void>;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -176,10 +179,13 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
   const summary = (o: Obligation): IncidentSummary => {
     const attempts = ledger.attemptsFor(o.id);
     const latest = attempts.at(-1);
+    const events = ledger.events(o.id);
     return {
       id: o.id, reference: o.reference, amountMinor: o.amountMinor, currency: o.currency, method: o.method,
       status: o.status, attemptCount: attempts.length, updatedAt: o.updatedAt,
       latest: latest ? { seq: latest.seq, state: latest.state, awxStatus: latest.awxStatus, failureCode: latest.failureCode } : null,
+      lastAgentAction: lastAgentAction(events),
+      attention: attentionOf(o, latest, events),
     };
   };
 
@@ -391,7 +397,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       if (request.method === "GET" && path === "/api/health") {
         const health: Health = {
           ok: true, model: deps.model !== null, sandbox: deps.simulator !== null, offline: deps.offline ?? false,
-          webhooks: Boolean(deps.webhookSecret), operator: deps.operator, agent: deps.agent?.kind ?? null,
+          webhooks: Boolean(deps.webhookSecret), operator: deps.operator, agent: deps.agent?.kind ?? null, canReset: deps.reset !== undefined,
         };
         return json(health);
       }
@@ -402,6 +408,12 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         const seeded = await seedAcme({ ledger, gateway, commander, simulator: deps.simulator, approver: deps.operator }, deps.beneficiaryId);
         const result: SeedResult = { seeded: seeded.map(({ id, reference, expected }) => ({ id, reference, expected })) };
         return json(result, 201);
+      }
+      if (request.method === "POST" && path === "/api/demo/reset") {
+        // Only the offline demo can be reset: a live ledger is the record of real sandbox transfers.
+        if (!deps.reset) return json({ error: "Forbidden", message: "reset exists only in the offline demo" }, 403);
+        await deps.reset();
+        return json({ ok: true });
       }
       if (request.method === "POST" && path === "/api/agent/run") return await startAgentRun(request);
       if (request.method === "GET" && path === "/api/obligations") {
@@ -492,6 +504,8 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
           return json({ resolved: results.map((r) => ({ outcome: r.outcome, attemptId: r.attempt.id })) });
         }
         case "close": {
+          // Same rule as the agent's close tool: the Closer proves the books tie, the Commander knows what is still disputed.
+          await commander.assertCloseAllowed(id, effectiveEvidence(ledger.events(id), ledger.requireObligation(id).amountMinor)?.evidence ?? null);
           const certificate = await closer.close(id);
           return json({ hash: certificate.hash }, 200);
         }

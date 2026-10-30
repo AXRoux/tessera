@@ -1,7 +1,7 @@
 import { issueApproval, newNonce, type Approval } from "../approval/approval";
 import type { BalanceApi } from "../airwallex/types";
 import { canonicalJson, sha256Hex } from "../canonical";
-import { ApprovalRejected, AutoReplacementRefused } from "../errors";
+import { ApprovalRejected, AutoReplacementRefused, NotClosable } from "../errors";
 import type { PayoutGateway, SubmitResult } from "../gateway/gateway";
 import { paidObservedAt, TransferStatusPayloadSchema } from "../ledger/events";
 import type { Ledger, LedgerEvent, Method } from "../ledger/ledger";
@@ -109,6 +109,21 @@ export class Commander {
       }),
     );
     return { obligationId, facts, decision, evidenceHash };
+  }
+
+  /**
+   * The Closer proves the books tie; it cannot know a supplier is disputing receipt, or that a person already has the
+   * incident. The Commander can. Certifying needs both, so every caller (the agent's close tool and the operator's close
+   * route) goes through this before asking the Closer. An incident that is already certified just returns its certificate.
+   */
+  async assertCloseAllowed(obligationId: string, evidence: SupplierEvidence | null = null): Promise<void> {
+    if (this.ledger.requireObligation(obligationId).status === "CLOSED") return;
+    const { decision } = await this.assess(obligationId, evidence);
+    if (decision.allowed.includes("CLOSE")) return;
+    throw new NotClosable(obligationId, [
+      `the assessment does not allow closing (allowed: ${decision.allowed.join(", ") || "nothing"})`,
+      ...decision.reasons,
+    ]);
   }
 
   /**

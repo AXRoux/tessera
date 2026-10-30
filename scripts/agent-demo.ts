@@ -99,7 +99,8 @@ function show(event: AgentEvent): void {
     console.log(`    ${green("✓")} ${dim("ok")}`);
   } else {
     const o = event.outcome;
-    const why = o.message.replace(/obligation [\w-]{36}:? ?/g, "").slice(0, 150);
+    // A refusal can list several blockers on separate lines; the terminal shows them on one, separated by semicolons.
+    const why = o.message.replace(/obligation [\w-]{36}:? ?/g, "").replace(/:\s*\n\s*- /, ": ").replace(/\s*\n\s*- /g, "; ").slice(0, 170);
     console.log(`    ${o.kind === "refused" ? red("✗ REFUSED") : yellow("! " + o.kind)} ${dim(o.kind === "refused" ? `${o.error}: ${why}` : why)}`);
   }
 }
