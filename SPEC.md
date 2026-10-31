@@ -19,7 +19,8 @@ Success criteria (all demonstrated against the real sandbox):
 7. The Closer refuses to close until per-transfer ledger entries reconcile.
 8. An agent holding only the toolbox cannot pay twice, pay the wrong party, release a forbidden replacement, or make the
    Closer certify early or over a supplier's open claim of non-receipt, however it is prompted. Thirty attacks prove it
-   (`bun run redteam`), each mutation-checked, and a live Claude told to pay twice could not (`bun run agent -- --adversary`).
+   (`bun run redteam`), and `bun run mutate` proves each guard behind them is load-bearing: it removes 49 guards one at a time
+   from a private copy and fails unless every one is caught. A live Claude told to pay twice could not (`bun run agent -- --adversary`).
 9. Supplier-supplied evidence can only make the system more cautious: tested as a property over every playbook code and over
    sequences of evidence, so a later harmless message cannot erase an earlier warning.
 10. A payment is refused when the ledger does not verify (an edited, flipped or deleted row cannot release the lock), and a bank

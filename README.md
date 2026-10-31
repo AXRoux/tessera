@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/AXRoux/tessera/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AXRoux/tessera/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="attacks held 30/30" src="https://img.shields.io/badge/attacks_held-30%2F30-1f4dff">
-  <img alt="294 tests passing" src="https://img.shields.io/badge/tests-294_passing-0b0d12">
+  <img alt="409 tests passing" src="https://img.shields.io/badge/tests-409_passing-0b0d12">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-1f4dff">
   <img alt="Airwallex sandbox" src="https://img.shields.io/badge/Airwallex-sandbox-0b0d12">
   <img alt="Bun and TypeScript" src="https://img.shields.io/badge/Bun_%C2%B7_TypeScript-strict-1f4dff?logo=bun&logoColor=white">
@@ -45,7 +45,7 @@ bun run redteam        # no keys: 30 attacks on the invariants, with a scoreboar
 | **An agent that cannot hurt you** | Told to get a supplier paid twice, the same Claude was **refused seven times in the recorded run and could not**. The database, the playbook, the draft guard and the Closer said no. |
 | **Plugs into anything** | A zero-dependency [MCP server](#use-it-from-claude-desktop-claude-code-or-any-mcp-client) exposes nine typed tools. Verified against the official MCP Inspector. |
 | **In the console, one click** | **Let Claude work them all** streams the agent live. **Try to break it** tells the same agent to pay twice and shows every refusal in black. |
-| **Proof, not claims** | 30 adversarial attacks, 294 tests, `kill -9` mid-payment on the real sandbox, and mutation checks: each new attack was run against the code with its guard deliberately removed, and failed. |
+| **Proof, not claims** | 30 adversarial attacks, 409 tests, `kill -9` mid-payment on the real sandbox, and `bun run mutate`: 49 guards removed one at a time from a private copy, every one caught. |
 
 ### Why this is worth building
 
@@ -305,8 +305,9 @@ The loop is ~60 lines. It has no authority of its own: no gateway, no secret, no
 ## Prove it
 
 ```sh
-bun test                   # 294 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
+bun test                   # 409 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
 bun run redteam            # 30 attacks, offline, with a scoreboard
+bun run mutate             # 49 guard removals on a private copy of the repo; fails unless each is caught (about 15 s)
 bun run typecheck && (cd web && bun run typecheck)
 bun run scripts/offline-smoke.ts   # no keys: seed, scripted agent run, invariant + hash chain (CI runs it)
 bun run scale                      # no keys: 100 mixed USD/EUR incidents, metrics, INVARIANT HELD
@@ -365,32 +366,74 @@ bun run agent -- --adversary
 
 ### The tests have teeth
 
-A test that always passes proves nothing, so the red team was **mutation-checked**. I broke the code on purpose, 23 ways, and confirmed the matching attacks failed each time:
+A test that always passes proves nothing, so this is a command, not a claim. **`bun run mutate`** removes one guard at a time from a private copy of the repo (in the OS temp directory; your working tree is never written), runs the red team and the named tests against the copy, and **fails unless every one of them notices**. It checks that each edit still compiles (a mutation that does not build proves nothing), runs a baseline first (a red baseline means no result is meaningful), and refuses to run if the catalog no longer matches the source. Offline, about 15 seconds: `49/49 mutations killed`. `bun run mutate -- --list` shows what is in it.
 
-| Break | Attacks that failed |
+The first full run did **not** pass, and that is the point. It killed 33 of 45 and found:
+
+- **Three real gaps in my own tests.** Attack 14 (smuggle instructions to the agent) used a reader model that never copied the email into its summary, so returning the summary to the agent went unnoticed; it now uses a model that parrots the whole message. The evidence-hash test used two incidents that differed in amount, so the incident id was never what told them apart; there is now a pair identical in every field but the id. The audit-trail attack edited a transfer status that the tables also record, so the hash check alone was never proven; it now also edits a note no table records.
+- **Three attacks that never exercised the guard they claim to.** Attack 15 (make the network lie) never ran the retry where a naive gateway pays again; attack 20 (a payment is returned after `PAID`) synced the ledger itself before asking to close, so it never tested whether closing re-reads Airwallex; and nothing tested the Commander turning an unreadable wallet balance into a refusal.
+- **Rules enforced twice.** Several rules have two or more independent layers (the PAID hold window is checked by both the Commander and the Closer; replaying an approval is stopped four ways). Removing one layer changes nothing observable, which is correct. The table therefore has a row that removes one layer (caught by a unit test) and a row that removes **all of them** (caught by the attack). One layer, `escalationView`, is redundant behind `scrub` and is left out on purpose; it is explained in `scripts/mutations.ts`.
+
+<details>
+<summary><b>All 49 mutations, and what caught each</b></summary>
+
+<br>
+
+| Break | What caught it |
 |---|---|
-| Skip the HMAC check | Sign your own approval |
-| Make unknown failure codes auto-replaceable | A failure code nobody has seen |
-| Make `DUPLICATION_RETURN` auto-replaceable | Auto-replace a possible duplicate, one-word justification |
-| Remove the one-open-attempt index and the gateway check | Replace while in flight, replace at `FAILED` |
-| Ignore the hold window | Close the books too early |
-| Echo the email back to the agent | Smuggle instructions |
-| Disable the evidence cross-check | Phish a fooled reader |
-| Stop verifying the hash chain | Edit the audit trail |
-| Turn the draft guard off | Smuggle bank details into a supplier reply |
-| Let a draft ignore what the Commander allows | Send proof of payment for a payment still in flight |
-| Make `effectiveEvidence` return only the newest record | Launder a warning with a harmless second message |
-| Skip the `evidenceHash` comparison in `humanApproval` | Approve against a stale assessment |
-| Skip certificate revocation on a late failure | Certify, then the bank returns the money |
-| Skip the webhook signature check, or the ±5 minute window, or the duplicate-id check | Forge or replay an Airwallex webhook (three separate breaks) |
-| Judge a replacement by the latest attempt even if it was abandoned | Reset the playbook with a rejected replacement |
-| Remove the ledger-verifies check before a payment | Cut the audit trail and release the lock by hand |
-| Ignore the stored chain head | Cut the audit trail (deleted events go undetected) |
-| Show another agent's escalation reason, or a sender's raw address | Smuggle instructions to the next agent (two separate breaks) |
-| Drop the automatic replacement cap | Keep failing until the money runs out |
-| Let the toolbox close without asking the Commander | Certify while the supplier says nothing arrived |
+| Skip the HMAC check on an approval | attack 5; approval.test.ts |
+| Stop checking an approval's signature AND its amount against the invoice (so an edited amount can be paid) | attack 6 |
+| Accept an approval after it expired | attack 8; approval.test.ts |
+| Stop refusing a spent approval nonce (the database's unique nonce column is a second guard) | gateway.test.ts: rejects an approval that has already been spent |
+| Remove EVERY defence against spending an approval twice: the nonce check, the unique nonce column, the open-attempt lock and the replaces-the-latest-attempt binding | attack 1; attack 4 |
+| Let a first payment use terms other than the invoice's own | attack 7; money-path.test.ts: a first attempt, with nothing behind it |
+| Remove the one-open-attempt index and the gateway's check | attack 2; attack 3; gateway.test.ts: is enforced by the database even when the gateway is bypassed |
+| Let a policy approval pay an escalated invoice | attack 16 |
+| Judge a replacement by the latest attempt even when it was abandoned | attack 26; money-path.test.ts: 11. a person may correct the terms |
+| Remove the ledger-verifies check before a payment | attack 27; gateway.test.ts: refuses to pay on a ledger whose attempt row was edited |
+| Make a failure code nobody has seen auto-replaceable | attack 11; playbook.test.ts |
+| Make DUPLICATION_RETURN auto-replaceable | attack 9; attack 12; playbook.test.ts |
+| Drop the automatic replacement amount limit | attack 10; policy.test.ts |
+| Drop the cap on automatic replacements per invoice | attack 29; policy.test.ts: escalates once the automatic replacement budget is spent |
+| Treat an unreadable wallet balance as enough money | commander.test.ts: refuses when the wallet balance cannot be read |
+| Let any record's statement credit lift an open non-receipt claim | commander.test.ts: 13. a later record's statement credit cannot lift a non-receipt claim |
+| Make effectiveEvidence return only the newest record | attack 22; evidence.test.ts; commander.test.ts: evidence cannot be laundered |
+| Disable the code's bank-detail cross-check of what the reader said | attack 13; evidence.test.ts |
+| Return the reader's free-text summary to the agent | attack 14; toolbox.test.ts: never puts the text of a supplier message |
+| Stop scrubbing a withheld escalation reason out of policy reasons and refusals | attack 28; toolbox.test.ts: never lets an agent-written escalation reason reach another agent |
+| Show a sender's raw address to the agent | attack 28; toolbox.test.ts: never shows any part of a sender's address |
+| Turn the supplier-reply guard off | attack 17; drafts.test.ts |
+| Let a draft ignore what the Commander allows | attack 18; drafts.test.ts |
+| Let the toolbox and the operator close without the Commander's say | attack 30; api.test.ts: refuses an operator's close while the supplier is disputing receipt |
+| Skip the evidenceHash comparison on a human approval | attack 23; commander.test.ts: rejects an approval of an assessment that has since changed |
+| Leave the incident's id out of the evidence hash | commander.test.ts: 12. the evidence hash is bound to the incident and the proposal |
+| Ignore the PAID hold window | closer.test.ts: inside the hold window after PAID |
+| Ignore the PAID hold window in BOTH places that enforce it: the Commander's CLOSE decision and the Closer | attack 19; closer.test.ts: inside the hold window after PAID; policy.test.ts |
+| Certify without re-reading the transfer from Airwallex first | closer.test.ts: when Airwallex now says FAILED though the ledger last saw PAID |
+| Certify without re-reading the transfer from Airwallex, in BOTH places that do (the Closer and the Commander's assessment) | attack 20; closer.test.ts: when Airwallex now says FAILED though the ledger last saw PAID |
+| Keep a certificate standing after the bank returns the payment | attack 24; closer.test.ts: revokes the certificate and escalates |
+| Stop verifying each event's hash | attack 21; ledger.test.ts: detects an edited event payload |
+| Ignore the stored chain head (deleted newest events go unnoticed) | attack 27; ledger.test.ts: detects events deleted from the end |
+| Stop noticing an attempt row that was deleted | ledger-verify.test.ts: 3. a deleted attempt row is detected |
+| Stop comparing an attempt's terms and amounts with the event that created it | ledger-verify.test.ts: 4. attempt and obligation columns are verified against their events |
+| Read the chain without one consistent snapshot | ledger-verify.test.ts: 6. verifyChain reads one consistent snapshot |
+| Send without re-reading the attempt first (a released attempt may still be sending) | money-path.test.ts: 1. a released INTENT never leaves a live sender |
+| Send a left-behind payment for an invoice that has been escalated | money-path.test.ts: 5. an escalated obligation is never sent for |
+| Release a young INTENT that Airwallex has no transfer for yet | money-path.test.ts: (b) refuses to release a young INTENT |
+| Release a transfer that is only waiting in an approval queue | money-path.test.ts: 2. approval states are resumable |
+| Let a same-second snapshot that is earlier in the status order roll a status back | money-path.test.ts: 9. whole-second updated_at cannot roll a PAID back |
+| Abandon an attempt without checking it is still an INTENT | money-path.test.ts: 10. abandon is a compare-and-set |
+| Resend straight away when Airwallex says Retry-After: 0 | money-path.test.ts: 16. the 429 loop |
+| Send each create with a fresh request_id instead of the one recorded in the ledger (a naive retry) | attack 15; gateway.test.ts: adopts the transfer by request_id when the create response is lost |
+| Skip the webhook signature check | attack 25; airwallex.test.ts: rejects a body that does not match its signature |
+| Skip the five-minute timestamp window on a webhook | attack 25; airwallex.test.ts: rejects a correctly signed delivery replayed more than five minutes later |
+| Report every webhook event id as new | attack 25; ledger.test.ts: webhook |
+| Stop deduplicating redelivered webhooks in the API route | api.test.ts: re-reads the transfer on the first delivery and ignores a redelivery |
+| Mark a webhook handled even when its sync failed | api.test.ts: 15. a failed sync is not swallowed by the dedupe |
 
-That exercise also caught two attacks that were passing *for the wrong reason*: they used failure type names instead of the sandbox's numeric codes, so they were testing "unknown code" rather than the playbook. They were fixed, and attacks 2 and 3 now also try the gateway directly with a validly signed approval, so the database lock is exercised even when the policy is skipped.
+</details>
+
+A mutation shows a guard is *tested*, not that the code around it is right; the independent review below is the other half. Equivalent changes (the same behaviour written another way) would survive by construction, and none are in the catalog.
 
 ### An independent review, and what it found
 

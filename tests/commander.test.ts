@@ -67,6 +67,18 @@ describe("replacing without a human", () => {
     await expect(commanderFor(w).replaceAutomatically(w.obligation.id)).rejects.toBeInstanceOf(AutoReplacementRefused);
   });
 
+  it("refuses when the wallet balance cannot be read, rather than assuming there is enough", async () => {
+    const w = world();
+    await killedAttempt(w, "91402");
+    const commander = new Commander({
+      ledger: w.ledger, gateway: w.gateway, secret: SECRET,
+      balances: { getAvailableBalance: async () => { throw new Error("balance service is down"); } },
+    });
+
+    await expect(commander.replaceAutomatically(w.obligation.id)).rejects.toBeInstanceOf(AutoReplacementRefused);
+    expect(w.api.all).toHaveLength(1);
+  });
+
   it("refuses when the supplier asked to change bank details", async () => {
     const w = world();
     await killedAttempt(w, "91402");
@@ -220,6 +232,25 @@ describe("12. the evidence hash is bound to the incident and the proposal", () =
     expect(seenOnA.evidenceHash).not.toBe(seenOnB.evidenceHash);
     await expect(
       commander.humanApproval({ obligationId: other.id, approver: "cfo@acme.example", note: "supplier confirmed by phone callback", evidenceHash: seenOnA.evidenceHash }),
+    ).rejects.toMatchObject({ name: "ApprovalRejected", reason: "stale_evidence" });
+    expect(w.api.all).toHaveLength(0);
+  });
+
+  it("tells apart two incidents that are identical in every field except their id", async () => {
+    // Same amount, currency, beneficiary, method, reason and status, and no attempts yet: only the id differs. Without
+    // the id in the hash, an approval reviewed on one invoice would pass on the other.
+    const w = world();
+    const twin = w.ledger.createObligation({
+      reference: "INV-1002", beneficiaryId: w.obligation.beneficiaryId, amountMinor: w.obligation.amountMinor, currency: w.obligation.currency,
+      method: w.obligation.method, reason: w.obligation.reason,
+    });
+    const commander = commanderFor(w);
+    const seenOnA = await commander.assess(w.obligation.id);
+    const seenOnB = await commander.assess(twin.id);
+
+    expect(seenOnA.evidenceHash).not.toBe(seenOnB.evidenceHash);
+    await expect(
+      commander.humanApproval({ obligationId: twin.id, approver: "cfo@acme.example", note: "supplier confirmed by phone callback", evidenceHash: seenOnA.evidenceHash }),
     ).rejects.toMatchObject({ name: "ApprovalRejected", reason: "stale_evidence" });
     expect(w.api.all).toHaveLength(0);
   });
