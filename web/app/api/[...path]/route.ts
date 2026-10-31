@@ -1,12 +1,12 @@
 import type { NextRequest } from "next/server";
 import { allowedHostsFromEnv, checkRequest } from "@/lib/request-guard";
+import { PROXIED_ROUTE } from "@/lib/proxy-routes";
 
 /**
  * Same-origin proxy to the Tessera API. It adds the operator token server-side, so the browser never holds it.
  * proxy.ts already refuses foreign hosts and cross-origin writes for every route; this repeats the check because this
  * is the route that holds the token. Signed Airwallex webhooks go to the API directly, never through here.
  */
-const ALLOWED = /^(health|metrics|demo\/seed|agent\/run|obligations(\/[\w-]+(\/[\w/-]+)?)?)$/;
 
 /** An agent run streams for a minute or more; everything else answers quickly. */
 const timeoutFor = (target: string): number => (target === "agent/run" ? 300_000 : 90_000);
@@ -17,7 +17,7 @@ const problem = (status: number, error: string, message: string): Response =>
 async function forward(request: NextRequest, context: { params: Promise<{ path: string[] }> }): Promise<Response> {
   const { path } = await context.params;
   const target = path.join("/");
-  if (!ALLOWED.test(target)) return problem(404, "NotFound", "no such route");
+  if (!PROXIED_ROUTE.test(target)) return problem(404, "NotFound", "no such route");
 
   const guard = checkRequest(
     { method: request.method, host: request.headers.get("host"), origin: request.headers.get("origin") },
