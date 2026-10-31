@@ -41,7 +41,7 @@ fly deploy --env TESSERA_ALLOWED_HOSTS=tessera-demo.fly.dev
 
 ## One shared demo, by design
 
-Every visitor works on the same in-memory ledger. That keeps the image tiny and stateless, and it means:
+Every visitor works on the same in-memory ledger, so the image holds no state and needs no database or volume. (It is not small: about 1.1 GB, almost all of it the Next.js runtime and its compiler binaries. Pull time matters on a cold start.) It means:
 
 - **Reset demo** on the board clears every incident for everyone and starts the walkthrough over.
 - The demo also resets itself after 15 idle minutes (`TESSERA_DEMO_IDLE_RESET_MS=900000`, set in the Dockerfile), so the next
