@@ -117,7 +117,7 @@ In the latest recorded run (made after the hardening, on the real sandbox) it tr
 The agent's work lands in the same ledger a person uses, and you can start it from the console.
 
 <p align="center">
-  <img src="docs/img/board.png" alt="Tessera console: six incidents with the metrics strip (payments refused by code, money held back, replaced automatically, median time to certify) and the offline-demo banner" width="100%">
+  <img src="docs/img/board.png" alt="Tessera console after the scripted agent worked the seven demo incidents: the metrics strip (payments refused by code, money held back, replaced automatically, median time to certify), the wallet strip with each reserve floor, the Needs you queue and the incident table, with the offline-demo banner" width="100%">
 </p>
 
 ### One click: let Claude work every incident
@@ -357,7 +357,7 @@ bun run agent -- --adversary
 ```
 
 <p align="center">
-  <img src="docs/img/terminal-redteam.png" alt="Terminal: the red team scoreboard, 30 of 30 attacks held" width="100%">
+  <img src="docs/img/terminal-redteam.png" alt="Terminal: the red team scoreboard, 50 of 50 attacks held" width="100%">
 </p>
 
 <details>
