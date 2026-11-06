@@ -43,6 +43,56 @@ export function findOwn(subscriptions: WebhookSubscription[], id: string | undef
   return id ? (subscriptions.find((s) => s.id === id) ?? null) : null;
 }
 
+/** Writes `KEY=value` pairs into a dotenv file (created 0600 if missing), keeping everything else. */
+export function writeEnvFile(envFile: string, pairs: Record<string, string>): void {
+  let text = existsSync(envFile) ? readFileSync(envFile, "utf8") : "";
+  for (const [key, value] of Object.entries(pairs)) text = upsertEnvLine(text, key, value);
+  writeFileSync(envFile, text, { mode: 0o600 });
+}
+
+/** Why `url` cannot be a notification URL for Tessera's listener, or null if it can. */
+export function notificationUrlProblem(url: string): string | null {
+  const parsed = URL.canParse(url) ? new URL(url) : null;
+  return !parsed || parsed.protocol !== "https:" || parsed.pathname !== WEBHOOK_PATH ? `the URL must be https and end in ${WEBHOOK_PATH} (got ${url})` : null;
+}
+
+export interface PointResult {
+  action: "unchanged" | "updated" | "created";
+  subscription: WebhookSubscription;
+  /** The secret Airwallex signs with, when it differs from `currentSecret` (and was written to the env file). */
+  newSecret: string | null;
+}
+
+/**
+ * Points the subscription named by `ownId` at `url`, or creates one when there is none: events and version are fixed at
+ * creation, only the URL can change. The secret survives a URL update; it is written to `envFile` only when it differs
+ * from `currentSecret`, and never printed. Throws when Airwallex creates a subscription without returning its secret.
+ */
+export async function pointSubscription(
+  client: Pick<AirwallexClient, "listWebhooks" | "updateWebhookUrl" | "createWebhook">,
+  input: { url: string; ownId: string | undefined; currentSecret: string | undefined; envFile: string },
+): Promise<PointResult> {
+  const problem = notificationUrlProblem(input.url);
+  if (problem) throw new Error(problem);
+  const existing = findOwn(await client.listWebhooks(), input.ownId);
+  if (existing) {
+    const subscription = existing.url === input.url ? existing : await client.updateWebhookUrl(existing.id, input.url);
+    const secret = subscription.secret ?? existing.secret ?? null;
+    const newSecret = secret && secret !== input.currentSecret ? secret : null;
+    if (newSecret) writeEnvFile(input.envFile, { AWX_WEBHOOK_SECRET: newSecret });
+    return { action: existing.url === input.url ? "unchanged" : "updated", subscription, newSecret };
+  }
+  const created = await client.createWebhook({ url: input.url, events: SUBSCRIBED_EVENTS, version: WEBHOOK_API_VERSION, requestId: randomUUID() });
+  if (!created.secret) {
+    writeEnvFile(input.envFile, { AWX_WEBHOOK_ID: created.id });
+    throw new Error(`created ${created.id}, but Airwallex returned no secret; copy it from Settings > Developer > Webhooks into AWX_WEBHOOK_SECRET`);
+  }
+  writeEnvFile(input.envFile, { AWX_WEBHOOK_ID: created.id, AWX_WEBHOOK_SECRET: created.secret });
+  return { action: "created", subscription: created, newSecret: created.secret };
+}
+
+export const describeSubscription = (s: WebhookSubscription): string => `${s.id}  ${s.url}  version ${s.version}  events ${s.events.join(", ")}`;
+
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const flag = (name: string): string | undefined => {
@@ -57,23 +107,16 @@ if (import.meta.main) {
   }
   const client = AirwallexClient.fromEnv(process.env);
   const ownId = process.env.AWX_WEBHOOK_ID || undefined;
-  const writeEnv = (pairs: Record<string, string>): void => {
-    let text = existsSync(envFile) ? readFileSync(envFile, "utf8") : "";
-    for (const [key, value] of Object.entries(pairs)) text = upsertEnvLine(text, key, value);
-    writeFileSync(envFile, text, { mode: 0o600 });
-  };
-  const describe = (s: WebhookSubscription): string => `${s.id}  ${s.url}  version ${s.version}  events ${s.events.join(", ")}`;
-
-  const existing = findOwn(await client.listWebhooks(), ownId);
 
   if (args.includes("--delete")) {
+    const existing = findOwn(await client.listWebhooks(), ownId);
     if (!existing) {
       console.log(ownId ? `no subscription ${ownId} at Airwallex; clearing .env` : "AWX_WEBHOOK_ID is not set; nothing to delete");
     } else {
       await client.deleteWebhook(existing.id);
       console.log(`deleted ${existing.id}`);
     }
-    if (ownId) writeEnv({ AWX_WEBHOOK_ID: "", AWX_WEBHOOK_SECRET: "" });
+    if (ownId) writeEnvFile(envFile, { AWX_WEBHOOK_ID: "", AWX_WEBHOOK_SECRET: "" });
     process.exit(0);
   }
 
@@ -82,31 +125,22 @@ if (import.meta.main) {
     console.error(`usage: bun run webhook:register -- --url https://<public host>${WEBHOOK_PATH}   (or --delete)`);
     process.exit(1);
   }
-  const parsed = URL.canParse(url) ? new URL(url) : null;
-  if (!parsed || parsed.protocol !== "https:" || parsed.pathname !== WEBHOOK_PATH) {
-    console.error(`the URL must be https and end in ${WEBHOOK_PATH} (got ${url})`);
+  const problem = notificationUrlProblem(url);
+  if (problem) {
+    console.error(problem);
     process.exit(1);
   }
 
-  if (existing) {
-    const updated = existing.url === url ? existing : await client.updateWebhookUrl(existing.id, url);
-    console.log(`${existing.url === url ? "unchanged" : "updated"}  ${describe(updated)}`);
-    // The secret survives a URL update; write it only if .env lost it, and never print it.
-    const secret = updated.secret ?? existing.secret;
-    if (secret && secret !== process.env.AWX_WEBHOOK_SECRET) {
-      writeEnv({ AWX_WEBHOOK_SECRET: secret });
+  try {
+    const result = await pointSubscription(client, { url, ownId, currentSecret: process.env.AWX_WEBHOOK_SECRET, envFile });
+    console.log(`${result.action.padEnd(9)} ${describeSubscription(result.subscription)}`);
+    if (result.action === "created") {
+      console.log(`AWX_WEBHOOK_ID and AWX_WEBHOOK_SECRET written to ${envFile} (secret not shown). Restart the API so its webhook listener starts.`);
+    } else if (result.newSecret) {
       console.log(`AWX_WEBHOOK_SECRET written to ${envFile} (not shown). Restart the API so it verifies with it.`);
     }
-    process.exit(0);
-  }
-
-  const created = await client.createWebhook({ url, events: SUBSCRIBED_EVENTS, version: WEBHOOK_API_VERSION, requestId: randomUUID() });
-  if (!created.secret) {
-    console.error(`created ${created.id}, but Airwallex returned no secret; copy it from Settings > Developer > Webhooks into AWX_WEBHOOK_SECRET`);
-    writeEnv({ AWX_WEBHOOK_ID: created.id });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
     process.exit(1);
   }
-  writeEnv({ AWX_WEBHOOK_ID: created.id, AWX_WEBHOOK_SECRET: created.secret });
-  console.log(`created  ${describe(created)}`);
-  console.log(`AWX_WEBHOOK_ID and AWX_WEBHOOK_SECRET written to ${envFile} (secret not shown). Restart the API so its webhook listener starts.`);
 }

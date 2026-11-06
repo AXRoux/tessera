@@ -49,10 +49,15 @@ Success criteria (all demonstrated against the real sandbox):
 - Subscriptions are managed over the API with the ordinary key: `POST /api/v1/webhooks/create` returns the id and the
   secret; `.../update` changes only the URL and the secret survives it
   ([create](https://www.airwallex.com/docs/api/webhooks/webhooks/create.md), [update](https://www.airwallex.com/docs/api/webhooks/webhooks/update.md)).
-  Events and version are fixed at creation. `bun run webhook:register` does this.
+  Events and version are fixed at creation. `bun run dev -- --tunnel` (first run) and `bun run webhook:register` do this.
+  Create checks the URL: on a Cloudflare quick tunnel that had not connected it answered `400 invalid_argument`
+  "Webhook destination resolves to an internal address" (2026-11-06 01:47), so the first run creates only on a URL already
+  proven to reach this machine.
 - Activation lag: a new subscription (created 2026-11-03 15:01:32) delivered its first event at 15:08:08; transfers
-  moved in between were never delivered. A URL update (2026-11-06 00:21:12) was in effect for the next eligible event
-  (00:22:23), so within 71 s.
+  moved in between were never delivered. URL updates: one (2026-11-06 00:21:12) was in effect for the next eligible event
+  (00:22:23), so within 71 s; two later ones were not: after an update at about 01:31:45, events at 01:32:13-:24 still went
+  to the old URL (in effect by 01:36:00), and after one at about 01:43:40 events up to about 01:45:25 did (in effect by
+  01:46:20). So up to about three minutes.
 - Deliveries arrive about 1-2 s after the event's `created_at` (2026-11-06: `sent` created 00:22:23, received 00:22:24.6;
   `paid`/`failed`/`cancelled` created 00:22:30-31, received 00:22:32.0, :33.2, :34.2, one after another). Source IP
   34.142.189.194 (in the [documented sandbox list](https://www.airwallex.com/docs/developer-tools/webhooks/listen-for-webhook-events.md#whitelist-ip-addresses)),
@@ -70,12 +75,20 @@ Success criteria (all demonstrated against the real sandbox):
 - A web-app "test event" is signed with a key carried in the request's own `client-secret-key` header
   ([docs](https://www.airwallex.com/docs/developer-tools/webhooks/listen-for-webhook-events.md)); Tessera refuses it.
 - Retries: documented as exponential back-off over about three days until a 200, same event id
-  ([overview](https://www.airwallex.com/docs/developer-tools/webhooks/webhooks-overview.md)). Not observed: I never
-  answered non-200 live. Whether a retry's `x-timestamp` is fresh (else it falls outside the 5-minute window) is unverified.
+  ([overview](https://www.airwallex.com/docs/developer-tools/webhooks/webhooks-overview.md)). Observed 2026-11-06 with an
+  endpoint that answered 503 to everything: Airwallex retries in rounds. Within a round, three tries in about three seconds,
+  all with the same `x-timestamp` and signature; the next round came 7.5 minutes later (events from 01:24:01, again at
+  01:31:37) and 11 minutes later (events from 01:32:12-:19, again at 01:43:05), each round with a fresh `x-timestamp`, so a
+  retry is always inside the 5-minute window. A retry round goes to the subscription's URL at that time: the 01:43:05 round
+  reached Tessera at its new URL, was accepted, and woke Claude, which replaced the payment (invoice WH-LIVE-MW4AUGG8).
+  Two rounds watched, not three days.
 - Tunnels: a Cloudflare quick tunnel has a new random hostname per run, no uptime guarantee, 200 requests in flight and no
   SSE ([Cloudflare](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)). On 2026-11-06 the network in use
-  blocked Cloudflare's edge (198.41.x.x on 7844 and 443 timed out; the printed URL answered 530), and the proof ran through
-  `ssh -R 80:127.0.0.1:4031 nokey@localhost.run` instead.
+  blocked Cloudflare's edge (198.41.x.x on 7844 and 443 timed out; the printed URL answered 530). localhost.run
+  (`ssh -R 80:127.0.0.1:<port> nokey@localhost.run`, [docs](https://localhost.run/docs/)) worked: a random `*.lhr.life`
+  hostname per connection, sometimes a second one on the same connection within seconds (the first then answers
+  "no tunnel"), and no client-address header at all (only `host`, `user-agent`, `accept` reached the server).
+  `bun run dev -- --tunnel` tries cloudflared, falls back to localhost.run, and points the subscription at every URL.
 - End-to-end proof, 2026-11-06 00:22 UTC, API on 4030 with `.data/webhook.db`, `TESSERA_AGENT_ON_EVENT=1`,
   `TESSERA_SWEEP_MS=0`, Claude (`claude-sonnet-5-5`): `bun run webhook:ping -- --url <tunnel>/api/webhooks/airwallex`
   passed all seven checks; `bun run webhook:register -- --url <tunnel>/api/webhooks/airwallex` re-pointed the subscription;
@@ -83,6 +96,13 @@ Success criteria (all demonstrated against the real sandbox):
   `INCIDENT_REACTION` WAIT -> REPLACE credited to event `25bc7f02-…` (`payout.transfer.paid`, re-read `CANCELLED` 91402),
   `AGENT_WAKE` 2.0 s later, `assess_incident` and `replace_payment` both ok, replacement transfer `8681b56a-…` `SCHEDULED`
   at 00:22:38.7 (7.7 s after the failure was triggered), `AGENT_WAKE_FINISHED` with Claude's report; `verifyChain` ok.
+- Second proof, 2026-11-06 01:49-01:58 UTC, through `bun run dev -- --tunnel` alone (`AWX_WEBHOOK_ID`/`AWX_WEBHOOK_SECRET`
+  blank, `TESSERA_SWEEP_MS=0`): cloudflared gave no reachable URL in 30 s, localhost.run did; subscription
+  `wh_PsEG_WVL5NTY36b-Yd-DaW5hpjxv1hlX` created on it at about 01:50 (the old `wh_4dc1…` deleted), first delivery 01:56:42.
+  Invoice WH-LIVE-MW4BPWHL: the simulator answered both steps with an error, yet Airwallex moved the transfer (`sent`
+  created 01:56:40, `failed` 01:57:40); `WEBHOOK_RECEIVED` `applied` both times (the ledger moved by webhook alone),
+  `INCIDENT_REACTION` WAIT -> REPLACE, `AGENT_WAKE` 01:57:44.5, `assess_incident` and `replace_payment` ok, replacement
+  `c366a336-…` `SCHEDULED` at 01:57:49.5, `AGENT_WAKE_FINISHED` 01:57:50.9; `verifyChain` ok.
 - The 2026-11-03 woken run that did nothing (seq 22/23 in `.data/webhook.db`: one call, no replacement): replayed on a copy
   of that ledger with the same brief, Claude's first call was `assess_incident` with the incident's reference as the id,
   answered "outside the scope of this run"; read-only calls and calls outside a run's scope leave no `AGENT_TOOL_CALL`, so
@@ -157,7 +177,7 @@ bun run agent -- --seed-only   # set the seven incidents up and stop, to watch t
 bun run mcp              # the toolbox over stdio, for Claude Desktop / Claude Code / any MCP client
 bun run demo             # no keys: API + console on a simulated Airwallex, scripted agent (TESSERA_OFFLINE=1)
 bun run dev              # API + console on the .env credentials, one command
-bun run dev -- --tunnel  # live, plus a Cloudflare quick tunnel to the webhook listener (TESSERA_WEBHOOK_PORT, default 4011)
+bun run dev -- --tunnel  # live, plus a public tunnel to the webhook listener (cloudflared, else localhost.run); creates / re-points the subscription
 bun run webhook:register -- --url https://<public>/api/webhooks/airwallex   # create / re-point the sandbox subscription; --delete
 bun run webhook:ping -- --url https://<public>/api/webhooks/airwallex       # signed checks + operator routes unreachable
 bun run setup            # creates .env secrets and the sandbox beneficiaries (US/USD/LOCAL, DE/EUR/SWIFT)

@@ -37,7 +37,7 @@ if (!URL.canParse(url) || new URL(url).pathname !== WEBHOOK_PATH) {
   process.exit(1);
 }
 if (!secret) {
-  console.error(`${red("✗")} no webhook secret. \`bun run webhook:register -- --url <public URL>\` writes AWX_WEBHOOK_SECRET into .env (restart the API afterwards), or pass --secret.`);
+  console.error(`${red("✗")} no webhook secret. \`bun run dev -- --tunnel\` creates the subscription and writes AWX_WEBHOOK_SECRET into .env on its first run (or \`bun run webhook:register -- --url <public URL>\`, then restart the API), or pass --secret.`);
   process.exit(1);
 }
 
@@ -74,7 +74,7 @@ if (first.status === 502) {
   process.exit(1);
 }
 if (first.status === 530) {
-  console.error(`${red("✗")} the tunnel answered 530: cloudflared is not connected to Cloudflare yet. Wait a few seconds; if its log keeps saying "Retrying connection", this network blocks Cloudflare's edge.`);
+  console.error(`${red("✗")} the tunnel answered 530: cloudflared is not connected to Cloudflare yet. Wait a few seconds; if its log keeps saying "Retrying connection", this network blocks Cloudflare's edge (\`bun run dev -- --tunnel\` then falls back to localhost.run by itself).`);
   process.exit(1);
 }
 expect("a correctly signed delivery is accepted", first.status === 200 && first.json?.duplicate === false, `${first.status} ${JSON.stringify(first.json)}`);
@@ -105,6 +105,6 @@ if (failed > 0) {
 }
 console.log(
   url.startsWith("https://")
-    ? `${green("Ready for Airwallex.")} Point the subscription at it: ${bold(`bun run webhook:register -- --url ${url}`)}`
+    ? `${green("Ready for Airwallex.")} A URL opened by \`bun run dev -- --tunnel\` is already the subscription's; any other: ${bold(`bun run webhook:register -- --url ${url}`)}`
     : `${green("The listener is ready.")} Expose it with ${bold("bun run dev -- --tunnel")} and run this again with --url <tunnel>${WEBHOOK_PATH}.`,
 );

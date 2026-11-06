@@ -61,6 +61,10 @@ export function parseAirwallexTime(value: string): string | null {
  * constant time, with the timestamp inside ±5 minutes so a captured delivery cannot be replayed later. Throws
  * WebhookRejected; returns the parsed event only when every check passes.
  *
+ * The window does not cost a genuine retry (observed on the sandbox 2026-11-06, an endpoint answering 503): Airwallex
+ * retries in rounds. Within a round it tries three times in about three seconds with the same `x-timestamp`; the next
+ * round came about 7.5 minutes later with a fresh `x-timestamp` and signature, carrying the same event id.
+ *
  * Only the endpoint secret is ever used. Airwallex signs a web-app "test event" with a key it sends in the request's
  * own `client-secret-key` header (same docs page); trusting a key the request brings would let anyone sign anything,
  * so those are refused as a bad signature.

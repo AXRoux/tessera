@@ -21,7 +21,7 @@ bun run dev                     # API + console, real Airwallex sandbox, real Cl
   labelled "scripted agent, not Claude" in the console; if you use it, say so out loud, once.
 - Browser at 1440 x 900, zoom 100 to 110 percent, notifications off, one tab. Terminal font at 18 pt or larger, dark theme.
 - Set `TESSERA_PAID_HOLD_MS=6000` in `.env` for the recording so a paid invoice can be certified on camera (production is 24 h).
-- For segment 3 live, start with `TESSERA_AGENT_ON_EVENT=1 bun run dev -- --tunnel` and run the `webhook:register` line it prints, then `bun run webhook:ping -- --url ...` until it says *Ready*. A new subscription took about six minutes to start delivering; an existing one re-pointed at a new URL delivered within a minute. Offline (`bun run demo`) the webhook and the wake work with no setup.
+- For segment 3 live, start with `TESSERA_AGENT_ON_EVENT=1 bun run dev -- --tunnel` and wait for *webhooks are live* (it opens the tunnel, falling back from Cloudflare to localhost.run if needed, and points the subscription at it), then `bun run webhook:ping -- --url ...` until it says *Ready*. Give a fresh URL a few minutes before recording: Airwallex keeps delivering to the previous one for a while after a switch. Offline (`bun run demo`) the webhook and the wake work with no setup.
 - Do a full dry run first. Segments 2 and 3 use fresh invoices, segments 4 and 5 use the seven seeded incidents, so start segment 4
   from an **empty board** (Reset demo offline; a fresh ledger live: `TESSERA_DB=.data/video.db bun run dev`).
 - Record the terminal and the browser as separate clips and cut between them. Do not narrate over waiting: speed those up.
@@ -43,7 +43,7 @@ bun run dev                     # API + console, real Airwallex sandbox, real Cl
 - Say **"scripted agent, not Claude"** whenever the offline demo is on screen.
 - Do not say "never" about the model: say "the model cannot unlock a payment". Misreading an email can make the system more cautious, not less.
 - Do not claim a hosted demo unless one is running (`docs/DEPLOY.md`).
-- If asked what is not done: live webhooks need a public tunnel (a quick tunnel's hostname changes each run, so `webhook:register` re-points it), mail is pasted not fetched, and there is no multi-user sign-in. All three are in the README.
+- If asked what is not done: live webhooks need a public tunnel (a free tunnel's hostname changes each run; `dev -- --tunnel` re-points the subscription itself, and Airwallex takes a few minutes to follow), mail is pasted not fetched, and there is no multi-user sign-in. All three are in the README.
 
 ## Reproducing each clip
 
@@ -51,7 +51,7 @@ bun run dev                     # API + console, real Airwallex sandbox, real Cl
 |---|---|
 | Console, live | `bun run dev` |
 | Console, no keys | `bun run demo` |
-| Webhook wakes the agent, live | `TESSERA_AGENT_ON_EVENT=1 bun run dev -- --tunnel`, then the `bun run webhook:register -- --url ...` line it prints (`bun run demo` needs neither) |
+| Webhook wakes the agent, live | `TESSERA_AGENT_ON_EVENT=1 bun run dev -- --tunnel` (`bun run demo` needs nothing) |
 | Red team | `bun run redteam` |
 | Kill -9 on the sandbox | `bun run chaos` |
 | Agent in the terminal (real Claude) | `bun run agent`, then `bun run agent -- --adversary` |

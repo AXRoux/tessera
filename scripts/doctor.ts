@@ -14,6 +14,7 @@ import { AirwallexClient } from "../src/airwallex/client";
 import { SPIKE_SUPPLIER } from "../src/airwallex/types";
 import { parseHoldMs } from "../src/server/runtime";
 import { DEFAULT_WEBHOOK_PORT } from "../src/server/webhook-listener";
+import { tunnelProviders } from "./tunnel";
 
 const live = process.argv.includes("--live");
 const tty = Boolean(process.stdout.isTTY || process.env.FORCE_COLOR);
@@ -87,7 +88,7 @@ note(
   liveTrack,
   haveWebhook ? "ok" : "warn",
   haveWebhook ? "Airwallex webhook subscription configured (AWX_WEBHOOK_ID, AWX_WEBHOOK_SECRET)" : "no webhook subscription: bank events reach Tessera only through the sweep (every TESSERA_SWEEP_MS)",
-  "optional: bun run dev -- --tunnel, then the `bun run webhook:register -- --url ...` line it prints",
+  "optional: bun run dev -- --tunnel (creates the subscription on its first run and points it at every tunnel URL)",
 );
 const webhookPort = Number(env.TESSERA_WEBHOOK_PORT || DEFAULT_WEBHOOK_PORT);
 let webhookPortFree = true;
@@ -97,8 +98,19 @@ try {
   webhookPortFree = false;
 }
 note(liveTrack, webhookPortFree ? "ok" : "warn", `webhook listener port ${webhookPort} is ${webhookPortFree ? "free" : "in use"}`, "stop what is using it, or set TESSERA_WEBHOOK_PORT=<another port>");
-const cloudflared = Bun.which("cloudflared");
-note(liveTrack, cloudflared ? "ok" : "warn", cloudflared ? "cloudflared is installed (for `bun run dev -- --tunnel`)" : "cloudflared is not installed, so `bun run dev -- --tunnel` cannot give Airwallex a public URL", "optional: brew install cloudflared");
+let providers: string[] = [];
+let providerProblem: string | null = null;
+try {
+  providers = tunnelProviders(env.TESSERA_TUNNEL_PROVIDER || undefined, (binary) => Bun.which(binary) !== null, Boolean(env.TESSERA_WEBHOOK_SOURCE_IPS?.trim()));
+} catch (error) {
+  providerProblem = error instanceof Error ? error.message : String(error);
+}
+note(
+  liveTrack,
+  providers.length > 0 ? "ok" : "warn",
+  providers.length > 0 ? `\`bun run dev -- --tunnel\` will try ${providers.join(", then ")}` : (providerProblem ?? "no tunnel provider: `bun run dev -- --tunnel` cannot give Airwallex a public URL"),
+  "optional: brew install cloudflared (or have ssh on PATH for localhost.run)",
+);
 if (env.ANTHROPIC_API_KEY && env.TESSERA_MODEL) note(liveTrack, "ok", `Claude is configured (${env.TESSERA_MODEL})`);
 else if (env.ANTHROPIC_API_KEY) note(liveTrack, "warn", "ANTHROPIC_API_KEY is set but TESSERA_MODEL is blank, so Claude stays off", "set TESSERA_MODEL=claude-sonnet-5-5");
 else note(liveTrack, "warn", "no Anthropic key: the live console works, but evidence is entered by hand and there is no agent", "optional: set ANTHROPIC_API_KEY and TESSERA_MODEL");

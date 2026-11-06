@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/AXRoux/tessera/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AXRoux/tessera/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="attacks held 50/50" src="https://img.shields.io/badge/attacks_held-50%2F50-1f4dff">
-  <img alt="514 tests passing" src="https://img.shields.io/badge/tests-514_passing-0b0d12">
+  <img alt="521 tests passing" src="https://img.shields.io/badge/tests-521_passing-0b0d12">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-1f4dff">
   <img alt="Airwallex sandbox" src="https://img.shields.io/badge/Airwallex-sandbox-0b0d12">
   <img alt="Bun and TypeScript" src="https://img.shields.io/badge/Bun_%C2%B7_TypeScript-strict-1f4dff?logo=bun&logoColor=white">
@@ -45,7 +45,7 @@ bun run redteam        # no keys: 50 attacks on the invariants, with a scoreboar
 | **An agent that cannot hurt you** | Told to get a supplier paid twice, the same Claude was **refused seven times in the recorded run and could not**. The database, the playbook, the draft guard and the Closer said no. |
 | **Plugs into anything** | A zero-dependency [MCP server](#use-it-from-claude-desktop-claude-code-or-any-mcp-client) exposes ten typed tools. Verified against the official MCP Inspector. |
 | **In the console, one click** | **Let Claude work them all** streams the agent live. **Try to break it** tells the same agent to pay twice and shows every refusal in black. |
-| **Proof, not claims** | 50 adversarial attacks, 514 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 91 guards removed one at a time from a private copy, every one caught. |
+| **Proof, not claims** | 50 adversarial attacks, 521 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 91 guards removed one at a time from a private copy, every one caught. |
 
 ### Why this is worth building
 
@@ -259,6 +259,8 @@ Airwallex webhooks are hints: delivered at least once, retried for about three d
 
 Verified on the sandbox on 2026-11-06 UTC (commands and timings in [SPEC.md](SPEC.md)): I simulated `SENT` then `FAILED` (code 91402, a transient fault) on a real $12 transfer. `payout.transfer.sent` reached the listener 1.6 s after Airwallex created it. The failure produced three deliveries, `paid`, `failed` and `cancelled`, in that order; by the first, Airwallex already showed the transfer `CANCELLED`, so the event's "PAID" was recorded as a claim and nothing more, and the reaction it triggered moved the decision from *wait* to *replace*. Claude was woken 2 s later, called `assess_incident` then `replace_payment`, and the replacement transfer existed at Airwallex about 8 s after I triggered the failure. The first live run, on 2026-11-03, woke Claude but it did nothing: its brief named the incident by reference, it passed that reference where the tools take an id, was told the incident was outside its scope, and stopped. The brief now carries the id, and a test pins it.
 
+Later that day, with no subscription configured (`AWX_WEBHOOK_ID` and `AWX_WEBHOOK_SECRET` blank) and nothing but `bun run dev -- --tunnel` (Cloudflare blocked on that network): it fell back to localhost.run, created the subscription on that URL and started the listener with its secret. Once the new subscription began delivering (about six minutes), a $12 transfer's `sent` and `failed` events moved the ledger on their own (the simulator itself had answered with an error, and the sweep was off), and Claude was woken 2 s after `failed` and replaced the payment. Separately, three deliveries that had missed Tessera while the subscription was moving to a new URL came back in Airwallex's next retry round eleven minutes later, were taken, and woke Claude for that incident, which replaced it too.
+
 ---
 
 ## The agent surface
@@ -339,7 +341,7 @@ The loop is ~60 lines. It has no authority of its own: no gateway, no secret, no
 ## Prove it
 
 ```sh
-bun test                   # 514 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
+bun test                   # 521 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
 bun run redteam            # 50 attacks, offline, with a scoreboard
 bun run mutate             # 91 guard removals on a private copy of the repo; fails unless each is caught (about a minute)
 bun run typecheck && (cd web && bun run typecheck)
@@ -587,21 +589,21 @@ TESSERA_DB=.data/agent-demo.db bun run dev
 **Webhooks (optional; the sweep does the same job a minute later).** With `AWX_WEBHOOK_SECRET` set, the live API opens a second listener on `TESSERA_WEBHOOK_PORT` (default 4011) that serves `POST /api/webhooks/airwallex` and nothing else; the operator API never faces the internet. Airwallex can only reach a public URL, so:
 
 ```sh
-bun run dev -- --tunnel         # also starts a Cloudflare quick tunnel to the listener and prints its URL and the next line
-bun run webhook:register -- --url https://<printed>.trycloudflare.com/api/webhooks/airwallex
-bun run webhook:ping -- --url https://<printed>.trycloudflare.com/api/webhooks/airwallex
+bun run dev -- --tunnel         # live, plus a public tunnel to the listener; the Airwallex subscription is pointed at it for you
+bun run webhook:ping -- --url https://<printed>/api/webhooks/airwallex   # optional: the signed checks, through the tunnel
 ```
 
-`webhook:register` creates the sandbox subscription over the Webhooks API (`payout.transfer.sent`, `.paid`, `.failed`, `.cancelled`, version 2026-08-21) and writes `AWX_WEBHOOK_ID` and `AWX_WEBHOOK_SECRET` into `.env` without printing the secret; restart once so the listener starts. Later runs only update the URL, so a new tunnel hostname needs no restart; `--delete` removes it. `webhook:ping` signs a harmless synthetic event the way Airwallex does and checks that a good delivery is accepted, a redelivery is ignored, a forged signature and a ten-minute-old capture are refused, and that the operator API's routes answer 404 and the webhook path 405 to anything but POST through the same host.
+`--tunnel` tries a Cloudflare quick tunnel and, when Cloudflare's edge is unreachable from your network, falls back to [localhost.run](https://localhost.run/docs/) over plain SSH (no account, no install); `TESSERA_TUNNEL_PROVIDER` pins one. A provider counts only once a request through it has reached the listener. Every URL it hands out, including a new one mid-run or after a dropped tunnel is reopened, is pointed at the subscription over the Webhooks API; the secret does not change, so nothing restarts. With no subscription yet, the first run creates one (`payout.transfer.sent`, `.paid`, `.failed`, `.cancelled`, version 2026-08-21) on the tunnel's URL and writes `AWX_WEBHOOK_ID` and `AWX_WEBHOOK_SECRET` into `.env` without printing the secret. For any other public URL, `bun run webhook:register -- --url https://<host>/api/webhooks/airwallex` does the same by hand; `--delete` removes the subscription. `webhook:ping` signs a harmless synthetic event the way Airwallex does and checks that a good delivery is accepted, a redelivery is ignored, a forged signature and a ten-minute-old capture are refused, and that the operator API's routes answer 404 and the webhook path 405 to anything but POST through the same host.
 
 | Variable | Purpose |
 |---|---|
 | `AWX_CLIENT_ID`, `AWX_API_KEY`, `AWX_BASE_URL` | Airwallex **sandbox** credentials. Never commit them. |
-| `AWX_WEBHOOK_SECRET`, `AWX_WEBHOOK_ID` | Written by `bun run webhook:register` (the secret is never printed). With the secret set, the live API starts the webhook listener. A webhook is a hint; the transfer is re-read. |
+| `AWX_WEBHOOK_SECRET`, `AWX_WEBHOOK_ID` | Written by `bun run dev -- --tunnel` on its first run, or by `bun run webhook:register` (the secret is never printed). With the secret set, the live API starts the webhook listener. A webhook is a hint; the transfer is re-read. |
 | `TESSERA_WEBHOOK_PORT` | The webhook listener's port (default 4011; must differ from the API's). The only port to tunnel. |
-| `TESSERA_WEBHOOK_SOURCE_IPS` | Optional: comma-separated IPs allowed to deliver (read from `cf-connecting-ip`, so behind a Cloudflare tunnel); `airwallex-sandbox` stands for Airwallex's documented sandbox IPs. |
+| `TESSERA_WEBHOOK_SOURCE_IPS` | Optional: comma-separated IPs allowed to deliver (read from `cf-connecting-ip`, so only behind a Cloudflare tunnel; with it set, `--tunnel` never falls back to localhost.run, which forwards no client address); `airwallex-sandbox` stands for Airwallex's documented sandbox IPs. |
 | `TESSERA_AGENT_ON_EVENT` | `1`: a bank event that changes an incident's decision wakes the agent for that incident. Default off; `bun run demo` turns it on (set `0` to stop that); a public demo never does. |
 | `TESSERA_TUNNEL` | `1`: same as `bun run dev -- --tunnel`. |
+| `TESSERA_TUNNEL_PROVIDER` | Pin `--tunnel` to `cloudflared` or `localhost.run`. Default: cloudflared if installed, then localhost.run (ssh). |
 | `TESSERA_APPROVAL_SECRET` | Signs approvals and certificates (32+ chars). Held by the API process only; the model never sees it. |
 | `TESSERA_API_TOKEN` | Operator token. The Next.js server holds it; browsers never do. |
 | `ANTHROPIC_API_KEY`, `TESSERA_MODEL` | Optional (`TESSERA_MODEL=claude-sonnet-5-5`). Without them evidence is entered by hand; offline, the scripted agent and keyword reader stand in. |
@@ -666,8 +668,8 @@ This is a hackathon build, so here is what it is and is not.
 - **The model can be wrong.** Misreading an email can only make the system more cautious or leave it where the code already put it, never unlock a payment. But a missed non-receipt claim means nobody is told.
 - **Drafts are not sent.** Tessera has no mail integration on purpose: a person reads each drafted reply, sends it themselves and records that they did.
 - **No mailbox integration.** An operator pastes a supplier's message (or uploads a `.eml`) into the incident's inbox; the agent then reads it by id through the quarantined reader and cannot supply message text of its own (over MCP, the client does, and that can only add caution). Tessera does not fetch mail.
-- **Webhooks need a public URL, and a quick tunnel's changes every run.** Only the webhook listener (its own port, one route) is meant to be exposed. `bun run dev -- --tunnel` opens a Cloudflare quick tunnel to it, which gets a new random hostname each time, has no uptime guarantee and takes 200 requests in flight ([Cloudflare](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)); `bun run webhook:register -- --url ...` re-points the subscription in a second (the secret does not change). A named tunnel would give a stable URL; I did not set one up. On 2026-11-06 the network I was on blocked Cloudflare's tunnel edge entirely (cloudflared printed its URL, which then only ever answered 530), so that day's live proof went through a `localhost.run` SSH tunnel instead. Without any tunnel, the background sweep (default every 60 s) does the same job later.
-- **Webhook timing I have only seen once or not at all.** A brand-new subscription took about six minutes to start delivering (2026-11-03); a URL update took effect within about a minute (2026-11-06). I never answered Airwallex with an error live, so I have not seen a retry, and whether a retry carries a fresh `x-timestamp` (a stale one would fall outside the five-minute window and be refused until the sweep catches the change) is unverified.
+- **Webhooks need a public URL, and a free tunnel's changes every run.** Only the webhook listener (its own port, one route) is exposed. `bun run dev -- --tunnel` opens a Cloudflare quick tunnel or, where Cloudflare's edge is blocked (the network I was on, 2026-11-06: cloudflared printed a URL that only ever answered 530), a localhost.run SSH tunnel. Both hand out a random hostname with no uptime guarantee ([Cloudflare](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/), [localhost.run](https://localhost.run/docs/)), and localhost.run can swap hostnames mid-run. Every new hostname is pointed at the subscription automatically, but Airwallex took between about 1:45 and 2:40 to follow a URL change (2026-11-06): deliveries in that gap went to the old URL and came back in Airwallex's next retry round (11 minutes later), and the sweep (default every 60 s) catches the change before that. A named tunnel on a domain of your own would give a stable URL; I did not set one up. localhost.run sends no client address, so `TESSERA_WEBHOOK_SOURCE_IPS` works behind Cloudflare only.
+- **Webhook timing, as far as I have seen it.** A brand-new subscription took about six minutes to start delivering (2026-11-03). Retries (2026-11-06, an endpoint answering 503 on purpose): three tries within about three seconds with the same `x-timestamp`, then a new round with a fresh `x-timestamp` and signature about 7.5 and 11 minutes later, so the five-minute window does not refuse a genuine retry. I watched two rounds, not the documented three days.
 - **A woken agent spends model calls nobody asked for in the moment.** It is off unless `TESSERA_AGENT_ON_EVENT=1` (on by default only in `bun run demo`), never on in a public demo, and capped per incident and overall, counted from the ledger.
 - **The offline agent is not Claude.** `bun run demo` uses a deterministic script behind the same toolbox so judges can run everything without keys. It demonstrates the guarantees, not model quality. The two terminal screenshots (`docs/img/terminal-agent.png`, `terminal-adversary.png`) are live Claude runs on the real sandbox, recorded after the latest changes, as are `bun run smoke` and `bun run chaos`. `bun run evidence:live` (Claude reading four supplier messages) was not re-run after them. A different run of Claude will word things differently and may attempt different moves; the invariant check at the end is what does not vary.
 - **An agent can be annoying.** `escalate_to_human` is always allowed on an open incident. A hostile agent can escalate everything and make work for people; it cannot make money move.
