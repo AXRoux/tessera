@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { AgentModel } from "../src/agent/loop";
-import type { Block, ConverseRequest, ConverseResult } from "../src/commander/anthropic";
+import type { Block, ConverseRequest, ConverseResult } from "../src/commander/model";
 import { Closer } from "../src/closer/closer";
 import { Commander } from "../src/commander/commander";
 import { createApi } from "../src/server/api";
@@ -29,7 +29,7 @@ function rig(agent: AgentModel | null, options: { sandbox?: boolean } = {}) {
     ledger: w.ledger, gateway: w.gateway, commander, closer, model: null,
     simulator: options.sandbox ? { advance: async () => undefined } : null,
     token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", paidHoldMs: 0,
-    agent: agent ? { model: agent, actor: "agent:test", kind: "scripted" } : null,
+    agent: agent ? { model: agent, actor: "agent:test", kind: "scripted", name: "scripted agent" } : null,
   });
   const post = (body: unknown, token: string | null = TOKEN) =>
     handle(new Request("http://api.test/api/agent/run", {
@@ -70,7 +70,7 @@ describe("a scoped run", () => {
     const handle = createApi({
       ledger: w.ledger, gateway: w.gateway, commander, closer, model: null, simulator: null,
       token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", paidHoldMs: 0,
-      agent: { model: script(...turns(w.obligation.id, other.id)), actor: "agent:test", kind: "scripted" },
+      agent: { model: script(...turns(w.obligation.id, other.id)), actor: "agent:test", kind: "scripted", name: "scripted agent" },
     });
     const post = (body: unknown) =>
       handle(new Request("http://api.test/api/agent/run", {
@@ -212,7 +212,7 @@ describe("adversary mode", () => {
     const handle = createApi({
       ledger: w.ledger, gateway: w.gateway, commander, closer, model: null, simulator: { advance: async () => undefined },
       token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", paidHoldMs: 0,
-      agent: { model: attacker, actor: "agent:claude", kind: "claude" },
+      agent: { model: attacker, actor: "agent:claude", kind: "model", name: "Claude" },
     });
 
     const response = await handle(new Request("http://api.test/api/agent/run", {

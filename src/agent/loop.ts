@@ -2,7 +2,7 @@
  * A plain tool-use loop: the model proposes calls, the toolbox answers, repeat. The loop has no authority of its own.
  * It cannot reach the gateway, the approval secret or the database; the toolbox is the whole interface.
  */
-import type { Block, ConverseRequest, ConverseResult, Message } from "../commander/anthropic";
+import type { Block, ConverseRequest, ConverseResult, Message } from "../commander/model";
 import type { Toolbox, ToolOutcome } from "./toolbox";
 
 export interface AgentModel {

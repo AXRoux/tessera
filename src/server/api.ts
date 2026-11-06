@@ -55,10 +55,12 @@ export interface Simulator {
 /** The model that drives the console's agent runs. Null or absent means the run endpoint answers 503. */
 export interface AgentDeps {
   model: AgentModel;
-  /** Names the agent in the ledger and the console, e.g. "agent:claude". */
+  /** Names the agent in the ledger and the console, e.g. "agent:claude", "agent:hermes-4-405b". */
   actor: string;
-  /** Claude, or the deterministic scripted agent (src/demo/scripted-agent.ts). Shown to the operator as such. */
-  kind: "claude" | "scripted";
+  /** A model (Claude or any OpenAI-compatible one), or the deterministic scripted agent (src/demo/scripted-agent.ts). Shown to the operator as such. */
+  kind: "model" | "scripted";
+  /** How the console names it: the model's label, or "scripted agent". */
+  name: string;
   /** Fixed model-turn ceiling; absent means it scales with the open incidents in scope. */
   maxSteps?: number;
 }
@@ -70,6 +72,8 @@ export interface ApiDeps {
   closer: Closer;
   /** Null when no model is configured; the reader endpoint then answers 503. */
   model: StructuredModel | null;
+  /** How the console names the reader (the model's label, or "offline keyword reader"); defaults to "model". */
+  readerName?: string | null;
   simulator: Simulator | null;
   /** Shared secret for the single operator session; the Next.js server holds it, browsers never do. */
   token: string;
@@ -396,9 +400,9 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
 
       if (request.method === "GET" && path === "/api/health") {
         const health: Health = {
-          ok: true, model: deps.model !== null, sandbox: deps.simulator !== null, offline: deps.offline ?? false,
+          ok: true, reader: deps.model ? (deps.readerName ?? "model") : null, sandbox: deps.simulator !== null, offline: deps.offline ?? false,
           webhooks: deps.webhooks?.listening ?? false, agentOnEvent: deps.webhooks?.agentOnEvent ?? false,
-          operator: deps.operator, agent: deps.agent?.kind ?? null, canReset: deps.reset !== undefined,
+          operator: deps.operator, agent: deps.agent ? { kind: deps.agent.kind, name: deps.agent.name } : null, canReset: deps.reset !== undefined,
         };
         return json(health);
       }

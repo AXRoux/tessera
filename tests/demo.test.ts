@@ -49,12 +49,28 @@ describe("offline runtime", () => {
     expect(buildRuntime({ TESSERA_OFFLINE: "1", ANTHROPIC_API_KEY: "sk-test" }).warnings).toEqual([expect.stringContaining("TESSERA_MODEL")]);
   });
 
-  it("never lets a public demo spend an Anthropic key: it runs the scripted agent and says the key is ignored", () => {
-    const runtime = buildRuntime({ TESSERA_OFFLINE: "1", TESSERA_PUBLIC_DEMO: "1", ANTHROPIC_API_KEY: "sk-test", TESSERA_MODEL: "claude-sonnet-5-5" });
+  it("never lets a public demo spend a model key, whichever provider: it runs the scripted agent and says the model is ignored", () => {
+    const claude = { ANTHROPIC_API_KEY: "sk-test", TESSERA_MODEL: "claude-sonnet-5-5" };
+    const hermes = { TESSERA_MODEL_PROVIDER: "openai", TESSERA_MODEL_BASE_URL: "https://openrouter.ai/api/v1", TESSERA_MODEL_API_KEY: "sk-or-test", TESSERA_MODEL: "nousresearch/hermes-4-405b" };
+    for (const model of [claude, hermes]) {
+      const runtime = buildRuntime({ TESSERA_OFFLINE: "1", TESSERA_PUBLIC_DEMO: "1", ...model });
+      expect(runtime.agent?.kind).toBe("scripted");
+      expect(runtime.warnings).toEqual([expect.stringContaining("the configured model is ignored")]);
+    }
+    expect(buildRuntime({ TESSERA_OFFLINE: "1", ...claude }).agent).toMatchObject({ kind: "model", name: "Claude", actor: "agent:claude" });
+  });
 
-    expect(runtime.agent?.kind).toBe("scripted");
-    expect(runtime.warnings).toEqual([expect.stringContaining("ANTHROPIC_API_KEY is ignored")]);
-    expect(buildRuntime({ TESSERA_OFFLINE: "1", ANTHROPIC_API_KEY: "sk-test", TESSERA_MODEL: "claude-sonnet-5-5" }).agent?.kind).toBe("claude");
+  it("runs any OpenAI-compatible model as the agent and the reader, named after the model, and keeps a half-configured one off", () => {
+    const runtime = buildRuntime({
+      TESSERA_OFFLINE: "1", TESSERA_MODEL_PROVIDER: "openai", TESSERA_MODEL_BASE_URL: "https://inference-api.nousresearch.com/v1",
+      TESSERA_MODEL_API_KEY: "nous-test", TESSERA_MODEL: "Hermes-4-405B",
+    });
+    expect(runtime.agent).toMatchObject({ kind: "model", name: "Hermes-4-405B", actor: "agent:hermes-4-405b" });
+    expect(runtime.readerName).toBe("Hermes-4-405B");
+
+    const half = buildRuntime({ TESSERA_OFFLINE: "1", TESSERA_MODEL_PROVIDER: "openai", TESSERA_MODEL: "hermes-4-405b" });
+    expect(half.agent?.kind).toBe("scripted");
+    expect(half.warnings).toEqual([expect.stringContaining("TESSERA_MODEL_BASE_URL")]);
   });
 });
 

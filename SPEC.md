@@ -19,7 +19,7 @@ Success criteria (all demonstrated against the real sandbox):
 7. The Closer refuses to close until per-transfer ledger entries reconcile.
 8. An agent holding only the toolbox cannot pay twice, pay the wrong party, release a forbidden replacement, or make the
    Closer certify early or over a supplier's open claim of non-receipt, however it is prompted. Fifty attacks prove it
-   (`bun run redteam`), and `bun run mutate` proves each guard behind them is load-bearing: it removes 91 guards one at a time
+   (`bun run redteam`), and `bun run mutate` proves each guard behind them is load-bearing: it removes 94 guards one at a time
    from a private copy and fails unless every one is caught. A live Claude told to pay twice could not (`bun run agent -- --adversary`).
 9. Supplier-supplied evidence can only make the system more cautious: tested as a property over every playbook code and over
    sequences of evidence, so a later harmless message cannot erase an earlier warning.
@@ -158,6 +158,10 @@ Docs: [current rate](https://www.airwallex.com/docs/api/transactional_fx/rates/c
 
 Core (repo root): Bun 1.4, TypeScript (tsc 7), `bun:sqlite`, `zod` 4, `bun test`. The MCP server is written against the
 spec with no SDK, so the only runtime dependency is still `zod`.
+Model (built-in agent and evidence reader; MCP clients bring their own): `TESSERA_MODEL_PROVIDER=anthropic` (default,
+`ANTHROPIC_API_KEY`) or `openai` (any OpenAI-compatible Chat Completions endpoint: `TESSERA_MODEL_BASE_URL`, optional
+`TESSERA_MODEL_API_KEY`, `TESSERA_MODEL_TOOL_FORMAT=native|hermes`), model id in `TESSERA_MODEL`, display name in
+`TESSERA_MODEL_LABEL`.
 Web (`web/`): Next.js 16 (App Router, Turbopack), React 19, Tailwind 4, Zen Dots + Archivo + JetBrains Mono via `next/font`.
 The web app never holds a credential beyond the operator token; it parses every API response with `src/server/wire.ts`.
 
@@ -174,7 +178,7 @@ bun run redteam          # offline, no keys: fifty attacks on the invariants, wi
 bun run agent            # real sandbox + real Claude: an agent works seven incidents through the toolbox
 bun run agent -- --adversary   # the same toolbox, but the agent is told to get a supplier paid twice
 bun run agent -- --seed-only   # set the seven incidents up and stop, to watch them in the console
-bun run mcp              # the toolbox over stdio, for Claude Desktop / Claude Code / any MCP client
+bun run mcp              # the toolbox over stdio, for any MCP client (Claude Code/Desktop, Codex, Cursor, Gemini CLI, Hermes Agent, ...)
 bun run demo             # no keys: API + console on a simulated Airwallex, scripted agent (TESSERA_OFFLINE=1)
 bun run dev              # API + console on the .env credentials, one command
 bun run dev -- --tunnel  # live, plus a public tunnel to the webhook listener (cloudflared, else localhost.run); creates / re-points the subscription
@@ -201,8 +205,9 @@ src/funding/             funding executor (book / recover / sync) and funding ap
 src/approval/approval.ts HMAC approvals
 src/gateway/gateway.ts   exactly-once submit / recover / sync / webhook sync / human lock release
 src/closer/              reconciliation, certificate schemas (pure) and signing
-src/commander/           decision policy, evidence reader, Anthropic transport, approvals
-src/agent/               the agent surface: toolbox (10 typed tools), Claude tool-use loop, MCP server (stdio)
+src/commander/           decision policy, evidence reader, approvals, model providers: model.ts (shared turn shape, retries),
+                         anthropic.ts, openai.ts (any OpenAI-compatible endpoint; native or Hermes tool calls), model-env.ts (env selection)
+src/agent/               the agent surface: toolbox (10 typed tools), provider-neutral tool-use loop, MCP server (stdio)
 src/server/              HTTP API (api.ts), process entry (main.ts), shared wiring (runtime.ts), metrics, .eml parsing, wire contract (wire.ts, pure zod),
                          webhook-only public listener (webhook-listener.ts), webhook handler (webhook.ts), reactions (reactions.ts),
                          event-driven agent runs (wake.ts), the one-agent-at-a-time gate and run budget (agent-runs.ts)

@@ -3,8 +3,8 @@
  * API behind the web console and the MCP server. Both open `TESSERA_DB`, and the one-open-attempt index is what keeps
  * them honest when they run at the same time.
  *
- * `TESSERA_OFFLINE=1` swaps Airwallex for the in-process simulator (src/airwallex/fake.ts) and, without an Anthropic
- * key, Claude for a deterministic scripted agent and keyword reader. Everything else (ledger, gateway, Commander,
+ * `TESSERA_OFFLINE=1` swaps Airwallex for the in-process simulator (src/airwallex/fake.ts) and, with no model configured,
+ * the model for a deterministic scripted agent and keyword reader. Everything else (ledger, gateway, Commander,
  * Closer, toolbox) is the same code. No money and no network.
  */
 import { randomBytes } from "node:crypto";
@@ -15,7 +15,7 @@ import { OfflineWebhooks } from "../airwallex/fake-webhooks";
 import { FakePayoutApi } from "../airwallex/fake";
 import type { BalanceApi, BeneficiaryApi, FxApi, PayoutApi, ReconciliationApi } from "../airwallex/types";
 import { Closer } from "../closer/closer";
-import { AnthropicModel } from "../commander/anthropic";
+import { type ConfiguredModel, modelConfigured, modelFromEnv } from "../commander/model-env";
 import { Commander } from "../commander/commander";
 import type { StructuredModel } from "../commander/evidence";
 import { DEFAULT_POLICY } from "../commander/policy";
@@ -156,20 +156,27 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   const commander = new Commander({ ledger, gateway, balances: api, funding: { fx: api, executor: funder }, secret: approvalSecret, policy });
   const closer = new Closer({ ledger, api, gateway, secret: approvalSecret, paidHoldMs });
 
-  if (env.ANTHROPIC_API_KEY && !env.TESSERA_MODEL) {
-    warnings.push("ANTHROPIC_API_KEY is set but TESSERA_MODEL is not (e.g. claude-sonnet-5-5); Claude stays off");
-  }
   // A public demo is open to anyone who can reach it, so it must never be able to spend the owner's tokens.
-  if (publicDemo && env.ANTHROPIC_API_KEY) {
-    warnings.push("ANTHROPIC_API_KEY is ignored: a public demo (TESSERA_PUBLIC_DEMO=1) uses the scripted agent, never a key anyone can spend");
+  if (publicDemo && modelConfigured(env)) {
+    warnings.push("the configured model is ignored: a public demo (TESSERA_PUBLIC_DEMO=1) uses the scripted agent, never a key anyone can spend");
   }
-  const claude = !publicDemo && env.ANTHROPIC_API_KEY && env.TESSERA_MODEL ? AnthropicModel.fromEnv(env) : null;
-  let model: StructuredModel | null = claude;
-  let agent: AgentDeps | null = claude ? { model: claude, actor: env.TESSERA_AGENT_NAME || "agent:claude", kind: "claude" } : null;
-  if (!claude && offline) {
+  let configured: ConfiguredModel | null = null;
+  if (!publicDemo) {
+    try {
+      configured = modelFromEnv(env);
+    } catch (error) {
+      // A half-configured model stays off and says why; the rest of Tessera does not depend on it.
+      warnings.push(`${error instanceof Error ? error.message : String(error)}; the model stays off`);
+    }
+  }
+  let model: StructuredModel | null = configured?.model ?? null;
+  let readerName: string | null = configured?.label ?? null;
+  let agent: AgentDeps | null = configured ? { model: configured.model, actor: configured.actor, kind: "model", name: configured.label } : null;
+  if (!configured && offline) {
     model = new OfflineReader();
-    // Never named after Claude, whatever TESSERA_AGENT_NAME says: the ledger must not credit a model that did not run.
-    agent = { model: new ScriptedAgentModel(), actor: "agent:scripted", kind: "scripted" };
+    readerName = "offline keyword reader";
+    // Never named after a model, whatever TESSERA_AGENT_NAME says: the ledger must not credit a model that did not run.
+    agent = { model: new ScriptedAgentModel(), actor: "agent:scripted", kind: "scripted", name: "scripted agent" };
   }
   // Event-driven agent runs spend model calls nobody asked for in the moment, so they are opt-in and never public.
   let agentOnEvent = truthy(env.TESSERA_AGENT_ON_EVENT);
@@ -181,7 +188,7 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
 
   return {
     offline, publicDemo, sandbox, approvalSecret, apiToken, generatedToken, dbPath, paidHoldMs,
-    api, simulator, ledger, gateway, commander, closer, model, agent, warnings, policy, funder,
+    api, simulator, ledger, gateway, commander, closer, model, readerName, agent, warnings, policy, funder,
     webhookSecret, offlineWebhooks, agentOnEvent: agentOnEvent && agent !== null,
   };
 }

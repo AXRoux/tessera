@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentModel } from "../../src/agent/loop";
 import { transferEventBody } from "../../src/airwallex/fake-webhooks";
-import type { Block, ConverseRequest, ConverseResult } from "../../src/commander/anthropic";
+import type { Block, ConverseRequest, ConverseResult } from "../../src/commander/model";
 import { startWebhookListener, WEBHOOK_PATH } from "../../src/server/webhook-listener";
 import { approve } from "../helpers/world";
 import { ofType, reactions, receipts, recordingAgent, wakes, webhookRig } from "../helpers/webhook-rig";

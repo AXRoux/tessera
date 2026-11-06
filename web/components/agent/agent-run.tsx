@@ -26,11 +26,12 @@ const IDLE: AgentRunState = { status: "idle", actor: null, mode: "commander", sc
 
 /**
  * Who works agent runs on this server, as a sentence would name it. Offline without a key that is a deterministic
- * script, and the page says so rather than letting it pass for Claude.
+ * script, and the page says so rather than letting it pass for a model.
  */
 export function agentName(agent: Health["agent"] | undefined, capital = false): string {
-  if (agent === "scripted") return capital ? "The scripted agent" : "the scripted agent";
-  return "Claude";
+  if (agent?.kind === "model") return agent.name;
+  if (agent?.kind === "scripted") return capital ? "The scripted agent" : "the scripted agent";
+  return capital ? "The agent" : "the agent";
 }
 
 /** Folds one streamed event into the run state. Pure, so the timeline is a function of what the server said. */

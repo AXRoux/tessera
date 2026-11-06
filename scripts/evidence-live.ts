@@ -1,11 +1,15 @@
 /**
- * Runs the evidence reader against the real model on four supplier messages, printing what Claude extracted and
- * where code overrode it. Requires ANTHROPIC_API_KEY and TESSERA_MODEL.
+ * Runs the evidence reader against the real model on four supplier messages, printing what the model extracted and
+ * where code overrode it. Needs a configured model: TESSERA_MODEL plus ANTHROPIC_API_KEY, or
+ * TESSERA_MODEL_PROVIDER=openai with TESSERA_MODEL_BASE_URL (any OpenAI-compatible endpoint).
  */
-import { AnthropicModel } from "../src/commander/anthropic";
 import { readSupplierMessage, type SupplierMessage } from "../src/commander/evidence";
+import { modelFromEnv } from "../src/commander/model-env";
 
-const model = AnthropicModel.fromEnv();
+const configured = modelFromEnv(process.env);
+if (!configured) throw new Error("no model configured: set TESSERA_MODEL and ANTHROPIC_API_KEY, or TESSERA_MODEL_PROVIDER=openai with TESSERA_MODEL_BASE_URL");
+const { model, label: modelLabel } = configured;
+console.log(`reader: ${modelLabel} (${configured.provider})`);
 const base = { reference: "INV-1001", amountMinor: 1_250_000, currency: "USD" };
 
 const cases: Array<[string, SupplierMessage]> = [

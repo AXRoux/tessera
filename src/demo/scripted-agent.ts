@@ -15,7 +15,7 @@
 import { z } from "zod";
 import { ADVERSARY_SYSTEM, type AgentModel } from "../agent/loop";
 import type { ToolOutcome } from "../agent/toolbox";
-import type { Block, ConverseRequest, ConverseResult, Message } from "../commander/anthropic";
+import type { Block, ConverseRequest, ConverseResult, Message } from "../commander/model";
 
 export const SCRIPTED_AGENT_LABEL = "scripted agent, not Claude";
 

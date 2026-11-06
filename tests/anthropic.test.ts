@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
-import { AnthropicModel, ModelError } from "../src/commander/anthropic";
+import { AnthropicModel } from "../src/commander/anthropic";
+import { ModelError } from "../src/commander/model";
 
 const API_KEY = "sk-ant-test-0123456789-secret";
 const Answer = z.object({ ok: z.boolean() });

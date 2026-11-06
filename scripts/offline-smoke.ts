@@ -11,12 +11,12 @@ import { SignedCertificateSchema } from "../src/closer/certificate";
 import { AgentStreamEventSchema, HealthSchema, IncidentViewSchema, MetricsSchema, SeedResultSchema } from "../src/server/wire";
 
 const HOLD_MS = 1_500;
-// Built from scratch, never from process.env: a key in .env must not turn this into a Claude run.
+// Built from scratch, never from process.env: a key in .env must not turn this into a model run.
 const runtime = buildRuntime({ TESSERA_OFFLINE: "1", TESSERA_PAID_HOLD_MS: String(HOLD_MS), TESSERA_SWEEP_MS: "0" });
-const { api, simulator, ledger, gateway, commander, closer, model, agent, paidHoldMs, apiToken } = runtime;
+const { api, simulator, ledger, gateway, commander, closer, model, readerName, agent, paidHoldMs, apiToken } = runtime;
 const token = apiToken!;
 const handle = createApi({
-  ledger, gateway, commander, closer, model, simulator, token, operator: "ops@acme.example",
+  ledger, gateway, commander, closer, model, readerName, simulator, token, operator: "ops@acme.example",
   beneficiaryId: await resolveBeneficiary(api, {}), eurBeneficiaryId: await resolveBeneficiary(api, {}, "EUR"), paidHoldMs, agent, offline: true,
 });
 
@@ -37,7 +37,7 @@ const expect = (ok: boolean, what: string) => {
 };
 
 const health = HealthSchema.parse(await (await call("GET", "/api/health")).json());
-expect(health.offline && health.agent === "scripted" && health.model, "health: offline, scripted agent, offline reader");
+expect(health.offline && health.agent?.kind === "scripted" && health.reader === "offline keyword reader", "health: offline, scripted agent, offline reader");
 
 const seed = SeedResultSchema.parse(await (await call("POST", "/api/demo/seed")).json());
 expect(seed.seeded.length === 7, "seeded seven ACME incidents");

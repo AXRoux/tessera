@@ -49,7 +49,7 @@ export default async function Home() {
             <span aria-hidden className="size-2 shrink-0 bg-blue" />
             {health.ok && health.data.offline
               ? "Running offline on a simulated Airwallex. The reader and the agent read; code decides what is allowed."
-              : "Built on the Airwallex sandbox. Claude reads what the supplier says; code decides what is allowed."}
+              : `Built on the Airwallex sandbox. ${health.ok && health.data.reader ? health.data.reader : "The model"} reads what the supplier says; code decides what is allowed.`}
           </p>
           {health.ok && health.data.sandbox ? (
             <div className="mt-10 flex flex-wrap items-center gap-4">

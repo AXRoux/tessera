@@ -242,8 +242,8 @@ export type IncidentView = z.infer<typeof IncidentViewSchema>;
 
 export const HealthSchema = z.object({
   ok: z.boolean(),
-  /** A reader for supplier messages is available (Claude, or the offline keyword reader). */
-  model: z.boolean(),
+  /** Who reads supplier messages: the configured model's name ("Claude", "hermes-4-405b", ...), "offline keyword reader", or null for none. */
+  reader: z.string().nullable(),
   /** Simulator controls are on: the Airwallex sandbox, or the offline fake. */
   sandbox: z.boolean(),
   /** Simulated Airwallex in-process; no money and no network. */
@@ -253,8 +253,8 @@ export const HealthSchema = z.object({
   /** A verified bank event that changes an incident's decision wakes an agent for that incident (TESSERA_AGENT_ON_EVENT). */
   agentOnEvent: z.boolean(),
   operator: z.string(),
-  /** Who drives agent runs: Claude, the deterministic scripted agent (not Claude), or nobody. */
-  agent: z.enum(["claude", "scripted"]).nullable(),
+  /** Who drives agent runs: a model (named as the console shows it), the deterministic scripted agent (not a model), or nobody. */
+  agent: z.object({ kind: z.enum(["model", "scripted"]), name: z.string() }).nullable(),
   /** The offline demo can be reset to empty (POST /api/demo/reset). Never true against the sandbox. */
   canReset: z.boolean(),
 });

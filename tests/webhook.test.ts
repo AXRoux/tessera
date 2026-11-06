@@ -10,7 +10,7 @@ import { AIRWALLEX_SANDBOX_IPS, publicWebhookRoutes, startWebhookListener, WEBHO
 import { approve } from "./helpers/world";
 import { ofType, reactions, receipts, recordingAgent, URL_, wakes, webhookRig as rig, WH } from "./helpers/webhook-rig";
 import type { AgentModel } from "../src/agent/loop";
-import type { ConverseRequest, ConverseResult } from "../src/commander/anthropic";
+import type { ConverseRequest, ConverseResult } from "../src/commander/model";
 import { AgentWakeFinishedSchema } from "../src/ledger/events";
 
 describe("webhook route: verify, dedupe, re-read", () => {

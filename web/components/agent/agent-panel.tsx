@@ -39,7 +39,7 @@ export function AgentPanel({ incidentId, health, refresh }: { incidentId: string
         <p className="max-w-2xl text-sm leading-relaxed text-muted">
           Hand this incident to {name}. It works through a small, fixed set of typed tools and nothing else: it cannot create a transfer, sign an
           approval or change an amount. The code refuses anything unsafe, and every step lands in the ledger under the agent&rsquo;s name.
-          {health?.agent === "scripted" ? " Offline, the agent is a deterministic script, not Claude: it shows the same tools and the same refusals." : ""}
+          {health?.agent?.kind === "scripted" ? " Offline, the agent is a deterministic script, not a model: it shows the same tools and the same refusals." : ""}
           {sandbox ? " On the sandbox you can also tell the same agent to get the supplier paid twice, and watch the code refuse." : ""}
         </p>
         <div className="flex flex-wrap items-center gap-4">

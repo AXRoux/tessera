@@ -81,8 +81,8 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
   const status = STATUS[o.status];
   const feesKept = view.attempts.reduce((sum, a) => sum + (a.feeMinor ?? 0), 0);
   const delivered = view.attempts.filter((a) => a.state === "PAID").reduce((sum, a) => sum + a.amountMinor, 0);
-  // Who reads supplier messages: Claude when this server has a key, otherwise the offline keyword reader (not Claude).
-  const reader = !health?.model ? null : health.agent === "scripted" ? "the offline reader" : "Claude";
+  // Who reads supplier messages, as the server names it: the configured model, or offline the keyword reader (not a model).
+  const reader = health?.reader ?? null;
 
   return (
     <>

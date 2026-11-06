@@ -1,9 +1,9 @@
 /**
- * Tessera API process. Holds every credential (Airwallex, approval signing, Anthropic); the Next.js app talks to it
+ * Tessera API process. Holds every credential (Airwallex, approval signing, the model's key); the Next.js app talks to it
  * server-side with TESSERA_API_TOKEN, so no secret ever reaches a browser.
  *
- *   bun run api                         live: Airwallex (sandbox by default) and, with a key, Claude
- *   TESSERA_OFFLINE=1 bun run api       simulated Airwallex in-process, scripted agent unless a Claude key is set
+ *   bun run api                         live: Airwallex (sandbox by default) and, if configured, a model (Claude or any OpenAI-compatible one)
+ *   TESSERA_OFFLINE=1 bun run api       simulated Airwallex in-process, scripted agent unless a model is configured
  *                                       (can be reset to empty from the console; TESSERA_DEMO_IDLE_RESET_MS resets it when idle)
  *
  * Live with AWX_WEBHOOK_SECRET set, a second listener on TESSERA_WEBHOOK_PORT (default 4011) serves Airwallex's
@@ -51,7 +51,7 @@ const nextRuntime = () => {
 
 async function build(): Promise<Instance> {
   const isFirst = pending !== null;
-  const { offline, api, simulator, ledger, gateway, commander, closer, model, agent, paidHoldMs, webhookSecret, offlineWebhooks, agentOnEvent } = nextRuntime();
+  const { offline, api, simulator, ledger, gateway, commander, closer, model, readerName, agent, paidHoldMs, webhookSecret, offlineWebhooks, agentOnEvent } = nextRuntime();
   const beneficiaryId = await resolveBeneficiary(api);
   // The funding demo incident pays the EUR supplier; without one the API still serves, and seeding says what to run.
   const eurBeneficiaryId = await resolveBeneficiary(api, process.env, "EUR").catch(() => null);
@@ -75,7 +75,7 @@ async function build(): Promise<Instance> {
   if (webhook) offlineWebhooks?.bind(publicWebhookRoutes(webhook));
   return {
     handle: createApi({
-      ledger, gateway, commander, closer, model, simulator, token, operator, beneficiaryId, eurBeneficiaryId, paidHoldMs, agent, offline,
+      ledger, gateway, commander, closer, model, readerName, simulator, token, operator, beneficiaryId, eurBeneficiaryId, paidHoldMs, agent, offline,
       webhooks: { listening: webhook !== undefined, agentOnEvent: wakes !== null }, agentGate, reactor,
       reset: offline ? () => demo.reset() : undefined,
     }),
@@ -98,7 +98,7 @@ async function build(): Promise<Instance> {
 }
 
 const demo = await resettable(build);
-const { offline, dbPath, paidHoldMs, simulator, model, agent, webhookSecret, agentOnEvent } = first;
+const { offline, dbPath, paidHoldMs, simulator, model, readerName, agent, webhookSecret, agentOnEvent } = first;
 
 const server = Bun.serve({
   hostname: "127.0.0.1",
@@ -141,8 +141,8 @@ if (idleResetMs > 0) {
   }, Math.min(30_000, idleResetMs)).unref();
 }
 
-const agentLabel = agent ? (agent.kind === "scripted" ? "scripted, not Claude" : `Claude (${process.env.TESSERA_MODEL})`) : "off";
-const readerLabel = model ? (agent?.kind === "scripted" ? "offline keyword reader, not Claude" : "Claude") : "off";
+const agentLabel = agent ? (agent.kind === "scripted" ? "scripted, not a model" : `${agent.name} (${process.env.TESSERA_MODEL})`) : "off";
+const readerLabel = model ? (agent?.kind === "scripted" ? "offline keyword reader, not a model" : (readerName ?? "model")) : "off";
 console.log(`tessera api  http://${server.hostname}:${server.port}${offline ? "  ·  OFFLINE: simulated Airwallex, no money moves" : ""}`);
 console.log(`  ledger ${dbPath}  |  recovered ${recoveredAtStart} unresolved attempt(s)  |  hold ${paidHoldMs}ms`);
 console.log(`  agent ${agentLabel}  |  reader ${readerLabel}  |  simulator ${simulator ? "on" : "off"}  |  webhooks ${webhookSecret ? (offline ? "simulated" : "on") : "off"}  |  agent on event ${agentOnEvent ? "on" : "off"}  |  sweep ${sweepMs > 0 ? `${sweepMs}ms` : "off"}${offline ? `  |  reset on${idleResetMs > 0 ? ` (idle ${idleResetMs}ms)` : ""}` : ""}`);

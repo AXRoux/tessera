@@ -636,4 +636,22 @@ export const MUTATIONS: Mutation[] = [
     edits: [{ file: "src/server/agent-runs.ts", find: "Work incident ${incident.reference} (incidentId ${incident.id}) only.", replace: "Work incident ${incident.reference} only." }],
     expect: { tests: [T("webhook.test.ts", "the brief names the incidentId the tools take")] },
   },
+  {
+    id: "public-demo-spends-model",
+    describe: "Let a public demo use the configured model (any provider) instead of the scripted agent",
+    edits: [{ file: "src/server/runtime.ts", find: "  if (!publicDemo) {\n    try {\n      configured = modelFromEnv(env);", replace: "  if (true as boolean) {\n    try {\n      configured = modelFromEnv(env);" }],
+    expect: { tests: [T("demo.test.ts", "never lets a public demo spend a model key")] },
+  },
+  {
+    id: "openai-extract-unvalidated",
+    describe: "Accept an OpenAI-compatible model's extraction without checking it against the schema",
+    edits: [{ file: "src/commander/openai.ts", find: "    const result = request.schema.safeParse(call.input);\n    if (!result.success) throw new ModelError(`model output failed validation: ${result.error.message}`, null);\n    return result.data;", replace: "    return call.input as T;" }],
+    expect: { tests: [T("openai.test.ts", "accepts only a call to the offered tool whose arguments pass the schema")] },
+  },
+  {
+    id: "openai-extract-any-call",
+    describe: "Take whatever tool an OpenAI-compatible model called as the extraction, not only the one offered",
+    edits: [{ file: "src/commander/openai.ts", find: "const call = turn.calls.find((c) => c.name === request.toolName);", replace: "const call = turn.calls[0];" }],
+    expect: { tests: [T("openai.test.ts", "accepts only a call to the offered tool whose arguments pass the schema")] },
+  },
 ];

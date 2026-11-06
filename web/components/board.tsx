@@ -198,9 +198,9 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
         <div className="border-y border-blue bg-wash">
           <p className="mx-auto flex max-w-[1440px] items-center gap-3 px-6 py-3 text-sm sm:px-10">
             <span aria-hidden className="size-2 shrink-0 bg-blue" />
-            {health.agent === "claude"
-              ? "Offline demo: simulated Airwallex, agent runs by Claude. No money and no bank are involved."
-              : "Offline demo: simulated Airwallex, scripted agent. The agent here is a deterministic script, not Claude."}
+            {health.agent?.kind === "model"
+              ? `Offline demo: simulated Airwallex, agent runs by ${health.agent.name}. No money and no bank are involved.`
+              : "Offline demo: simulated Airwallex, scripted agent. The agent here is a deterministic script, not a model."}
           </p>
         </div>
       ) : null}
@@ -220,7 +220,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
             {health ? (
               <span className="hidden items-center gap-3 sm:flex">
                 <Tag tone={health.agent ? "blue-outline" : "muted"}>
-                  {health.agent === "claude" ? "Claude connected" : health.agent === "scripted" ? "Scripted agent, not Claude" : "No agent connected"}
+                  {health.agent?.kind === "model" ? `${health.agent.name} connected` : health.agent?.kind === "scripted" ? "Scripted agent, not a model" : "No agent connected"}
                 </Tag>
                 <Tag tone={health.sandbox ? "blue-outline" : "muted"}>
                   {health.offline ? "Simulated Airwallex" : health.sandbox ? "Simulator on" : "Simulator off"}

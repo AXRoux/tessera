@@ -6,12 +6,14 @@
  *
  * Two tracks, because most people only need the first:
  *   offline demo   `bun run demo`   needs only Bun, Node and the installed dependencies
- *   live           `bun run dev`    needs sandbox keys, secrets and (for Claude) an Anthropic key
+ *   live           `bun run dev`    needs sandbox keys, secrets and (for the agent and reader) a model: Claude or any OpenAI-compatible one
  * Exit code 1 only when the offline demo cannot start, or when --live was asked for and a live check failed.
  */
 import { existsSync } from "node:fs";
+import { z } from "zod";
 import { AirwallexClient } from "../src/airwallex/client";
 import { SPIKE_SUPPLIER } from "../src/airwallex/types";
+import { type ConfiguredModel, modelFromEnv } from "../src/commander/model-env";
 import { parseHoldMs } from "../src/server/runtime";
 import { DEFAULT_WEBHOOK_PORT } from "../src/server/webhook-listener";
 import { tunnelProviders } from "./tunnel";
@@ -111,9 +113,14 @@ note(
   providers.length > 0 ? `\`bun run dev -- --tunnel\` will try ${providers.join(", then ")}` : (providerProblem ?? "no tunnel provider: `bun run dev -- --tunnel` cannot give Airwallex a public URL"),
   "optional: brew install cloudflared (or have ssh on PATH for localhost.run)",
 );
-if (env.ANTHROPIC_API_KEY && env.TESSERA_MODEL) note(liveTrack, "ok", `Claude is configured (${env.TESSERA_MODEL})`);
-else if (env.ANTHROPIC_API_KEY) note(liveTrack, "warn", "ANTHROPIC_API_KEY is set but TESSERA_MODEL is blank, so Claude stays off", "set TESSERA_MODEL=claude-sonnet-5-5");
-else note(liveTrack, "warn", "no Anthropic key: the live console works, but evidence is entered by hand and there is no agent", "optional: set ANTHROPIC_API_KEY and TESSERA_MODEL");
+let configured: ConfiguredModel | null = null;
+try {
+  configured = modelFromEnv(env);
+  if (configured) note(liveTrack, "ok", `model configured: ${configured.label} (${configured.provider}, ${env.TESSERA_MODEL})`);
+  else note(liveTrack, "warn", "no model: the live console works, but evidence is entered by hand and there is no agent", "optional: README, Choose the model (Claude or any OpenAI-compatible endpoint)");
+} catch (error) {
+  note(liveTrack, "warn", `the model stays off: ${error instanceof Error ? error.message : String(error)}`, "README, Choose the model");
+}
 
 // ---- live track: real calls, only with --live ----------------------------------------------------------------------
 if (live && haveAirwallex && baseUrl.includes("sandbox")) {
@@ -136,16 +143,21 @@ if (live && haveAirwallex && baseUrl.includes("sandbox")) {
     note(liveTrack, "fail", `Airwallex sandbox login failed: ${error instanceof Error ? error.message : String(error)}`, "check AWX_CLIENT_ID and AWX_API_KEY in .env");
   }
 }
-if (live && env.ANTHROPIC_API_KEY && env.TESSERA_MODEL) {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: env.TESSERA_MODEL, max_tokens: 8, messages: [{ role: "user", content: "Reply with ok." }] }),
-    signal: AbortSignal.timeout(20_000),
-  }).catch((error: unknown) => error as Error);
-  if (response instanceof Error) note(liveTrack, "fail", `could not reach Anthropic: ${response.message}`, "check your network");
-  else if (response.ok) note(liveTrack, "ok", `Claude answers (${env.TESSERA_MODEL})`);
-  else note(liveTrack, "fail", `Anthropic answered ${response.status}`, response.status === 404 ? "TESSERA_MODEL is not a model your key can use" : "check ANTHROPIC_API_KEY");
+if (live && configured) {
+  // The same path the reader takes: one forced-by-instruction tool call that must pass a schema. A model that cannot
+  // call tools fails here, which is exactly what would make it useless as Tessera's agent.
+  try {
+    const answer = await configured.model.extract({
+      system: "You check that tool calling works.",
+      user: "Report ok = true.",
+      schema: z.object({ ok: z.boolean() }),
+      toolName: "report",
+      toolDescription: "Report whether you can call tools.",
+    });
+    note(liveTrack, answer.ok ? "ok" : "warn", `${configured.label} answers with a valid tool call`);
+  } catch (error) {
+    note(liveTrack, "fail", `${configured.label} did not answer with a valid tool call: ${error instanceof Error ? error.message : String(error)}`, "check the key, TESSERA_MODEL, and (OpenAI-compatible) TESSERA_MODEL_BASE_URL / TESSERA_MODEL_TOOL_FORMAT");
+  }
 }
 
 // ---- report ------------------------------------------------------------------------------------------------------

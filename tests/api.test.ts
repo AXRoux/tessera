@@ -534,9 +534,9 @@ describe("metrics", () => {
 
   it("reports health with the offline and agent flags the console shows", async () => {
     const scripted: AgentModel = { converse: async () => ({ content: [{ type: "text", text: "done" }], stopReason: "end_turn" }) };
-    const health = (await apiWorld({ deps: { offline: true, agent: { model: scripted, actor: "agent:scripted", kind: "scripted" } } }).call("GET", "/api/health")).parse(HealthSchema);
+    const health = (await apiWorld({ deps: { offline: true, agent: { model: scripted, actor: "agent:scripted", kind: "scripted", name: "scripted agent" } } }).call("GET", "/api/health")).parse(HealthSchema);
 
-    expect(health).toMatchObject({ offline: true, agent: "scripted", webhooks: false, sandbox: true });
+    expect(health).toMatchObject({ offline: true, agent: { kind: "scripted", name: "scripted agent" }, webhooks: false, sandbox: true });
   });
 });
 
@@ -555,7 +555,7 @@ describe("one agent run at a time", () => {
 
   it("lets exactly one of two simultaneous runs start", async () => {
     const { model, release } = gated();
-    const a = apiWorld({ deps: { agent: { model, actor: "agent:test", kind: "scripted" } } });
+    const a = apiWorld({ deps: { agent: { model, actor: "agent:test", kind: "scripted", name: "scripted agent" } } });
 
     const post = () =>
       a.handle(new Request("http://api.test/api/agent/run", { method: "POST", headers: { "x-tessera-token": TOKEN }, body: "{}" }));
@@ -569,7 +569,7 @@ describe("one agent run at a time", () => {
 
   it("frees the run when a request is refused before streaming", async () => {
     const { model, release } = gated();
-    const a = apiWorld({ deps: { agent: { model, actor: "agent:test", kind: "scripted" } } });
+    const a = apiWorld({ deps: { agent: { model, actor: "agent:test", kind: "scripted", name: "scripted agent" } } });
 
     expect((await a.call("POST", "/api/agent/run", { incidentId: "missing" })).status).toBe(404);
     expect((await a.call("POST", "/api/agent/run", { mode: "nonsense" })).status).toBe(400);

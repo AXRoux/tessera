@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ExtractRequest, StructuredModel } from "./evidence";
+import { type Block, type ConverseRequest, type ConverseResult, ModelError, postJson } from "./model";
 
 export interface AnthropicOptions {
   apiKey: string;
@@ -12,39 +13,9 @@ export interface AnthropicOptions {
   retryBaseMs?: number;
 }
 
-/** A failed model call. Never carries the API key or request body. */
-export class ModelError extends Error {
-  constructor(message: string, readonly status: number | null) {
-    super(message);
-    this.name = "ModelError";
-  }
-}
-
 const ResponseSchema = z.looseObject({
   content: z.array(z.looseObject({ type: z.string(), name: z.string().optional(), input: z.unknown().optional() })),
 });
-const ErrorSchema = z.looseObject({ error: z.looseObject({ message: z.string().optional() }).optional() });
-
-/** One block of a Messages API turn. The agent loop speaks these directly. */
-export type Block =
-  | { type: "text"; text: string }
-  | { type: "tool_use"; id: string; name: string; input: unknown }
-  | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean };
-export interface Message {
-  role: "user" | "assistant";
-  content: string | Block[];
-}
-export interface ConverseRequest {
-  system: string;
-  messages: Message[];
-  tools: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>;
-  /** Cancels the in-flight request (and any retry wait) when the caller walks away. */
-  signal?: AbortSignal;
-}
-export interface ConverseResult {
-  content: Block[];
-  stopReason: string | null;
-}
 
 const ConverseResponseSchema = z.looseObject({
   stop_reason: z.string().nullable().optional(),
@@ -58,22 +29,12 @@ const ConverseResponseSchema = z.looseObject({
   ),
 });
 
-const RETRYABLE = new Set([408, 429, 500, 502, 503, 529]);
-
 /**
- * Schema-constrained extraction through Claude's tool use. Forcing the tool means the answer is JSON that must
- * pass our zod schema; free text can never reach the policy.
+ * Claude through Anthropic's Messages API. Extraction is schema-constrained through tool use: the answer must be a call
+ * to the one offered tool whose input passes our zod schema, so free text can never reach the policy.
  */
 export class AnthropicModel implements StructuredModel {
   constructor(private readonly opts: AnthropicOptions) {}
-
-  static fromEnv(env: Record<string, string | undefined> = process.env): AnthropicModel {
-    const apiKey = env.ANTHROPIC_API_KEY;
-    const model = env.TESSERA_MODEL;
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
-    if (!model) throw new Error("TESSERA_MODEL is not set");
-    return new AnthropicModel({ apiKey, model });
-  }
 
   async extract<T>(request: ExtractRequest<T>, signal?: AbortSignal): Promise<T> {
     const { $schema: _ignored, ...inputSchema } = z.toJSONSchema(request.schema) as Record<string, unknown>;
@@ -119,50 +80,8 @@ export class AnthropicModel implements StructuredModel {
     return { content, stopReason: parsed.data.stop_reason ?? null };
   }
 
-  private async post(body: string, signal?: AbortSignal): Promise<unknown> {
+  private post(body: string, signal?: AbortSignal): Promise<unknown> {
     const url = `${this.opts.baseUrl ?? "https://api.anthropic.com"}/v1/messages`;
-    for (let attempt = 0; ; attempt++) {
-      if (signal?.aborted) throw new ModelError("model request aborted", null);
-      let response: Response;
-      try {
-        const timeout = AbortSignal.timeout(this.opts.timeoutMs ?? 60_000);
-        response = await (this.opts.fetch ?? fetch)(url, {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-api-key": this.opts.apiKey, "anthropic-version": "2023-06-01" },
-          body,
-          signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-        });
-      } catch (cause) {
-        if (signal?.aborted) throw new ModelError("model request aborted", null);
-        if (attempt < 2) {
-          await abortableSleep((this.opts.retryBaseMs ?? 500) * 2 ** attempt, signal);
-          continue;
-        }
-        throw new ModelError(`model request failed: ${cause instanceof Error ? cause.message : "network error"}`, null);
-      }
-
-      if (response.ok) return response.json();
-      if (RETRYABLE.has(response.status) && attempt < 2) {
-        await abortableSleep((this.opts.retryBaseMs ?? 500) * 2 ** attempt, signal);
-        continue;
-      }
-      const error = ErrorSchema.safeParse(await response.json().catch(() => ({})));
-      throw new ModelError(`model API ${response.status}: ${(error.success && error.data.error?.message) || response.statusText}`, response.status);
-    }
+    return postJson(url, { "x-api-key": this.opts.apiKey, "anthropic-version": "2023-06-01" }, body, this.opts, signal);
   }
-}
-
-/** A retry back-off that ends early, with a ModelError, if the caller aborts. */
-async function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return Bun.sleep(ms);
-  const { promise, resolve } = Promise.withResolvers<void>();
-  const done = () => {
-    clearTimeout(timer);
-    signal.removeEventListener("abort", done);
-    resolve();
-  };
-  const timer = setTimeout(done, ms);
-  signal.addEventListener("abort", done, { once: true });
-  await promise;
-  if (signal.aborted) throw new ModelError("model request aborted", null);
 }

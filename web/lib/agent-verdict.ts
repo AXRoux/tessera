@@ -41,7 +41,7 @@ export function agentVerdict({ tool, outcome }: Pick<VerdictInput, "tool" | "out
   return { label: REFUSED[tool] ?? `${toolLabel(tool)} refused`, refused: true };
 }
 
-/** "agent:claude" as "Claude", "agent:scripted" as "Scripted agent", "agent:adversary" as "Adversary". */
+/** "agent:claude" as "Claude", "agent:scripted" as "Scripted agent", "agent:hermes-4-405b" as "Hermes 4 405b". */
 export function actorLabel(actor: string): string {
   const name = actor.startsWith("agent:") ? actor.slice("agent:".length) : actor;
   if (name === "scripted") return "Scripted agent";

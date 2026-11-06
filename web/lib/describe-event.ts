@@ -84,7 +84,7 @@ export function describeEvent(type: string, payload: unknown): string {
     case "EVIDENCE_RECORDED": {
       const evidence = record(p.evidence);
       const by = text(p.enteredBy) ?? "an operator";
-      const who = text(p.source) === "model" ? `read by Claude, called by ${by}` : `entered by hand by ${by}`;
+      const who = text(p.source) === "model" ? `read by the reader model, called by ${by}` : `entered by hand by ${by}`;
       return `Supplier evidence ${who}: ${text(evidence.summary) ?? "no summary"}`;
     }
     case "AGENT_TOOL_CALL": {

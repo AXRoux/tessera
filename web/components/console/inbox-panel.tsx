@@ -14,7 +14,7 @@ const MAX_CHARS = 20_000;
 const looksLikeEml = (text: string): boolean => /^from:\s*\S/im.test(text) && /^subject:/im.test(text);
 
 /**
- * Supplier messages land here first. Only a fingerprint goes into the ledger; the reader (Claude, or offline the
+ * Supplier messages land here first. Only a fingerprint goes into the ledger; the reader (the configured model, or offline the
  * scripted keyword reader) reads a stored message by its id, so what was read is exactly what arrived.
  */
 export function InboxPanel({ view, reader, busy, run }: { view: IncidentView; reader: string | null; busy: string | null; run: RunAction }) {
@@ -76,7 +76,7 @@ export function InboxPanel({ view, reader, busy, run }: { view: IncidentView; re
                       })
                     }
                   >
-                    {reader === "Claude" ? "Read with Claude" : reader ? "Read (offline reader)" : "Read"}
+                    {reader && !reader.includes("offline") ? `Read with ${reader}` : reader ? "Read (offline reader)" : "Read"}
                   </Button>
                 </span>
               </li>

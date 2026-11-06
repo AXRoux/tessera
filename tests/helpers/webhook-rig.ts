@@ -6,7 +6,7 @@ import type { AgentModel } from "../../src/agent/loop";
 import { signedDelivery, transferEventBody } from "../../src/airwallex/fake-webhooks";
 import type { Transfer } from "../../src/airwallex/types";
 import { Closer } from "../../src/closer/closer";
-import type { Block, ConverseRequest, ConverseResult } from "../../src/commander/anthropic";
+import type { Block, ConverseRequest, ConverseResult } from "../../src/commander/model";
 import { Commander } from "../../src/commander/commander";
 import { DEFAULT_POLICY } from "../../src/commander/policy";
 import { AgentWakeSchema, IncidentReactionSchema, WebhookReceivedSchema } from "../../src/ledger/events";
@@ -65,7 +65,7 @@ export function webhookRig(options: { agent?: AgentModel | null; limits?: Partia
   const scheduler = options.agent
     ? new WakeScheduler({
         ledger: w.ledger, gateway: w.gateway, commander, closer, model: null, gate,
-        agent: { model: options.agent, actor: "agent:test", kind: "scripted" },
+        agent: { model: options.agent, actor: "agent:test", kind: "scripted", name: "scripted agent" },
         limits: { debounceMs: 30, maxGateWaitMs: 2_000, ...options.limits },
       })
     : null;

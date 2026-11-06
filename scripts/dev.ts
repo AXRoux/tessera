@@ -19,6 +19,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { AirwallexClient } from "../src/airwallex/client";
+import { type Health, HealthSchema } from "../src/server/wire";
 import { WEBHOOK_PATH } from "../src/server/webhook-listener";
 import { Tunnel, tunnelProviders, waitForListener, type TunnelProvider } from "./tunnel";
 import { describeSubscription, pointSubscription } from "./webhook-register";
@@ -283,13 +284,13 @@ console.log(
 async function whenReady(): Promise<void> {
   const consoleUrl = `http://${webHost === "0.0.0.0" ? "localhost" : webHost}:${webPort}`;
   const deadline = Date.now() + 120_000;
-  let health: { agent?: string | null; agentOnEvent?: boolean } | null = null;
+  let health: Pick<Health, "agent" | "agentOnEvent"> | null = null;
   while (!stopping && Date.now() < deadline) {
     try {
       const api = await fetch(`http://127.0.0.1:${apiPort}/api/health`, { headers: { "x-tessera-token": token }, signal: AbortSignal.timeout(2_000) });
       const page = await fetch(`http://127.0.0.1:${webPort}/`, { signal: AbortSignal.timeout(5_000) });
       if (api.ok && page.ok) {
-        health = (await api.json()) as { agent?: string | null; agentOnEvent?: boolean };
+        health = HealthSchema.pick({ agent: true, agentOnEvent: true }).parse(await api.json());
         break;
       }
     } catch {
@@ -299,11 +300,11 @@ async function whenReady(): Promise<void> {
   }
   if (!health || stopping) return;
 
-  const agent = health.agent === "claude" ? "Claude (your key)" : health.agent === "scripted" ? "a deterministic script, not Claude" : "none configured";
+  const agent = health.agent?.kind === "model" ? `${health.agent.name} (your key)` : health.agent?.kind === "scripted" ? "a deterministic script, not a model" : "none configured";
   console.log(`\n  \x1b[1mReady.\x1b[0m  Open  \x1b[1m${consoleUrl}\x1b[0m`);
   if (offline) {
     console.log(`  New here? The page opens with a "Start here" checklist: load seven incidents, watch the agent work them, try to break it.`);
-    console.log(`  Agent in this demo: ${agent}.${health.agent === "scripted" ? " Set ANTHROPIC_API_KEY and TESSERA_MODEL in .env to use Claude." : ""}`);
+    console.log(`  Agent in this demo: ${agent}.${health.agent?.kind === "scripted" ? " Configure a model in .env (Claude or any OpenAI-compatible one) to use it instead." : ""}`);
     if (health.agentOnEvent) console.log(`  Open an incident and press "Fail the transfer": the simulated Airwallex sends a signed webhook, the decision changes, and the agent wakes for that incident on its own.`);
   }
   console.log("");

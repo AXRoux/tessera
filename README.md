@@ -5,13 +5,29 @@
 <p align="center">
   <a href="https://github.com/AXRoux/tessera/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AXRoux/tessera/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="attacks held 50/50" src="https://img.shields.io/badge/attacks_held-50%2F50-1f4dff">
-  <img alt="521 tests passing" src="https://img.shields.io/badge/tests-521_passing-0b0d12">
+  <img alt="527 tests passing" src="https://img.shields.io/badge/tests-527_passing-0b0d12">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-1f4dff">
   <img alt="Airwallex sandbox" src="https://img.shields.io/badge/Airwallex-sandbox-0b0d12">
   <img alt="Bun and TypeScript" src="https://img.shields.io/badge/Bun_%C2%B7_TypeScript-strict-1f4dff?logo=bun&logoColor=white">
   <img alt="one runtime dependency" src="https://img.shields.io/badge/runtime_deps-1_(zod)-0b0d12">
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-1f4dff"></a>
 </p>
+
+<p align="center"><b>Works with any MCP agent.</b> Same ten tools, same refusals, whichever client drives them.</p>
+
+<table align="center">
+  <tr>
+    <td align="center" width="112"><a href="https://code.claude.com/docs/en/mcp"><img src="docs/img/agents/claude.svg" height="40" alt="Claude Code"></a><br><sub><a href="https://code.claude.com/docs/en/mcp">Claude Code</a></sub></td>
+    <td align="center" width="112"><a href="https://developers.openai.com/codex/mcp"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/agents/openai-on-dark.svg"><img src="docs/img/agents/openai.svg" height="40" alt="OpenAI Codex"></picture></a><br><sub><a href="https://developers.openai.com/codex/mcp">OpenAI Codex</a></sub></td>
+    <td align="center" width="112"><a href="https://cursor.com/docs/mcp"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/agents/cursor-on-dark.svg"><img src="docs/img/agents/cursor.svg" height="40" alt="Cursor"></picture></a><br><sub><a href="https://cursor.com/docs/mcp">Cursor</a></sub></td>
+    <td align="center" width="112"><a href="https://geminicli.com/docs/tools/mcp-server/"><img src="docs/img/agents/gemini.svg" height="40" alt="Gemini CLI"></a><br><sub><a href="https://geminicli.com/docs/tools/mcp-server/">Gemini CLI</a></sub></td>
+    <td align="center" width="112"><a href="https://code.visualstudio.com/docs/copilot/customization/mcp-servers"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/agents/githubcopilot-on-dark.svg"><img src="docs/img/agents/githubcopilot.svg" height="40" alt="GitHub Copilot in VS Code"></picture></a><br><sub><a href="https://code.visualstudio.com/docs/copilot/customization/mcp-servers">GitHub Copilot</a></sub></td>
+    <td align="center" width="112"><a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/agents/hermes-agent-on-dark.svg"><img src="docs/img/agents/hermes-agent.svg" height="40" alt="Hermes Agent by Nous Research"></picture></a><br><sub><a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp">Hermes Agent</a><br>Nous Research</sub></td>
+  </tr>
+</table>
+
+<p align="center"><sub>Each logo links to that client's MCP setup docs; the server is <code>bun run mcp</code> (<a href="#use-it-from-any-mcp-client">config snippets</a>). The built-in agent and reader run on Claude or any OpenAI-compatible model (<a href="#choose-the-model">choose the model</a>).<br>
+Hermes Agent worked all seven sandbox incidents through it on 2026-11-06 (one conversion, two replacements, one certificate, nothing refused). The others speak the same MCP; I have not run them.</sub></p>
 
 <p align="center">
   <a href="#the-30-second-version">30 seconds</a> ·
@@ -43,15 +59,15 @@ bun run redteam        # no keys: 50 attacks on the invariants, with a scoreboar
 |---|---|
 | **An agent that is genuinely useful** | Claude works seven real incidents on the Airwallex sandbox in 21 tool calls (2026-11-06): waits, replaces, converts exactly the €26.74 a short EUR wallet was missing and pays the replacement from it, escalates a phishing email, and drafts a proof-of-payment reply for a person to send. An earlier six-incident run, with the hold window passed, also certified the settled payment. |
 | **An agent that cannot hurt you** | Told to get a supplier paid twice, the same Claude was **refused seven times in the recorded run and could not**. The database, the playbook, the draft guard and the Closer said no. |
-| **Plugs into anything** | A zero-dependency [MCP server](#use-it-from-claude-desktop-claude-code-or-any-mcp-client) exposes ten typed tools. Verified against the official MCP Inspector. |
-| **In the console, one click** | **Let Claude work them all** streams the agent live. **Try to break it** tells the same agent to pay twice and shows every refusal in black. |
-| **Proof, not claims** | 50 adversarial attacks, 521 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 91 guards removed one at a time from a private copy, every one caught. |
+| **Plugs into anything** | A zero-dependency [MCP server](#use-it-from-any-mcp-client) exposes ten typed tools to any MCP client: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent. Hermes Agent worked all seven sandbox incidents through it; the official MCP Inspector checked the protocol. The built-in agent runs on Claude or any OpenAI-compatible model ([choose the model](#choose-the-model)). |
+| **In the console, one click** | **Let Claude work them all** (the button names whichever model you set) streams the agent live. **Try to break it** tells the same agent to pay twice and shows every refusal in black. |
+| **Proof, not claims** | 50 adversarial attacks, 527 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 94 guards removed one at a time from a private copy, every one caught. |
 
 ### Why this is worth building
 
 An agent with raw payment credentials can pay anyone, any number of times. The failure modes are old and expensive: the FBI's 2025 Internet Crime Report records [$3.05 billion in reported business-email-compromise losses](https://www.ic3.gov/AnnualReport/Reports/2025_IC3Report.pdf) (the "we changed banks" email is that fraud), and a Xelix analysis of 481 million invoices, [as reported by BriefGlance](https://briefglance.com/articles/ai-plugs-the-53-billion-leak-in-corporate-accounts-payable), puts duplicate payments, invoice errors and fraud at about 0.35% of annual spend. (The second is a secondary source for a vendor's own report; treat it as indicative.)
 
-Tessera is the layer you put **between any agent and a payout API**: the agent keeps the part it is good at (reading, explaining, drafting), and the parts that must never be wrong (one open payment per invoice, what may be replaced, what may be certified) are plain code the agent cannot talk its way past. It speaks MCP, so it can sit in front of Claude Desktop, Claude Code or your own loop today.
+Tessera is the layer you put **between any agent and a payout API**: the agent keeps the part it is good at (reading, explaining, drafting), and the parts that must never be wrong (one open payment per invoice, what may be replaced, what may be certified) are plain code the agent cannot talk its way past. It is **model-agnostic**. Any MCP client (Claude Code, Codex, Cursor, Gemini CLI, Hermes Agent or your own loop) gets the same ten tools and meets the same refusals through `bun run mcp`. The built-in console agent and the supplier-message reader run on Claude (Anthropic) or on any OpenAI-compatible model (Hermes through Nous Portal or OpenRouter, a local model through Ollama, LM Studio or vLLM, or OpenAI), picked by environment variables. Whatever the model, the code that says no is the same.
 
 ### See it in two minutes, with no keys
 
@@ -65,10 +81,11 @@ incidents, watch the agent work them, try to break it, take over the one it hand
 queue lists everything waiting for a person, each row shows what the agent last did there, and after a run **What the agent did**
 gives one line per incident. **Reset demo** clears it and starts over.
 
-The demo runs on a simulated Airwallex with a deterministic, scripted agent (clearly labelled *not Claude* everywhere it
+The demo runs on a simulated Airwallex with a deterministic, scripted agent (clearly labelled *not a model* everywhere it
 appears). The paid invoice certifies after a 6-second hold, so press the agent button a second time. **Try to break it** runs a
-scripted adversary at the same toolbox and shows the refusals. Add `ANTHROPIC_API_KEY` and `TESSERA_MODEL` to `.env` and the
-same buttons drive real Claude against the same simulator. Nothing in this mode can move money.
+scripted adversary at the same toolbox and shows the refusals. Add a model to `.env` (Claude with `ANTHROPIC_API_KEY`, or any
+OpenAI-compatible endpoint: see [Choose the model](#choose-the-model)) and the same buttons drive that model against the same
+simulator. Nothing in this mode can move money.
 
 `bun run scale` runs 100 mixed incidents through the same path and ends with `INVARIANT HELD: at most one live payout per invoice`.
 Want it on a URL for someone else? [`docs/DEPLOY.md`](docs/DEPLOY.md). Recording the submission video? [`docs/VIDEO.md`](docs/VIDEO.md).
@@ -294,9 +311,9 @@ Five design rules make this safe to hand to a model:
 4. **Everything is audited.** Every mutating call and every refusal is appended to the ledger as `AGENT_TOOL_CALL`, with the text of untrusted messages replaced by a hash.
 5. **Whatever goes out is checked too.** Supplier-facing drafts are tied to an action the Commander has allowed, scanned for account details, links and promises of more money, and carry facts that code, not the agent, wrote.
 
-### Use it from Claude Desktop, Claude Code, or any MCP client
+### Use it from any MCP client
 
-`bun run mcp` serves the same toolbox over stdio. It is written against the MCP spec with **no SDK**, so there is no new dependency, and it was checked end to end with the official `@modelcontextprotocol/inspector`.
+`bun run mcp` serves the same toolbox over stdio. It is written against the MCP spec with **no SDK**, so there is no new dependency, and it was checked end to end with the official `@modelcontextprotocol/inspector`. Any client that can launch a stdio server works the same way; it brings its own model, and the ten tools and their refusals do not change with it. The command is always the same: `bun run --silent --cwd /absolute/path/to/tessera mcp`.
 
 ```jsonc
 // claude_desktop_config.json
@@ -319,7 +336,42 @@ claude mcp add tessera -- bun run --silent --cwd /absolute/path/to/tessera mcp
 npx @modelcontextprotocol/inspector bun src/agent/mcp-main.ts
 ```
 
-The MCP server and the web console open the **same ledger file**, so you can ask Claude Desktop to "work the open incidents" and watch each call land in the console. The one-open-attempt index is what keeps two processes honest when they run at once.
+```yaml
+# Hermes Agent (Nous Research): ~/.hermes/config.yaml
+# or: hermes mcp add tessera --command bun --env TESSERA_AGENT_NAME=agent:hermes --args run --silent --cwd /absolute/path/to/tessera mcp
+mcp_servers:
+  tessera:
+    command: "bun"
+    args: ["run", "--silent", "--cwd", "/absolute/path/to/tessera", "mcp"]
+    env:
+      TESSERA_AGENT_NAME: "agent:hermes"
+```
+
+The Hermes run above was exactly this, then `hermes -t tessera -z "<the commander's standing orders>"` (`-t tessera` gives Hermes only Tessera's tools).
+
+```jsonc
+// Cursor: .cursor/mcp.json in a project, or ~/.cursor/mcp.json
+{
+  "mcpServers": {
+    "tessera": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["run", "--silent", "--cwd", "/absolute/path/to/tessera", "mcp"]
+    }
+  }
+}
+```
+
+```toml
+# OpenAI Codex: ~/.codex/config.toml (or: codex mcp add tessera -- bun run --silent --cwd /absolute/path/to/tessera mcp)
+[mcp_servers.tessera]
+command = "bun"
+args = ["run", "--silent", "--cwd", "/absolute/path/to/tessera", "mcp"]
+```
+
+Formats from each client's docs: [Hermes Agent](https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference), [Cursor](https://cursor.com/docs/mcp), [Codex](https://developers.openai.com/codex/mcp), [Claude Code](https://code.claude.com/docs/en/mcp), [Gemini CLI](https://geminicli.com/docs/tools/mcp-server/) (`mcpServers` in `settings.json`, same shape as Cursor's), [VS Code / Copilot](https://code.visualstudio.com/docs/copilot/customization/mcp-servers). Set `TESSERA_AGENT_NAME` in the server's `env` to tell clients apart in the ledger (default `agent:mcp`).
+
+The MCP server and the web console open the **same ledger file**, so you can ask any of these clients to "work the open incidents" and watch each call land in the console. The one-open-attempt index is what keeps two processes honest when they run at once.
 
 > [!NOTE]
 > Over MCP the client passes the message text itself (outside MCP the agent can only name a message already in the ledger's inbox). The reader still turns it into booleans, and evidence can only ever make the Commander more cautious, so a client that lies about an email can block a replacement but never unlock one.
@@ -341,9 +393,9 @@ The loop is ~60 lines. It has no authority of its own: no gateway, no secret, no
 ## Prove it
 
 ```sh
-bun test                   # 521 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
+bun test                   # 527 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
 bun run redteam            # 50 attacks, offline, with a scoreboard
-bun run mutate             # 91 guard removals on a private copy of the repo; fails unless each is caught (about a minute)
+bun run mutate             # 94 guard removals on a private copy of the repo; fails unless each is caught (about a minute)
 bun run typecheck && (cd web && bun run typecheck)
 bun run scripts/offline-smoke.ts   # no keys: seed, scripted agent run, invariant + hash chain (CI runs it)
 bun run scale                      # no keys: 100 mixed USD/EUR incidents, metrics, INVARIANT HELD
@@ -422,7 +474,7 @@ bun run agent -- --adversary
 
 ### The tests have teeth
 
-A test that always passes proves nothing, so this is a command, not a claim. **`bun run mutate`** removes one guard at a time from a private copy of the repo (in the OS temp directory; your working tree is never written), runs the red team and the named tests against the copy, and **fails unless every one of them notices**. It checks that each edit still compiles (a mutation that does not build proves nothing), runs a baseline first (a red baseline means no result is meaningful), and refuses to run if the catalog no longer matches the source. Offline, about a minute: `91/91 mutations killed`. `bun run mutate -- --list` shows what is in it.
+A test that always passes proves nothing, so this is a command, not a claim. **`bun run mutate`** removes one guard at a time from a private copy of the repo (in the OS temp directory; your working tree is never written), runs the red team and the named tests against the copy, and **fails unless every one of them notices**. It checks that each edit still compiles (a mutation that does not build proves nothing), runs a baseline first (a red baseline means no result is meaningful), and refuses to run if the catalog no longer matches the source. Offline, about a minute: `94/94 mutations killed`. `bun run mutate -- --list` shows what is in it.
 
 The first full run did **not** pass, and that is the point. It killed 33 of 45 and found:
 
@@ -431,7 +483,7 @@ The first full run did **not** pass, and that is the point. It killed 33 of 45 a
 - **Rules enforced twice.** Several rules have two or more independent layers (the PAID hold window is checked by both the Commander and the Closer; replaying an approval is stopped four ways). Removing one layer changes nothing observable, which is correct. The table therefore has a row that removes one layer (caught by a unit test) and a row that removes **all of them** (caught by the attack). One layer, `escalationView`, is redundant behind `scrub` and is left out on purpose; it is explained in `scripts/mutations.ts`.
 
 <details>
-<summary><b>All 91 mutations, and what caught each</b></summary>
+<summary><b>All 94 mutations, and what caught each</b></summary>
 
 <br>
 
@@ -528,6 +580,9 @@ The first full run did **not** pass, and that is the point. It killed 33 of 45 a
 | Let TESSERA_AGENT_ON_EVENT turn event-driven runs on in a public demo | webhook.test.ts: never on in a public demo |
 | Deliver simulated webhooks while the offline demo seeds its history | webhook.test.ts: seeding the demo delivers nothing |
 | Brief a scoped agent run with the incident's reference only, not the incidentId its tools take | webhook.test.ts: the brief names the incidentId the tools take |
+| Let a public demo use the configured model (any provider) instead of the scripted agent | demo.test.ts: never lets a public demo spend a model key |
+| Accept an OpenAI-compatible model's extraction without checking it against the schema | openai.test.ts: accepts only a call to the offered tool whose arguments pass the schema |
+| Take whatever tool an OpenAI-compatible model called as the extraction, not only the one offered | openai.test.ts: accepts only a call to the offered tool whose arguments pass the schema |
 
 </details>
 
@@ -555,7 +610,7 @@ The design rests on behaviors observed on the Airwallex sandbox, recorded in [SP
 
 ## Run it
 
-Requirements: [Bun](https://bun.sh) 1.4+, Node 20.9+ (Next.js 16). Nothing else for the offline demo; an Airwallex **sandbox** account for the live one, and an Anthropic key for Claude.
+Requirements: [Bun](https://bun.sh) 1.4+, Node 20.9+ (Next.js 16). Nothing else for the offline demo; an Airwallex **sandbox** account for the live one, and a model for the built-in agent and reader: an Anthropic key for Claude, or any OpenAI-compatible endpoint ([Choose the model](#choose-the-model)).
 
 ```sh
 bun install && (cd web && bun install)
@@ -563,13 +618,13 @@ bun install && (cd web && bun install)
 bun run demo                    # offline: API + console at http://127.0.0.1:3100, no keys, no money
 ```
 
-`bun run demo` runs the same ledger, gateway, Commander, Closer and toolbox against an in-process simulation of Airwallex (`TESSERA_OFFLINE=1`), with a 6-second hold window so certification can be shown. Without an Anthropic key the agent is a deterministic **scripted agent** and the reader a keyword reader, both labelled "not Claude" in the console and the ledger (`agent:scripted`). **Seed demo incidents** on the board creates the seven ACME incidents (the seventh, `ACME-1047`, is paid in EUR from a wallet staged too short to replace it). `bun run scale` works 100 offline incidents and checks the invariant on every one.
+`bun run demo` runs the same ledger, gateway, Commander, Closer and toolbox against an in-process simulation of Airwallex (`TESSERA_OFFLINE=1`), with a 6-second hold window so certification can be shown. Without a model configured the agent is a deterministic **scripted agent** and the reader a keyword reader, both labelled "not a model" in the console, and the ledger names the agent `agent:scripted`. **Seed demo incidents** on the board creates the seven ACME incidents (the seventh, `ACME-1047`, is paid in EUR from a wallet staged too short to replace it). `bun run scale` works 100 offline incidents and checks the invariant on every one.
 
 For the sandbox:
 
 ```sh
 bun run setup                   # creates .env, generates the two secrets, creates the sandbox beneficiaries
-bun run doctor -- --live        # checks the sandbox login, the beneficiary and your Anthropic key with real calls
+bun run doctor -- --live        # checks the sandbox login, the beneficiary and your model (one real tool call) with real calls
 bun run dev                     # API on 127.0.0.1:4010 + console on :3100, prefixed logs, Ctrl-C stops both
 ```
 
@@ -584,7 +639,7 @@ bun run agent -- --seed-only                        # writes .data/agent-demo.db
 TESSERA_DB=.data/agent-demo.db bun run dev
 ```
 
-**Public demo container:** `docker build -t tessera-demo . && docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera-demo`. Offline only (`TESSERA_PUBLIC_DEMO=1` is refused without `TESSERA_OFFLINE=1`, and a public demo ignores any Anthropic key so a stranger can never spend yours); the API stays on loopback inside the container. Hosting it: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+**Public demo container:** `docker build -t tessera-demo . && docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera-demo`. Offline only (`TESSERA_PUBLIC_DEMO=1` is refused without `TESSERA_OFFLINE=1`, and a public demo ignores any configured model, whichever provider, so a stranger can never spend your key); the API stays on loopback inside the container. Hosting it: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 **Webhooks (optional; the sweep does the same job a minute later).** With `AWX_WEBHOOK_SECRET` set, the live API opens a second listener on `TESSERA_WEBHOOK_PORT` (default 4011) that serves `POST /api/webhooks/airwallex` and nothing else; the operator API never faces the internet. Airwallex can only reach a public URL, so:
 
@@ -606,19 +661,57 @@ bun run webhook:ping -- --url https://<printed>/api/webhooks/airwallex   # optio
 | `TESSERA_TUNNEL_PROVIDER` | Pin `--tunnel` to `cloudflared` or `localhost.run`. Default: cloudflared if installed, then localhost.run (ssh). |
 | `TESSERA_APPROVAL_SECRET` | Signs approvals and certificates (32+ chars). Held by the API process only; the model never sees it. |
 | `TESSERA_API_TOKEN` | Operator token. The Next.js server holds it; browsers never do. |
-| `ANTHROPIC_API_KEY`, `TESSERA_MODEL` | Optional (`TESSERA_MODEL=claude-sonnet-5-5`). Without them evidence is entered by hand; offline, the scripted agent and keyword reader stand in. |
+| `TESSERA_MODEL_PROVIDER` | `anthropic` (default) or `openai` (any OpenAI-compatible Chat Completions endpoint). Picks the model behind the built-in agent and the supplier-message reader. MCP clients bring their own model and ignore it. |
+| `TESSERA_MODEL` | Model id for either provider (`claude-sonnet-5-5`, `Hermes-4-405B`, `nousresearch/hermes-4-405b`, ...). Without a model, evidence is entered by hand; offline, the scripted agent and keyword reader stand in. |
+| `ANTHROPIC_API_KEY` | Anthropic provider: the API key. |
+| `TESSERA_MODEL_BASE_URL` | OpenAI-compatible provider, required: the endpoint's base URL, e.g. `https://openrouter.ai/api/v1`, `https://inference-api.nousresearch.com/v1`, `http://localhost:11434/v1`. |
+| `TESSERA_MODEL_API_KEY` | OpenAI-compatible provider: the bearer key. Optional for local servers. |
+| `TESSERA_MODEL_TOOL_FORMAT` | OpenAI-compatible provider: `native` (default; OpenAI `tools` / `tool_calls`) or `hermes` (the [Hermes function-calling format](https://github.com/NousResearch/Hermes-Function-Calling): tool signatures in the system prompt inside `<tools>`, calls answered as `<tool_call>` in text, results sent back as `<tool_response>`; no `tools` parameter is sent). |
+| `TESSERA_MODEL_LABEL` | Display name for the model in the console and the default agent name. Default `Claude` for anthropic, otherwise the model id's last path segment (`nousresearch/hermes-4-405b` → `hermes-4-405b`). |
 | `TESSERA_OPERATOR` | Identity stamped on every human approval, server-side. |
 | `TESSERA_PAID_HOLD_MS` | How long a transfer must stay `PAID` before it can be certified, in whole milliseconds. Production policy is 24 h (`86400000`); offline default 6 s. |
 | `TESSERA_SWEEP_MS` | Background recover-and-sync interval in the API. Default 60000; 0 disables it. |
-| `TESSERA_AGENT_NAME` | Name written on every agent action, for console runs and MCP clients. The scripted agent is always `agent:scripted`. |
+| `TESSERA_AGENT_NAME` | Name written on every agent action, for console runs and MCP clients. Default `agent:claude` (anthropic), `agent:<label>` for an OpenAI-compatible model (e.g. `agent:hermes-4-405b`), `agent:mcp` over MCP. The scripted agent is always `agent:scripted`. |
 | `TESSERA_AGENT_AUTHORITY` | MCP: `operator` (default) or `triage` (never offered `replace_payment`, `fund_replacement` or `reconcile_and_close`). |
 | `TESSERA_OFFLINE` | `1`: simulated Airwallex, in-memory ledger, generated secrets if unset. |
-| `TESSERA_PUBLIC_DEMO`, `TESSERA_ALLOWED_HOSTS` | Offline only: let the console answer the listed hosts, not just loopback. A public demo never uses an Anthropic key. |
+| `TESSERA_PUBLIC_DEMO`, `TESSERA_ALLOWED_HOSTS` | Offline only: let the console answer the listed hosts, not just loopback. A public demo never uses a model key, whichever provider. |
 | `TESSERA_DEMO_IDLE_RESET_MS` | Offline only: reset the in-memory demo after this many idle milliseconds (the Docker image sets 15 minutes). Default 0, off. |
 | `TESSERA_API_PORT`, `TESSERA_WEB_PORT` | Ports for `bun run demo` / `bun run dev` (defaults 4010 and 3100). A busy port stops the start with a message naming the variable. |
 | `TESSERA_NO_OPEN` | Set to stop `bun run demo` from opening your browser (it only does when run in a terminal). |
 | `TESSERA_BENEFICIARY_ID` | Override for the USD beneficiary. |
 | `TESSERA_DB` | Ledger path. Default `.data/tessera.db` (offline: in memory). |
+
+### Choose the model
+
+Tessera does not depend on one model. Over MCP the client brings its own ([any MCP client](#use-it-from-any-mcp-client)). The built-in console agent and the supplier-message reader use whatever `.env` names: Claude through Anthropic, or any server that speaks OpenAI's Chat Completions API. The toolbox, the Commander, the Closer and every refusal are the same code either way; only who does the reading and the asking changes.
+
+```sh
+# Claude (Anthropic): the default provider
+ANTHROPIC_API_KEY=sk-ant-...
+TESSERA_MODEL=claude-sonnet-5-5
+
+# Any OpenAI-compatible endpoint, e.g. Nous Portal (here Z.ai's GLM-5.2, the model Hermes Agent runs on by default)
+TESSERA_MODEL_PROVIDER=openai
+TESSERA_MODEL_BASE_URL=https://inference-api.nousresearch.com/v1
+TESSERA_MODEL_API_KEY=...
+TESSERA_MODEL=z-ai/glm-5.2
+#   Hermes Agent users can skip the key: `hermes proxy start` serves your Nous Portal login at
+#   http://127.0.0.1:8645/v1 and accepts any bearer token.
+
+# A Hermes model (Nous Research), e.g. on OpenRouter
+TESSERA_MODEL_PROVIDER=openai
+TESSERA_MODEL_BASE_URL=https://openrouter.ai/api/v1
+TESSERA_MODEL_API_KEY=sk-or-...
+TESSERA_MODEL=nousresearch/hermes-4-405b
+TESSERA_MODEL_TOOL_FORMAT=hermes   # the default for any model id containing "hermes"
+
+# A local model through Ollama (LM Studio and vLLM work the same way with their own base URL)
+TESSERA_MODEL_PROVIDER=openai
+TESSERA_MODEL_BASE_URL=http://localhost:11434/v1
+TESSERA_MODEL=qwen3                # any model you have pulled that supports tool calling
+```
+
+What I ran on 2026-11-06: the console agent and reader on the seven ACME incidents with Claude through Anthropic's Messages API and through Anthropic's OpenAI-compatible endpoint, and with `z-ai/glm-5.2` through Nous Portal (via `hermes proxy`). Each run made the same decisions (wait, replace, escalate twice, fund then replace, draft proof, certify), and the at-most-one-live-payout check and the hash chain held. `TESSERA_MODEL_TOOL_FORMAT=hermes` follows the [Hermes function-calling format](https://github.com/NousResearch/Hermes-Function-Calling) (tool signatures in the system prompt, `<tool_call>` answers) because hosts serving Hermes 4 do not document OpenAI-style `tools`; it is covered by tests but I have not run it against a live Hermes model: Nous Portal answered "This model has been retired" for `Hermes-4-405B` and `Hermes-4-70B` that day. The console names the agent by its label (**Let glm-5.2 work them all**) and the ledger records it as `agent:<label>`. A weaker model can work incidents worse; it cannot be refused less.
 
 ### The 3-minute console demo
 
@@ -627,7 +720,7 @@ bun run webhook:ping -- --url https://<printed>/api/webhooks/airwallex   # optio
 3. On another invoice, **fail the transfer** with *Duplication return*. Try to release it with the reason "ok": refused. Give a real reason and it goes out under a new request ID, recorded under your name.
 4. On an invoice whose supplier has not asked to change bank details, **fail the transfer** with *Channel timeout*. In the demo the simulated Airwallex sends signed `payout.transfer.failed` and `.cancelled` webhooks; the incident's history shows the reaction (*wait* to *replace the payment*), the agent waking for that incident alone, and the replacement it asked for, and the board shows `Webhook payout.transfer.cancelled · wait → replace the payment · agent woken`.
 5. On another, **mark paid** and try **Reconcile and certify**: refused inside the hold window. Once it passes, the Closer checks every wallet line and signs.
-6. Press **Let Claude work them all** on the board, and watch the agent's steps stream in while the incidents change state underneath.
+6. Press **Let Claude work them all** on the board (the button names whichever model you configured; offline, the scripted agent), and watch the agent's steps stream in while the incidents change state underneath.
 7. Press **Try to break it** on an in-flight incident, and watch the same agent get refused.
 
 ---
@@ -638,7 +731,7 @@ bun run webhook:ping -- --url https://<printed>/api/webhooks/airwallex   # optio
 src/agent        the agent surface: toolbox (10 typed tools), tool-use loop, MCP server, step summaries
 src/airwallex    REST client (429-aware, single-flight login, paged lists), webhook verifier, the simulated Airwallex used offline and in tests
 src/demo         the seven ACME incidents, sandbox wallet staging, the scripted agent and adversary, the keyword reader
-src/commander    decision policy, quarantined evidence reader, Anthropic transport
+src/commander    decision policy, quarantined evidence reader, model providers (Anthropic, OpenAI-compatible with native or Hermes tool calls)
 src/domain       failure playbook: 32 codes -> class -> replacement rule
 src/gateway      exactly-once submit, recover, sync, human lock release
 src/funding      the funding executor (one conversion per replacement, exactly the shortfall) and funding approvals
@@ -671,7 +764,8 @@ This is a hackathon build, so here is what it is and is not.
 - **Webhooks need a public URL, and a free tunnel's changes every run.** Only the webhook listener (its own port, one route) is exposed. `bun run dev -- --tunnel` opens a Cloudflare quick tunnel or, where Cloudflare's edge is blocked (the network I was on, 2026-11-06: cloudflared printed a URL that only ever answered 530), a localhost.run SSH tunnel. Both hand out a random hostname with no uptime guarantee ([Cloudflare](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/), [localhost.run](https://localhost.run/docs/)), and localhost.run can swap hostnames mid-run. Every new hostname is pointed at the subscription automatically, but Airwallex took between about 1:45 and 2:40 to follow a URL change (2026-11-06): deliveries in that gap went to the old URL and came back in Airwallex's next retry round (11 minutes later), and the sweep (default every 60 s) catches the change before that. A named tunnel on a domain of your own would give a stable URL; I did not set one up. localhost.run sends no client address, so `TESSERA_WEBHOOK_SOURCE_IPS` works behind Cloudflare only.
 - **Webhook timing, as far as I have seen it.** A brand-new subscription took about six minutes to start delivering (2026-11-03). Retries (2026-11-06, an endpoint answering 503 on purpose): three tries within about three seconds with the same `x-timestamp`, then a new round with a fresh `x-timestamp` and signature about 7.5 and 11 minutes later, so the five-minute window does not refuse a genuine retry. I watched two rounds, not the documented three days.
 - **A woken agent spends model calls nobody asked for in the moment.** It is off unless `TESSERA_AGENT_ON_EVENT=1` (on by default only in `bun run demo`), never on in a public demo, and capped per incident and overall, counted from the ledger.
-- **The offline agent is not Claude.** `bun run demo` uses a deterministic script behind the same toolbox so judges can run everything without keys. It demonstrates the guarantees, not model quality. The two terminal screenshots (`docs/img/terminal-agent.png`, `terminal-adversary.png`) are live Claude runs on the real sandbox, recorded after the latest changes, as are `bun run smoke` and `bun run chaos`. `bun run evidence:live` (Claude reading four supplier messages) was not re-run after them. A different run of Claude will word things differently and may attempt different moves; the invariant check at the end is what does not vary.
+- **The offline agent is not a model.** `bun run demo` uses a deterministic script behind the same toolbox so judges can run everything without keys. It demonstrates the guarantees, not model quality. The two terminal screenshots (`docs/img/terminal-agent.png`, `terminal-adversary.png`) are live Claude runs on the real sandbox, recorded after the latest changes, as are `bun run smoke` and `bun run chaos`. `bun run evidence:live` (Claude reading four supplier messages) was not re-run after them. A different run of Claude will word things differently and may attempt different moves; the invariant check at the end is what does not vary.
+- **Model-agnostic, and what I actually ran.** Over MCP: Hermes Agent (running Z.ai's GLM-5.2 on Nous Portal) worked all seven sandbox incidents on 2026-11-06 with the same decisions Claude made, and the ledger verifies; the MCP Inspector checked the protocol. `read_supplier_message` still reads with the reader model configured in Tessera's own `.env` (Claude in that run), whichever client calls it. Claude Code, Codex, Cursor, Gemini CLI and Copilot speak the same protocol but I have not run them. Built-in agent and reader: Claude (Anthropic API and Anthropic's OpenAI-compatible endpoint) and GLM-5.2 (Nous Portal) on the offline incidents; the screenshots and earlier recorded runs are Claude. The Hermes tool-call format is tested but not run against a live Hermes model (Nous Portal had retired Hermes 4 that day). A model that calls tools poorly gets more refusals and finishes less; the refusals themselves do not depend on the model.
 - **An agent can be annoying.** `escalate_to_human` is always allowed on an open incident. A hostile agent can escalate everything and make work for people; it cannot make money move.
 - **SQLite, one node.** Two processes can share the ledger safely (the index is the arbiter), but this is not a distributed system.
 - **Demo hold window.** The scripts shorten the 24 h `PAID` hold to seconds so you can see certification. Production policy is 24 h.

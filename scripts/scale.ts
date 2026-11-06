@@ -2,9 +2,9 @@
  * `bun run scale`: many incidents at once, worked by an agent, then the one property that matters checked for every
  * invoice: at most one live payout, in the ledger and at Airwallex, on a hash chain that verifies.
  *
- *   bun run scale                     offline: 100 incidents on the simulator, the scripted agent (not Claude)
+ *   bun run scale                     offline: 100 incidents on the simulator, the scripted agent (not a model)
  *   bun run scale -- --n 300          more of them
- *   bun run scale -- --claude         Claude works them instead (needs ANTHROPIC_API_KEY and TESSERA_MODEL)
+ *   bun run scale -- --model          the configured model works them instead (Claude or any OpenAI-compatible one; see README)
  *   bun run scale -- --live --n 12    on the Airwallex sandbox, throttled under its 10 requests/second
  *
  * Incidents alternate USD LOCAL and EUR SWIFT and cycle through every playbook outcome the demo knows (wait,
@@ -21,7 +21,7 @@ import { formatMinor } from "../src/money";
 
 const args = process.argv.slice(2);
 const live = args.includes("--live");
-const claude = args.includes("--claude");
+const useModel = args.includes("--model");
 const nAt = args.indexOf("--n");
 const n = nAt >= 0 ? Number(args[nAt + 1]) : live ? 12 : 100;
 if (!Number.isSafeInteger(n) || n < 1 || n > 1_000) throw new Error("--n must be a whole number between 1 and 1000");
@@ -50,8 +50,8 @@ function throttled(gapMs: number) {
     });
 }
 
-// Offline never inherits keys from .env unless --claude asks for Claude: a scale run must not spend tokens by accident.
-const base: Record<string, string | undefined> = live || claude ? { ...process.env } : { TESSERA_APPROVAL_SECRET: process.env.TESSERA_APPROVAL_SECRET };
+// Offline never inherits keys from .env unless --model asks for the model: a scale run must not spend tokens by accident.
+const base: Record<string, string | undefined> = live || useModel ? { ...process.env } : { TESSERA_APPROVAL_SECRET: process.env.TESSERA_APPROVAL_SECRET };
 const env: Record<string, string | undefined> = {
   ...base,
   ...(live ? { TESSERA_DB: ":memory:" } : { TESSERA_OFFLINE: "1" }),
@@ -60,13 +60,13 @@ const env: Record<string, string | undefined> = {
 const runtime = buildRuntime(env, live ? { wrap: throttled(110) } : {});
 const { api, simulator, ledger, gateway, commander, closer, model, agent } = runtime;
 if (!simulator) throw new Error("--live needs AWX_BASE_URL pointing at the sandbox");
-if (!agent) throw new Error("no agent: --claude needs ANTHROPIC_API_KEY and TESSERA_MODEL");
-if (claude && agent.kind !== "claude") throw new Error("--claude needs ANTHROPIC_API_KEY and TESSERA_MODEL");
+if (!agent) throw new Error("no agent: --model needs a configured model (TESSERA_MODEL and its provider's key)");
+if (useModel && agent.kind !== "model") throw new Error(`--model needs a configured model (TESSERA_MODEL and its provider's key)${runtime.warnings.length ? `: ${runtime.warnings.join("; ")}` : ""}`);
 
 const beneficiaries = { USD: await resolveBeneficiary(api, env, "USD"), EUR: await resolveBeneficiary(api, env, "EUR") };
 const startedAt = new Date(Date.now() - 60_000).toISOString();
 const tag = runTag();
-console.log(`scale: ${n} incidents ${live ? "on the Airwallex sandbox" : "offline (simulated Airwallex)"}, agent ${agent.kind === "claude" ? "Claude" : "scripted (not Claude)"}`);
+console.log(`scale: ${n} incidents ${live ? "on the Airwallex sandbox" : "offline (simulated Airwallex)"}, agent ${agent.kind === "model" ? agent.name : "scripted (not a model)"}`);
 
 const seedStart = performance.now();
 const seeded: SeededIncident[] = [];
