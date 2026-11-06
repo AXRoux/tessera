@@ -15,6 +15,7 @@ import { DraftPanel } from "./draft-panel";
 import { DecisionPanel } from "./decision-panel";
 import { EvidencePanel } from "./evidence-panel";
 import { NoticeBox, type Notice } from "./fields";
+import { FundingPanel } from "./funding-panel";
 import { InboxPanel } from "./inbox-panel";
 import { HandoffBanner } from "./handoff-banner";
 import { LedgerLog } from "./ledger-log";
@@ -128,6 +129,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
           </div>
           <aside className="space-y-8 lg:col-span-4">
             <ActionsPanel view={view} operator={health?.operator ?? "operator"} busy={busy} run={run} />
+            <FundingPanel view={view} operator={health?.operator ?? "operator"} busy={busy} run={run} />
             <InboxPanel view={view} reader={reader} busy={busy} run={run} />
             <EvidencePanel view={view} reader={reader} busy={busy} run={run} />
             {health?.sandbox ? <SandboxPanel view={view} busy={busy} run={run} /> : null}

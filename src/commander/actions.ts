@@ -7,6 +7,8 @@ export const ACTION_KINDS = [
   "SEND_PROOF_TO_SUPPLIER",
   "REQUEST_CORRECTION",
   "REPLACE",
+  /** Convert from another wallet so a replacement the code would otherwise make can be paid (see FundingPlan). */
+  "FUND",
   "CLOSE",
   "ESCALATE",
 ] as const;

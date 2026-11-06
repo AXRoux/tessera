@@ -21,6 +21,7 @@ export function toolLabel(tool: string): string {
 
 const OK: Record<string, string> = {
   replace_payment: "Replaced it",
+  fund_replacement: "Funded the replacement",
   escalate_to_human: "Handed to you",
   defer_incident: "Deferred",
   draft_supplier_reply: "Drafted a reply",
@@ -29,6 +30,7 @@ const OK: Record<string, string> = {
 
 const REFUSED: Record<string, string> = {
   replace_payment: "Tried to replace, refused by code",
+  fund_replacement: "Tried to convert, refused by code",
   reconcile_and_close: "Tried to close, refused by code",
 };
 

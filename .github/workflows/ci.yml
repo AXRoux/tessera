@@ -21,7 +21,7 @@ jobs:
       - run: bun test
       # Offline and deterministic: needs no keys. Fails the build if any attack gets through.
       - run: bun run redteam
-      # Removes each guard from a private copy and fails unless the red team or a named test notices. Offline, about 15 s.
+      # Removes each guard from a private copy and fails unless the red team or a named test notices. Offline, about a minute.
       - run: bun run mutate
       # The offline demo end to end in-process: seed, scripted agent run, invariant and hash chain.
       - run: bun run scripts/offline-smoke.ts

@@ -188,3 +188,146 @@ export function replayObligations(events: LedgerEvent[]): Map<string, ReplayedOb
   }
   return obligations;
 }
+
+// ---- webhooks and reactions ----------------------------------------------------------------------------------------
+
+/**
+ * `WEBHOOK_RECEIVED`: one verified, first-seen Airwallex delivery, written in the same transaction as its dedupe row.
+ * `claimedStatus` is what the event body said; it is never applied (the transfer is re-read), only kept for the record.
+ */
+export const WebhookReceivedSchema = z.looseObject({
+  eventId: z.string(),
+  name: z.string(),
+  transferId: z.string().nullable(),
+  createdAt: z.string(),
+  claimedStatus: z.string().nullable().optional(),
+  outcome: z.string().optional(),
+});
+
+const DecisionBriefSchema = z.object({ recommended: z.string(), severity: z.string(), allowed: z.array(z.string()) });
+export type DecisionBrief = z.infer<typeof DecisionBriefSchema>;
+
+/** One bank-side transfer change an `INCIDENT_REACTION` covers, pointing at the `TRANSFER_STATUS` event that recorded it. */
+export const ReactionChangeSchema = z.object({
+  statusSeq: z.number().int(),
+  attemptId: z.string(),
+  transferId: z.string(),
+  from: z.string().nullable(),
+  to: z.string(),
+  failureCode: z.string().nullable(),
+});
+export type ReactionChange = z.infer<typeof ReactionChangeSchema>;
+
+/** What made Tessera look: a verified webhook (named by its event id) or the background sweep. */
+export const ReactionTriggerSchema = z.object({
+  source: z.enum(["webhook", "sweep", "setup"]),
+  eventId: z.string().nullable(),
+  eventName: z.string().nullable(),
+  eventCreatedAt: z.string().nullable(),
+});
+export type ReactionTrigger = z.infer<typeof ReactionTriggerSchema>;
+
+/**
+ * `INCIDENT_REACTION`: Tessera's answer to bank-side transfer changes on one incident. `before` is the Commander's
+ * decision with the changes taken back, `after` with them applied, both computed at the same moment on the same
+ * balances, so a difference is the bank event's doing and nothing else. `wake` says whether an agent was asked for.
+ */
+export const IncidentReactionSchema = z.object({
+  changes: z.array(ReactionChangeSchema).min(1),
+  trigger: ReactionTriggerSchema,
+  before: DecisionBriefSchema,
+  after: DecisionBriefSchema,
+  decisionChanged: z.boolean(),
+  wake: z.enum(["requested", "not_needed", "off", "suppressed"]),
+});
+export type IncidentReaction = z.infer<typeof IncidentReactionSchema>;
+
+/** `AGENT_WAKE`: an event-driven agent run for one incident, started or refused by a cap, naming what woke it. */
+export const AgentWakeSchema = z.object({
+  outcome: z.enum(["started", "capped", "skipped"]),
+  reactionSeqs: z.array(z.number().int()).min(1),
+  eventIds: z.array(z.string()),
+  eventNames: z.array(z.string()),
+  actor: z.string(),
+  detail: z.string().nullable(),
+});
+export type AgentWake = z.infer<typeof AgentWakeSchema>;
+
+/**
+ * `AGENT_WAKE_FINISHED`: how that run ended. `tools` lists each call as `name:outcome` (read-only calls leave no other
+ * trace) and `report` keeps the agent's closing words, bounded, because nobody is watching a woken run's stream.
+ * Both are absent on rows written before 2026-11-06.
+ */
+export const AgentWakeFinishedSchema = z.object({
+  wakeSeq: z.number().int(),
+  actor: z.string(),
+  steps: z.number().int(),
+  calls: z.number().int(),
+  refused: z.number().int(),
+  stoppedBecause: z.string(),
+  tools: z.array(z.string()).optional(),
+  report: z.string().nullable().optional(),
+});
+
+/** Bank-side changes are the ones a reaction covers: Airwallex moved a transfer Tessera already held. */
+export const REACTABLE_VIA: Readonly<Record<string, true>> = { webhook: true, sync: true };
+
+/** `TRANSFER_STATUS` seqs some `INCIDENT_REACTION` already covers. */
+export function reactedStatusSeqs(events: LedgerEvent[]): Set<number> {
+  const seqs = new Set<number>();
+  for (const event of events) {
+    if (event.type !== "INCIDENT_REACTION") continue;
+    const p = IncidentReactionSchema.safeParse(event.payload);
+    if (p.success) for (const change of p.data.changes) seqs.add(change.statusSeq);
+  }
+  return seqs;
+}
+
+/**
+ * Replays reactions and wakes against the events they cite, for `verifyChain`. Each reaction must cover real, earlier
+ * `TRANSFER_STATUS` events of its own incident, each at most once (a forged reaction cannot pre-empt a real one); each
+ * wake must cite earlier reactions of its incident; each finish must close one started wake. Returns the first problem.
+ */
+export function replayReactions(events: LedgerEvent[]): string | null {
+  const bySeq = new Map(events.map((e) => [e.seq, e]));
+  const covered = new Set<number>();
+  const finished = new Set<number>();
+  for (const event of events) {
+    if (event.type === "INCIDENT_REACTION") {
+      const p = IncidentReactionSchema.safeParse(event.payload);
+      if (!p.success) return `reaction ${event.seq} is unreadable`;
+      for (const change of p.data.changes) {
+        const cited = bySeq.get(change.statusSeq);
+        const status = cited?.type === "TRANSFER_STATUS" ? TransferStatusPayloadSchema.safeParse(cited.payload) : null;
+        const matches =
+          cited !== undefined && cited.seq < event.seq && cited.obligationId === event.obligationId && status?.success === true &&
+          status.data.attemptId === change.attemptId && status.data.from === change.from && status.data.to === change.to;
+        if (!matches) return `reaction ${event.seq} cites transfer change ${change.statusSeq}, which is not in the history as recorded`;
+        if (covered.has(change.statusSeq)) return `transfer change ${change.statusSeq} is reacted to twice (again at ${event.seq})`;
+        covered.add(change.statusSeq);
+      }
+      continue;
+    }
+    if (event.type === "AGENT_WAKE") {
+      const p = AgentWakeSchema.safeParse(event.payload);
+      if (!p.success) return `agent wake ${event.seq} is unreadable`;
+      for (const seq of p.data.reactionSeqs) {
+        const cited = bySeq.get(seq);
+        if (cited?.type !== "INCIDENT_REACTION" || cited.seq > event.seq || cited.obligationId !== event.obligationId) {
+          return `agent wake ${event.seq} cites reaction ${seq}, which is not in the history`;
+        }
+      }
+      continue;
+    }
+    if (event.type === "AGENT_WAKE_FINISHED") {
+      const p = AgentWakeFinishedSchema.safeParse(event.payload);
+      const wake = p.success ? bySeq.get(p.data.wakeSeq) : undefined;
+      const started = wake?.type === "AGENT_WAKE" && AgentWakeSchema.safeParse(wake.payload).data?.outcome === "started";
+      if (!p.success || !started || wake.obligationId !== event.obligationId || wake.seq > event.seq || finished.has(wake.seq)) {
+        return `agent wake finish ${event.seq} does not close a started wake of its incident`;
+      }
+      finished.add(wake.seq);
+    }
+  }
+  return null;
+}

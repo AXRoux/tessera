@@ -46,6 +46,12 @@ export function summarize(tool: string, outcome: ToolOutcome): string {
       const a = record(r.attempt);
       return `replacement sent as attempt #${String(a.seq)}`;
     }
+    case "fund_replacement": {
+      const c = record(r.conversion);
+      return c.state === "SETTLED"
+        ? `converted: bought ${String(c.bought)} for ${String(c.sold)} (one conversion, settled)`
+        : `conversion ${String(c.state).toLowerCase()}: ${String(c.bought)} for ${String(c.sold)}`;
+    }
     case "defer_incident":
       return typeof r.recheckAt === "string" ? `deferred; look again ${r.recheckAt}` : "deferred";
     case "escalate_to_human":

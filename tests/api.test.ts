@@ -44,6 +44,9 @@ function simulatorFor(api: FakePayoutApi): Simulator {
       api.advance(transferId, "FAILED", code);
       api.advance(transferId, "CANCELLED", code);
     },
+    async stageWallet(currency, availableMajor) {
+      api.balances.set(currency, availableMajor);
+    },
   };
 }
 
@@ -81,7 +84,7 @@ function apiWorld(
   const handle = createApi({
     ledger: w.ledger, gateway: w.gateway, commander, closer,
     model: options.model ?? null, simulator: options.simulator?.(w.api) ?? simulatorFor(w.api),
-    token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", paidHoldMs: options.paidHoldMs ?? 0,
+    token: TOKEN, operator: "ops@acme.example", beneficiaryId: "ben-A", eurBeneficiaryId: "ben-B", paidHoldMs: options.paidHoldMs ?? 0,
     ...options.deps,
   });
   return {
@@ -456,59 +459,13 @@ describe("supplier inbox", () => {
   });
 });
 
-describe("Airwallex webhooks", () => {
-  const SECRET_WH = "whsec_test_secret";
-  const sign = (body: string, timestamp = String(Date.now())) => ({
-    "x-timestamp": timestamp,
-    "x-signature": createHmac("sha256", SECRET_WH).update(timestamp + body).digest("hex"),
-  });
+describe("request size, and no webhook route on the operator API", () => {
+  it("does not serve Airwallex webhooks: they reach only the webhook-only listener, so the operator port never needs a tunnel", async () => {
+    const a = apiWorld();
+    const body = JSON.stringify({ id: "evt_1", name: "payout.transfer.paid", created_at: new Date().toISOString(), data: { id: "t" } });
 
-  it("is off (404) without a secret, and needs a valid signature rather than the operator token", async () => {
-    expect((await apiWorld().call("POST", "/api/webhooks/airwallex", "{}", null)).status).toBe(404);
-    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
-    const body = JSON.stringify({ id: "evt_1", name: "payout.transfer.paid", created_at: new Date().toISOString(), data: { object: { id: "t" } } });
-
-    expect((await a.call("POST", "/api/webhooks/airwallex", body, null, { "x-timestamp": String(Date.now()), "x-signature": "00" })).status).toBe(401);
-  });
-
-  it("re-reads the transfer on the first delivery and ignores a redelivery", async () => {
-    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
-    const id = await openIncident(a);
-    const transferId = a.ledger.latestAttempt(id)!.transferId!;
-    a.api.advance(transferId, "PAID");
-    const body = JSON.stringify({ id: "evt_2", name: "payout.transfer.paid", created_at: new Date().toISOString(), data: { object: { id: transferId } } });
-
-    const first = await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body));
-    expect(first.status).toBe(200);
-    expect(first.get("duplicate")).toBe(false);
-    expect(a.ledger.latestAttempt(id)!.state).toBe("PAID");
-    const eventsAfterFirst = a.ledger.events().length;
-
-    const again = await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body));
-    expect(again.status).toBe(200);
-    expect(again.get("duplicate")).toBe(true);
-    expect(a.ledger.events()).toHaveLength(eventsAfterFirst);
-  });
-
-  it("14. refuses on content-length alone, without reading the body", async () => {
-    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
-    let pulled = false;
-    const body = new ReadableStream<Uint8Array>({ pull() { pulled = true; } }, { highWaterMark: 0 });
-    const request = new Request("http://api.test/api/webhooks/airwallex", {
-      method: "POST", body, duplex: "half", headers: { "content-length": String(50 * 1024 * 1024), "x-timestamp": String(Date.now()), "x-signature": "00" },
-    } as RequestInit);
-
-    const response = await a.handle(request);
-
-    expect(response.status).toBe(413);
-    expect(pulled).toBe(false);
-  });
-
-  it("14. refuses a body over the cap even with no content-length to trust", async () => {
-    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
-    const big = "x".repeat(200 * 1024);
-
-    expect((await a.call("POST", "/api/webhooks/airwallex", big, null, sign(big))).status).toBe(413);
+    expect((await a.call("POST", "/api/webhooks/airwallex", body, null)).status).toBe(401);
+    expect((await a.call("POST", "/api/webhooks/airwallex", body)).status).toBe(404);
   });
 
   it("14. the server caps request bodies far below Bun's 128 MB default, and above every legitimate route", async () => {
@@ -526,29 +483,6 @@ describe("Airwallex webhooks", () => {
     }
     expect(MAX_REQUEST_BODY_BYTES).toBeGreaterThan(2 * 20_000 * 4); // a full 20 000-char email plus statement, 4 bytes a character
   });
-
-  it("15. a failed sync is not swallowed by the dedupe: the event stays retryable and is handled on redelivery", async () => {
-    const a = apiWorld({ deps: { webhookSecret: SECRET_WH } });
-    const id = await openIncident(a);
-    const transferId = a.ledger.latestAttempt(id)!.transferId!;
-    a.api.advance(transferId, "PAID");
-    const body = JSON.stringify({ id: "evt_retry", name: "payout.transfer.paid", created_at: new Date().toISOString(), data: { object: { id: transferId } } });
-    const working = a.api.getTransfer.bind(a.api);
-    a.api.getTransfer = async () => { throw new AwxNetworkError("connection reset"); };
-
-    const failed = await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body));
-
-    expect(failed.status).toBe(503);
-    expect(a.ledger.webhookEventSeen("evt_retry")).toBe(false);
-    expect(a.ledger.latestAttempt(id)!.state).toBe("LIVE");
-
-    a.api.getTransfer = working;
-    const redelivered = await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body));
-    expect(redelivered.status).toBe(200);
-    expect(redelivered.get("duplicate")).toBe(false);
-    expect(a.ledger.latestAttempt(id)!.state).toBe("PAID");
-    expect((await a.call("POST", "/api/webhooks/airwallex", body, null, sign(body))).get("duplicate")).toBe(true);
-  });
 });
 
 describe("demo seeding", () => {
@@ -556,14 +490,22 @@ describe("demo seeding", () => {
     expect((await apiWorld({ deps: { simulator: null } }).call("POST", "/api/demo/seed")).status).toBe(403);
   });
 
-  it("seeds the six ACME incidents where the simulator is on", async () => {
+  it("seeds the seven ACME incidents where the simulator is on", async () => {
     const a = apiWorld({ paidHoldMs: 3_600_000 });
 
     const seeded = (await a.call("POST", "/api/demo/seed")).parse(SeedResultSchema).seeded;
 
-    expect(seeded.map((s) => s.reference.slice(0, 9))).toEqual(["ACME-1041", "ACME-1042", "ACME-1043", "ACME-1044", "ACME-1045", "ACME-1046"]);
+    expect(seeded.map((s) => s.reference.slice(0, 9))).toEqual(["ACME-1041", "ACME-1042", "ACME-1043", "ACME-1044", "ACME-1045", "ACME-1046", "ACME-1047"]);
     expect(a.ledger.inboxMessages()).toHaveLength(3);
     expect(a.ledger.latestAttempt(seeded[1]!.id)!.state).toBe("DEAD");
+    expect(a.ledger.latestAttempt(seeded[6]!.id)!.state).toBe("DEAD");
+  });
+
+  it("answers 409 without an EUR supplier for the funding incident, and seeds nothing", async () => {
+    const a = apiWorld({ deps: { eurBeneficiaryId: null } });
+
+    expect((await a.call("POST", "/api/demo/seed")).status).toBe(409);
+    expect(a.ledger.listObligations().filter((o) => o.reference.startsWith("ACME-"))).toEqual([]);
   });
 });
 
@@ -694,13 +636,13 @@ describe("starting the offline demo over", () => {
     const call = (method: string, path: string) => demo.handle(new Request(`http://api.test${path}`, { method, headers: { "x-tessera-token": TOKEN } }));
 
     expect((await call("POST", "/api/demo/seed")).status).toBe(201);
-    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(6);
+    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(7);
 
     expect((await call("POST", "/api/demo/reset")).status).toBe(200);
     expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(0);
 
     expect((await call("POST", "/api/demo/seed")).status).toBe(201);
-    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(6);
+    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(7);
   });
 
   it("is refused where there is nothing to throw away, and says so in health", async () => {

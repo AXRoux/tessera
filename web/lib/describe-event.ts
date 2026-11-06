@@ -1,8 +1,12 @@
+import { money } from "./format";
+
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value)) : {};
 }
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
+/** A minor-unit amount from an event payload, or "?" when the payload does not carry one. */
+const amount = (minor: unknown, currency: unknown): string => (typeof minor === "number" && typeof currency === "string" ? money(minor, currency) : "?");
 
 /** Free text from a person or an agent often ends in its own full stop; sentences here add theirs. */
 const bare = (value: string | null): string | null => (value === null ? null : value.replace(/[.\s]+$/, ""));
@@ -12,6 +16,39 @@ const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
 const withoutIds = (value: string | null): string | null => (value === null ? null : value.replace(/obligation\s+/gi, "").replace(UUID, "").replace(/\s{2,}/g, " ").replace(/^\s*:\s*/, ""));
 
 const APPROVER_KIND: Record<string, string> = { HUMAN: "a person", POLICY: "policy" };
+
+/** Commander actions as an operator says them, for sentences about a decision changing. */
+export const ACTION_WORDS: Record<string, string> = {
+  NONE: "nothing to do",
+  WAIT: "wait",
+  RECOVER_INTENT: "resolve the open request",
+  SEND_STATUS_TO_SUPPLIER: "update the supplier",
+  SEND_PROOF_TO_SUPPLIER: "send proof of payment",
+  REQUEST_CORRECTION: "ask for corrected details",
+  REPLACE: "replace the payment",
+  FUND: "fund the replacement",
+  CLOSE: "close the incident",
+  ESCALATE: "hand to a person",
+};
+const action = (value: unknown): string => ACTION_WORDS[text(value) ?? ""] ?? text(value) ?? "unknown";
+
+/** What re-reading the transfer showed after a webhook, keyed by the receipt's `outcome`. */
+const WEBHOOK_OUTCOME: Record<string, string> = {
+  applied: "it had moved, and the ledger recorded the new status",
+  no_change: "the ledger already had that status",
+  out_of_order: "a newer event was already taken, so this one was old news",
+  unknown_transfer: "the transfer is not one Tessera sent",
+  mismatch_escalated: "Airwallex's transfer did not match the ledger, so the incident went to a person",
+  not_a_transfer: "it is not about a transfer, so it was only recorded",
+  recorded: "it was recorded",
+};
+
+const WAKE_WORDS: Record<string, string> = {
+  requested: "An agent was asked to look.",
+  not_needed: "No agent was needed.",
+  off: "Waking an agent is switched off.",
+  suppressed: "No agent was woken, because the incident is closed or with a person.",
+};
 
 /** One plain sentence per ledger event type. Unknown types fall back to their name, so nothing is ever hidden. */
 export function describeEvent(type: string, payload: unknown): string {
@@ -80,6 +117,60 @@ export function describeEvent(type: string, payload: unknown): string {
       return `A message from ${text(p.from) ?? "the supplier"} arrived in the inbox (${String(p.chars ?? "?")} characters). Only its fingerprint is in the ledger.`;
     case "PAYMENT_REFUSED":
       return `A payment requested by ${text(p.by) ?? "someone"} was refused by code${text(p.message) ? `: ${bare(withoutIds(text(p.message)))}` : ""}.`;
+    case "WEBHOOK_RECEIVED": {
+      const claimed = text(p.claimedStatus);
+      const outcome = WEBHOOK_OUTCOME[text(p.outcome) ?? ""] ?? "it was recorded";
+      return `Airwallex sent ${text(p.name) ?? "an event"}${claimed ? ` saying ${claimed}` : ""}. Signature checked. Tessera re-read the transfer instead of trusting the message: ${outcome}.`;
+    }
+    case "INCIDENT_REACTION": {
+      const trigger = record(p.trigger);
+      const cause = text(trigger.source) === "webhook" ? `Airwallex's ${text(trigger.eventName) ?? "webhook"}` : text(trigger.source) === "sweep" ? "The background sweep" : "Setting up the demo";
+      const before = record(p.before);
+      const after = record(p.after);
+      const change = before.recommended !== after.recommended
+        ? `changed the decision from "${action(before.recommended)}" to "${action(after.recommended)}"`
+        : `${p.decisionChanged === true ? "changed what may be done; the decision stays" : "left the decision"} at "${action(after.recommended)}"`;
+      return `${cause} ${change}. ${WAKE_WORDS[text(p.wake) ?? ""] ?? ""}`.trimEnd();
+    }
+    case "AGENT_WAKE": {
+      const names = Array.isArray(p.eventNames) ? p.eventNames.filter((n): n is string => typeof n === "string") : [];
+      const cause = names.length > 0 ? names.join(" and ") : "a bank-side change";
+      const who = text(p.actor) ?? "An agent";
+      if (text(p.outcome) === "started") return `${who} was woken by ${cause} to work this incident only.`;
+      return `${who} was not woken for ${cause} (${text(p.outcome) ?? "skipped"}): ${bare(text(p.detail)) ?? "no reason recorded"}.`;
+    }
+    case "AGENT_WAKE_FINISHED": {
+      const calls = typeof p.calls === "number" ? p.calls : 0;
+      const refused = typeof p.refused === "number" ? p.refused : 0;
+      const why = text(p.stoppedBecause) === "finished" ? "finished" : `stopped (${(text(p.stoppedBecause) ?? "unknown").replaceAll("_", " ")})`;
+      const report = bare(text(p.report));
+      return `The woken run ${why} after ${calls} tool call${calls === 1 ? "" : "s"}${refused > 0 ? `, ${refused} refused by code` : ""}${report ? `. Its report: "${report}".` : "."}`;
+    }
+    case "FUNDING_INTENT": {
+      const t = record(p.terms);
+      const note = text(p.note);
+      return `A conversion was recorded before any money moved: buy ${amount(t.buyMinor, t.buyCurrency)} for ${amount(t.sellMinor, t.sellCurrency)} at ${String(t.rate ?? "?")} ${text(t.currencyPair) ?? ""}. Approved by ${text(p.approver) ?? "unknown"} (${APPROVER_KIND[text(p.mode) ?? ""] ?? "unknown"})${note ? `: "${note}"` : "."}`;
+    }
+    case "FUNDING_STATUS":
+      return `Airwallex ${text(p.from) ? `moved conversion ${text(p.conversionId) ?? ""} from ${text(p.from)} to` : `booked conversion ${text(p.conversionId) ?? ""} as`} ${text(p.to) ?? "an unknown state"}.`;
+    case "FUNDING_AMBIGUOUS":
+      return "The conversion request timed out without a clear answer. Tessera looks it up by its original request ID rather than sending a new one.";
+    case "FUNDING_ABANDONED":
+      return `The conversion was never booked, so nothing moved: ${bare(text(p.reason)) ?? "no reason given"}.`;
+    case "FUNDING_MISMATCH":
+      return text(p.detail) ?? "Airwallex returned a conversion that does not match the ledger. It was held for a person.";
+    case "FUNDING_AFTER_ABANDON":
+      return `Airwallex holds conversion ${text(p.conversionId) ?? "?"} (${text(p.status) ?? "?"}) for a request Tessera had released as never booked. Held for a person.`;
+    case "FUNDING_BALANCES": {
+      const wallets = Object.entries(record(p.wallets)).flatMap(([currency, minor]) => (typeof minor === "number" ? [money(minor, currency)] : []));
+      return `Wallets read again after the conversion settled: ${wallets.join(", ") || "unknown"}.`;
+    }
+    case "FUNDING_QUOTED": {
+      const q = record(p.quote);
+      return `A quote was fetched for a person to review: ${amount(q.buyMinor, q.buyCurrency)} for ${amount(q.sellMinor, q.sellCurrency)}, valid until ${text(q.validTo) ?? "?"}.`;
+    }
+    case "FUNDING_REPLANNED":
+      return `A quote was thrown away and the conversion planned again: ${bare(text(p.reason)) ?? "no reason given"}.`;
     default:
       return type;
   }

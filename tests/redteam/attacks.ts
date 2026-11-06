@@ -16,6 +16,8 @@ import { DEFAULT_POLICY } from "../../src/commander/policy";
 import { effectiveEvidence, type ExtractedEvidence, type ExtractRequest, type StructuredModel, type SupplierEvidence } from "../../src/commander/evidence";
 import type { ChainVerification } from "../../src/ledger/ledger";
 import { approve, killedAttempt, SECRET, world, type World } from "../helpers/world";
+import { FUNDING_ATTACKS } from "./funding-attacks";
+import { WEBHOOK_ATTACKS } from "./webhook-attacks";
 
 export type Layer = "Database" | "Approvals" | "Playbook" | "Policy" | "Quarantine" | "Gateway" | "Closer" | "Hash chain" | "Outbound";
 
@@ -768,5 +770,7 @@ export const ATTACKS: Attack[] = [
       };
     },
   },
+  ...FUNDING_ATTACKS,
+  ...WEBHOOK_ATTACKS,
 ];
 

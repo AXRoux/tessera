@@ -9,11 +9,12 @@ const authorityEnv = process.env.TESSERA_AGENT_AUTHORITY ?? "operator";
 if (authorityEnv !== "operator" && authorityEnv !== "triage") throw new Error("TESSERA_AGENT_AUTHORITY must be operator or triage");
 const authority: "operator" | "triage" = authorityEnv;
 
-// Anything left in INTENT by a crash is resolved before the first tool call. A stuck or mismatching attempt is
-// escalated in the ledger; it is logged here and never a reason to refuse to serve.
+// Anything left in INTENT by a crash (payouts and funding conversions) is resolved before the first tool call. A stuck
+// or mismatching one is escalated in the ledger; it is logged here and never a reason to refuse to serve.
 let recovered = 0;
 try {
   recovered = (await gateway.recover()).length;
+  await commander.recoverFunding();
 } catch (error) {
   console.error("startup recovery failed; serving anyway:", error instanceof Error ? error.message : error);
 }

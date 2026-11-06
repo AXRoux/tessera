@@ -2,13 +2,27 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { WebhookRejected } from "../errors";
 
-/** The part of an Airwallex webhook Tessera acts on. The event is only a hint; the transfer is re-read from Airwallex. */
+/**
+ * The part of an Airwallex webhook Tessera acts on. The event is only a hint; the transfer is re-read from Airwallex.
+ *
+ * Envelope, as documented (https://www.airwallex.com/docs/developer-tools/webhooks/listen-for-webhook-events.md):
+ * `{ id, name, account_id, org_id?, data, created_at, version }`. For `payout.transfer.*` events `data` IS the transfer,
+ * the body of Get transfer by ID (https://www.airwallex.com/docs/developer-tools/webhooks/listen-for-webhook-events/transfers.md);
+ * other products nest the resource under `data.object`. Both are read; neither is trusted beyond naming the transfer.
+ */
 export interface AirwallexWebhookEvent {
   id: string;
   name: string;
+  /** `created_at` as ISO 8601 when it parses (Airwallex writes `+0000`, which `Date.parse` does not take), else as sent. */
   createdAt: string;
+  /** Empty or absent for organisation-level events. */
+  accountId: string | null;
+  /** The API version the subscription was created with; it decides the shape of `data`. */
+  version: string | null;
   /** Set for `payout.transfer.*` events; null for anything else. */
   transferId: string | null;
+  /** The status the event body claims. Recorded, never applied: only a re-read moves the ledger. */
+  claimedStatus: string | null;
 }
 
 export interface VerifyWebhookInput {
@@ -25,22 +39,31 @@ export interface VerifyWebhookInput {
 
 const DEFAULT_TOLERANCE_MS = 5 * 60_000;
 
+const ResourceSchema = z.looseObject({ id: z.string().min(1).optional(), status: z.string().optional() });
 const WebhookBodySchema = z.looseObject({
   id: z.string().min(1),
   name: z.string().min(1),
   created_at: z.string().min(1),
-  data: z
-    .looseObject({
-      id: z.string().optional(),
-      object: z.looseObject({ id: z.string() }).optional(),
-    })
-    .optional(),
+  account_id: z.string().nullish(),
+  version: z.string().nullish(),
+  data: z.looseObject({ id: z.string().optional(), status: z.string().optional(), object: ResourceSchema.optional() }).nullish(),
 });
+
+/** Airwallex timestamps look like `2019-10-22T01:54:09+0000`; ISO 8601 wants `+00:00`. Null if it still does not parse. */
+export function parseAirwallexTime(value: string): string | null {
+  const iso = value.replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
 
 /**
  * Verifies an Airwallex webhook: HMAC-SHA256 keyed by the endpoint secret over `timestamp + rawBody`, compared in
  * constant time, with the timestamp inside ±5 minutes so a captured delivery cannot be replayed later. Throws
  * WebhookRejected; returns the parsed event only when every check passes.
+ *
+ * Only the endpoint secret is ever used. Airwallex signs a web-app "test event" with a key it sends in the request's
+ * own `client-secret-key` header (same docs page); trusting a key the request brings would let anyone sign anything,
+ * so those are refused as a bad signature.
  */
 export function verifyWebhook(input: VerifyWebhookInput): AirwallexWebhookEvent {
   const { secret, timestamp, signature, rawBody } = input;
@@ -69,7 +92,24 @@ export function verifyWebhook(input: VerifyWebhookInput): AirwallexWebhookEvent 
   const body = WebhookBodySchema.safeParse(json);
   if (!body.success) throw new WebhookRejected("malformed", z.prettifyError(body.error));
 
-  const isTransfer = body.data.name.startsWith("payout.transfer.");
-  const transferId = isTransfer ? (body.data.data?.object?.id ?? body.data.data?.id ?? null) : null;
-  return { id: body.data.id, name: body.data.name, createdAt: body.data.created_at, transferId };
+  const { id, name, created_at: createdAt, account_id: accountId, version, data } = body.data;
+  const resource = data?.object ?? data ?? null;
+  const isTransfer = name.startsWith("payout.transfer.");
+  return {
+    id,
+    name,
+    createdAt: parseAirwallexTime(createdAt) ?? createdAt,
+    accountId: accountId || null,
+    version: version ?? null,
+    transferId: isTransfer ? (resource?.id ?? null) : null,
+    claimedStatus: isTransfer ? (resource?.status ?? null) : null,
+  };
+}
+
+/**
+ * Signs a delivery the way Airwallex does. Used by the offline simulator, `bun run webhook:ping` and the tests; the
+ * API never signs anything.
+ */
+export function signWebhook(secret: string, timestamp: string, rawBody: string): string {
+  return createHmac("sha256", secret).update(timestamp + rawBody).digest("hex");
 }

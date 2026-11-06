@@ -7,6 +7,7 @@ import { Acknowledged, api, ApiProblem } from "@/lib/client-api";
 import { actorLabel, agentVerdict } from "@/lib/agent-verdict";
 import { ago, duration, money } from "@/lib/format";
 import { ATTEMPT, describeFailure, SQUARE, STATUS } from "@/lib/status";
+import { ACTION_WORDS } from "@/lib/describe-event";
 import { IncidentListSchema, MetricsSchema, SeedResultSchema, type Health, type IncidentSummary, type Metrics } from "../../src/server/wire";
 import { AgentTimeline, agentName, useAgentRun } from "./agent/agent-run";
 import { RunReport } from "./agent/run-report";
@@ -14,6 +15,7 @@ import { Logo } from "./logo";
 import { NeedsYou } from "./needs-you";
 import { resetTour, Tour } from "./tour";
 import { Button, Frame, Label, PanelHeader, Stat, StatStrip, Tag } from "./ui";
+import { WalletStrip } from "./wallet-strip";
 
 const POLL_MS = 4000;
 
@@ -41,6 +43,27 @@ function VerdictLine({ item }: { item: IncidentSummary }) {
       <span suppressHydrationWarning>
         {" "}
         &middot; {actorLabel(action.actor)} &middot; {ago(action.at)}
+      </span>
+    </p>
+  );
+}
+
+/** Tessera's latest reaction to a bank-side change: which Airwallex event (or the sweep) made it look, and what changed. */
+function ReactionLine({ item }: { item: IncidentSummary }) {
+  const reaction = item.lastReaction;
+  if (!reaction || reaction.source === "setup") return null;
+  const cause = reaction.source === "webhook" ? `Webhook ${reaction.eventName ?? "from Airwallex"}` : "Seen by the sweep";
+  const change = reaction.before !== reaction.after
+    ? `${ACTION_WORDS[reaction.before] ?? reaction.before} → ${ACTION_WORDS[reaction.after] ?? reaction.after}`
+    : `still ${ACTION_WORDS[reaction.after] ?? reaction.after}`;
+  const agent = reaction.woke === "started" ? " · agent woken" : reaction.woke ? ` · agent ${reaction.woke}` : "";
+  return (
+    <p className="mt-1 max-w-[320px] text-[12px] leading-[1.9] text-muted">
+      <span className="font-mono">{cause}</span>
+      <span suppressHydrationWarning>
+        {" "}
+        &middot; {change}
+        {agent} &middot; {ago(reaction.at)}
       </span>
     </p>
   );
@@ -183,6 +206,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
       ) : null}
 
       <MetricsStrip metrics={metrics} awaiting={awaiting} />
+      <WalletStrip />
 
       <section aria-labelledby="incidents" className="mx-auto max-w-[1440px] px-6 pt-14 sm:px-10">
         <div className="flex flex-wrap items-end justify-between gap-6">
@@ -355,6 +379,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
                           {status.label}
                         </Tag>
                         <VerdictLine item={item} />
+                        <ReactionLine item={item} />
                       </td>
                       <td className="pr-6">
                         <AttemptSquares item={item} />

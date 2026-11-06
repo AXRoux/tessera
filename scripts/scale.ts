@@ -70,8 +70,11 @@ console.log(`scale: ${n} incidents ${live ? "on the Airwallex sandbox" : "offlin
 
 const seedStart = performance.now();
 const seeded: SeededIncident[] = [];
+// No "fund" incidents here: seeding one stages its wallet down to the reserve floor plus one invoice, which would starve
+// every later incident paid from that wallet. The funding path has its own incident in the ACME demo and its own tests.
+const KINDS = INCIDENT_KINDS.filter((k) => k !== "fund");
 for (let i = 0; i < n; i++) {
-  const kind = INCIDENT_KINDS[i % INCIDENT_KINDS.length]!;
+  const kind = KINDS[i % KINDS.length]!;
   const eur = i % 2 === 1;
   seeded.push(
     await seedIncident({ ledger, gateway, commander, simulator }, kind, {

@@ -1,12 +1,13 @@
 /**
  * `bun run scripts/offline-smoke.ts` (CI): the offline demo end to end, in-process, with no keys and no network.
- * Boots the API handler on the simulator, seeds the six ACME incidents over HTTP, lets the scripted agent work them
+ * Boots the API handler on the simulator, seeds the seven ACME incidents over HTTP, lets the scripted agent work them
  * through POST /api/agent/run, then asserts each incident landed where the policy says, the metrics add up, at most one
- * live payout exists per invoice, and the hash chain verifies.
+ * live payout exists per invoice, the funded replacement certifies with its conversion, and the hash chain verifies.
  */
 import { checkInvariant } from "../src/demo/invariant";
 import { createApi } from "../src/server/api";
 import { buildRuntime, resolveBeneficiary } from "../src/server/runtime";
+import { SignedCertificateSchema } from "../src/closer/certificate";
 import { AgentStreamEventSchema, HealthSchema, IncidentViewSchema, MetricsSchema, SeedResultSchema } from "../src/server/wire";
 
 const HOLD_MS = 1_500;
@@ -16,7 +17,7 @@ const { api, simulator, ledger, gateway, commander, closer, model, agent, paidHo
 const token = apiToken!;
 const handle = createApi({
   ledger, gateway, commander, closer, model, simulator, token, operator: "ops@acme.example",
-  beneficiaryId: await resolveBeneficiary(api, {}), paidHoldMs, agent, offline: true,
+  beneficiaryId: await resolveBeneficiary(api, {}), eurBeneficiaryId: await resolveBeneficiary(api, {}, "EUR"), paidHoldMs, agent, offline: true,
 });
 
 async function call(method: string, path: string, body?: unknown): Promise<Response> {
@@ -39,7 +40,7 @@ const health = HealthSchema.parse(await (await call("GET", "/api/health")).json(
 expect(health.offline && health.agent === "scripted" && health.model, "health: offline, scripted agent, offline reader");
 
 const seed = SeedResultSchema.parse(await (await call("POST", "/api/demo/seed")).json());
-expect(seed.seeded.length === 6, "seeded six ACME incidents");
+expect(seed.seeded.length === 7, "seeded seven ACME incidents");
 await Bun.sleep(HOLD_MS + 300);
 
 const run = await call("POST", "/api/agent/run", {});
@@ -52,7 +53,7 @@ expect(done?.type === "done" && done.stoppedBecause === "finished", `agent run f
 const summary = events.filter((e) => e.type === "text").at(-1);
 if (summary?.type === "text") console.log(summary.text.split("\n").map((l) => `    ${l}`).join("\n"));
 
-const [wait, transient, duplicate, phish, settled, missing] = seed.seeded.map((s) => s.id);
+const [wait, transient, duplicate, phish, settled, missing, fund] = seed.seeded.map((s) => s.id);
 const status = (id: string | undefined) => ledger.requireObligation(id!).status;
 const view = async (id: string | undefined) => IncidentViewSchema.parse(await (await call("GET", `/api/obligations/${id}`)).json());
 expect((await view(wait)).draft?.kind === "STATUS" && status(wait) === "PAYING", "ACME-1041 deferred with a status draft, still paying");
@@ -62,9 +63,24 @@ expect(status(phish) === "ESCALATED", "ACME-1044 (bank-detail change by email) e
 expect(status(settled) === "CLOSED", "ACME-1045 certified");
 expect((await view(missing)).draft?.kind === "PROOF", "ACME-1046 proof-of-payment draft");
 expect((await view(phish)).inbox.every((m) => m.read), "supplier messages marked read");
+const conversions = ledger.conversionsFor(fund!);
+expect(conversions.length === 1 && conversions[0]!.state === "SETTLED", "ACME-1047 short EUR wallet funded by one settled conversion");
+expect(ledger.attemptsFor(fund!).length === 2, "ACME-1047 then replaced on the new balance");
 
 const metrics = MetricsSchema.parse(await (await call("GET", "/api/metrics")).json());
-expect(metrics.incidents === 6 && metrics.certified === 1 && metrics.autoReplaced === 1 && metrics.escalated === 2, "metrics match the ledger");
+expect(metrics.incidents === 7 && metrics.certified === 1 && metrics.autoReplaced === 2 && metrics.escalated === 2, "metrics match the ledger");
+
+// The funded replacement lands; after the hold the certificate carries both legs of the conversion as booked.
+for (const status of ["SENT", "PAID"] as const) expect((await call("POST", `/api/obligations/${fund}/simulate`, { status })).ok, `ACME-1047 replacement ${status}`);
+await Bun.sleep(HOLD_MS + 300);
+expect((await call("POST", `/api/obligations/${fund}/close`)).ok, "ACME-1047 certified");
+const certificate = SignedCertificateSchema.parse(await (await call("GET", `/api/obligations/${fund}/certificate`)).json());
+const line = certificate.body.funding?.[0];
+expect(
+  certificate.body.version === 3 && certificate.body.funding?.length === 1 && line?.conversionId === conversions[0]!.conversionId
+    && line?.actual?.buyMinor === line?.expected.buyMinor && line?.actual?.sellMinor === line?.expected.sellMinor,
+  "ACME-1047 certificate v3: the conversion's legs as planned and as booked",
+);
 
 const report = await checkInvariant(ledger, api, seed.seeded.map((s) => s.id), new Date(0).toISOString());
 expect(report.invoices.every((i) => i.ok), "at most one live payout per invoice");

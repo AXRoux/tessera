@@ -2,17 +2,22 @@ import type { FinancialTransaction, ReconciliationApi } from "../airwallex/types
 import { canonicalJson, sha256Hex } from "../canonical";
 import { NotClosable } from "../errors";
 import { NEVER_EXECUTED_STATUSES, type PayoutGateway } from "../gateway/gateway";
+import type { ConversionAttempt } from "../ledger/conversions";
 import { paidObservedAt } from "../ledger/events";
 import type { Attempt, Ledger, Obligation } from "../ledger/ledger";
 import { toMinor } from "../money";
 import {
   SignedCertificateSchema,
+  type CertificateFunding,
   type ClosureCertificateBody,
   type SignedCertificate,
   type Totals,
   type WalletLines,
 } from "./certificate";
 import { signCertificateHash } from "./signing";
+
+/** A funding conversion as reconciled: what the ledger expects, what Airwallex booked, and anything that does not tie. */
+export type FundingReconciliation = CertificateFunding & { problems: string[] };
 
 export interface AttemptReconciliation {
   attemptId: string;
@@ -36,6 +41,8 @@ export interface Reconciliation {
   closable: boolean;
   blockers: string[];
   attempts: AttemptReconciliation[];
+  /** Conversions that funded a replacement for this invoice, each leg checked against Airwallex's wallet lines. */
+  funding: FundingReconciliation[];
   totals: Totals;
   untrackedTransfers: string[];
   checkedAt: string;
@@ -96,9 +103,23 @@ function sumLines(rows: FinancialTransaction[], currency: string): { lines: Wall
   return { lines, pending, unexpected };
 }
 
-/** The ledger state a reconciliation saw: obligation status and every attempt. `close` refuses if any of it moved. */
-const fingerprintOf = (obligation: Obligation, attempts: Attempt[]): string =>
-  [`${obligation.status}:${obligation.updatedAt}`, ...attempts.map((a) => `${a.id}:${a.state}:${a.awxStatus}:${a.updatedAt}`)].join("|");
+/** The ledger state a reconciliation saw: obligation status, every attempt and every conversion. `close` refuses if any moved. */
+const fingerprintOf = (obligation: Obligation, attempts: Attempt[], conversions: ConversionAttempt[]): string =>
+  [
+    `${obligation.status}:${obligation.updatedAt}`,
+    ...attempts.map((a) => `${a.id}:${a.state}:${a.awxStatus}:${a.updatedAt}`),
+    ...conversions.map((c) => `${c.id}:${c.state}:${c.awxStatus}:${c.updatedAt}`),
+  ].join("|");
+
+/**
+ * What a conversion must have booked: the bought currency in, the sold currency out, nothing else. An ABANDONED one was
+ * never booked; one still in flight or cancelled cannot be tied off by code, so a person looks.
+ */
+function fundingProblemsBeforeLines(row: ConversionAttempt): string | null {
+  if (row.state === "INTENT" || row.state === "BOOKED") return `still ${row.state}; the conversion has not settled`;
+  if (row.state === "CANCELLED") return "Airwallex cancelled it; a person must reconcile its wallet lines";
+  return null;
+}
 
 export class Closer {
   private readonly ledger: Ledger;
@@ -135,6 +156,11 @@ export class Closer {
     for (const attempt of attempts) reconciled.push(await this.reconcileAttempt(attempt, obligation.currency));
     for (const item of reconciled) for (const problem of item.problems) blockers.push(`attempt #${item.seq}: ${problem}`);
 
+    const conversions = this.ledger.conversionsFor(obligationId);
+    const funding: FundingReconciliation[] = [];
+    for (const row of conversions) funding.push(await this.reconcileFunding(row));
+    for (const item of funding) for (const problem of item.problems) blockers.push(`conversion ${item.conversionId ?? item.fundingId}: ${problem}`);
+
     const paid = attempts.filter((a) => a.state === "PAID");
     if (paid.length !== 1) blockers.push(`expected exactly one PAID attempt, found ${paid.length}`);
     else this.checkHoldWindow(paid[0]!, blockers);
@@ -159,10 +185,11 @@ export class Closer {
       closable: blockers.length === 0,
       blockers,
       attempts: reconciled,
+      funding,
       totals,
       untrackedTransfers: untracked,
       checkedAt: this.now().toISOString(),
-      fingerprint: fingerprintOf(obligation, attempts),
+      fingerprint: fingerprintOf(obligation, attempts, conversions),
     };
   }
 
@@ -187,7 +214,7 @@ export class Closer {
         throw new NotClosable(obligationId, [`obligation is escalated: ${obligation.escalationReason}`]);
       }
       const attempts = this.ledger.attemptsFor(obligationId);
-      if (fingerprintOf(obligation, attempts) !== reconciliation.fingerprint) {
+      if (fingerprintOf(obligation, attempts, this.ledger.conversionsFor(obligationId)) !== reconciliation.fingerprint) {
         throw new NotClosable(obligationId, ["the ledger changed while reconciling; run it again"]);
       }
       const settled = attempts.find((a) => a.state === "PAID");
@@ -198,7 +225,7 @@ export class Closer {
       if (!chain.ok) throw new NotClosable(obligationId, [`event chain is broken: ${chain.reason}`]);
 
       const body: ClosureCertificateBody = {
-        version: 2,
+        version: 3,
         obligationId,
         reference: obligation.reference,
         currency: obligation.currency,
@@ -211,6 +238,7 @@ export class Closer {
           seq, attemptId, requestId, transferId, state, awxStatus, failureCode, expected, actual,
         })),
         totals: reconciliation.totals,
+        funding: reconciliation.funding.map(({ problems: _problems, ...row }) => row),
         eventChainHead: chain.head,
         issuedAt: this.now().toISOString(),
       };
@@ -222,6 +250,36 @@ export class Closer {
       this.ledger.append(obligationId, "CLOSED", { certificateHash: hash, settledTransferId: settled.transferId });
       return certificate;
     });
+  }
+
+  /** Both legs of a conversion against Airwallex's own wallet lines for it (`source_id` = the conversion id). */
+  private async reconcileFunding(row: ConversionAttempt): Promise<FundingReconciliation> {
+    const base: CertificateFunding = {
+      fundingId: row.id, conversionId: row.conversionId, requestId: row.requestId, quoteId: row.quoteId, forAttemptId: row.forAttemptId,
+      state: row.state, currencyPair: row.currencyPair, rate: row.rate, buyCurrency: row.buyCurrency, sellCurrency: row.sellCurrency,
+      expected: row.state === "ABANDONED" ? { buyMinor: 0, sellMinor: 0 } : { buyMinor: row.buyMinor, sellMinor: -row.sellMinor },
+      actual: null,
+    };
+    const early = fundingProblemsBeforeLines(row);
+    if (early) return { ...base, problems: [early] };
+    if (row.conversionId === null) {
+      return { ...base, actual: { buyMinor: 0, sellMinor: 0 }, problems: row.state === "ABANDONED" ? [] : ["no conversion id recorded"] };
+    }
+    const problems: string[] = [];
+    let buyMinor = 0;
+    let sellMinor = 0;
+    let pending = 0;
+    for (const line of await this.api.listFinancialTransactions(row.conversionId)) {
+      if (line.status !== "SETTLED") pending++;
+      const net = toMinor(line.net, line.currency);
+      if (line.transaction_type === "CONVERSION_BUY" && line.currency === row.buyCurrency) buyMinor += net;
+      else if (line.transaction_type === "CONVERSION_SELL" && line.currency === row.sellCurrency) sellMinor += net;
+      else problems.push(`unexpected wallet line ${line.transaction_type} ${line.net} ${line.currency}`);
+    }
+    if (pending > 0) problems.push(`${pending} wallet line(s) still pending`);
+    if (buyMinor !== base.expected.buyMinor) problems.push(`bought ${buyMinor} minor ${row.buyCurrency} at Airwallex, the ledger expects ${base.expected.buyMinor}`);
+    if (sellMinor !== base.expected.sellMinor) problems.push(`sold ${-sellMinor} minor ${row.sellCurrency} at Airwallex, the ledger expects ${-base.expected.sellMinor}`);
+    return { ...base, actual: { buyMinor, sellMinor }, problems };
   }
 
   private async reconcileAttempt(attempt: Attempt, currency: string): Promise<AttemptReconciliation> {

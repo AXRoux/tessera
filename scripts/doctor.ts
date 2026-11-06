@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import { AirwallexClient } from "../src/airwallex/client";
 import { SPIKE_SUPPLIER } from "../src/airwallex/types";
 import { parseHoldMs } from "../src/server/runtime";
+import { DEFAULT_WEBHOOK_PORT } from "../src/server/webhook-listener";
 
 const live = process.argv.includes("--live");
 const tty = Boolean(process.stdout.isTTY || process.env.FORCE_COLOR);
@@ -79,6 +80,25 @@ try {
 } catch (error) {
   note(liveTrack, "fail", error instanceof Error ? error.message : "TESSERA_PAID_HOLD_MS is invalid", "set a whole number of milliseconds, or leave it blank");
 }
+
+// Webhooks are optional live: without them the sweep still catches every change, only slower.
+const haveWebhook = Boolean(env.AWX_WEBHOOK_SECRET && env.AWX_WEBHOOK_ID);
+note(
+  liveTrack,
+  haveWebhook ? "ok" : "warn",
+  haveWebhook ? "Airwallex webhook subscription configured (AWX_WEBHOOK_ID, AWX_WEBHOOK_SECRET)" : "no webhook subscription: bank events reach Tessera only through the sweep (every TESSERA_SWEEP_MS)",
+  "optional: bun run dev -- --tunnel, then the `bun run webhook:register -- --url ...` line it prints",
+);
+const webhookPort = Number(env.TESSERA_WEBHOOK_PORT || DEFAULT_WEBHOOK_PORT);
+let webhookPortFree = true;
+try {
+  Bun.listen({ hostname: "127.0.0.1", port: webhookPort, socket: { data() {} } }).stop(true);
+} catch {
+  webhookPortFree = false;
+}
+note(liveTrack, webhookPortFree ? "ok" : "warn", `webhook listener port ${webhookPort} is ${webhookPortFree ? "free" : "in use"}`, "stop what is using it, or set TESSERA_WEBHOOK_PORT=<another port>");
+const cloudflared = Bun.which("cloudflared");
+note(liveTrack, cloudflared ? "ok" : "warn", cloudflared ? "cloudflared is installed (for `bun run dev -- --tunnel`)" : "cloudflared is not installed, so `bun run dev -- --tunnel` cannot give Airwallex a public URL", "optional: brew install cloudflared");
 if (env.ANTHROPIC_API_KEY && env.TESSERA_MODEL) note(liveTrack, "ok", `Claude is configured (${env.TESSERA_MODEL})`);
 else if (env.ANTHROPIC_API_KEY) note(liveTrack, "warn", "ANTHROPIC_API_KEY is set but TESSERA_MODEL is blank, so Claude stays off", "set TESSERA_MODEL=claude-sonnet-5-5");
 else note(liveTrack, "warn", "no Anthropic key: the live console works, but evidence is entered by hand and there is no agent", "optional: set ANTHROPIC_API_KEY and TESSERA_MODEL");
@@ -91,6 +111,15 @@ if (live && haveAirwallex && baseUrl.includes("sandbox")) {
     note(liveTrack, "ok", "Airwallex sandbox login works");
     const found = beneficiaries.some((b) => b.nickname === SPIKE_SUPPLIER.nickname) || Boolean(env.TESSERA_BENEFICIARY_ID);
     note(liveTrack, found ? "ok" : "fail", `demo beneficiary "${SPIKE_SUPPLIER.nickname}" exists`, "bun run setup  (creates it in the sandbox)");
+    if (env.AWX_WEBHOOK_ID) {
+      const subscription = (await client.listWebhooks()).find((s) => s.id === env.AWX_WEBHOOK_ID);
+      note(
+        liveTrack,
+        subscription ? "ok" : "warn",
+        subscription ? `webhook subscription ${subscription.id} points at ${subscription.url}` : `webhook subscription ${env.AWX_WEBHOOK_ID} is not at Airwallex any more`,
+        "bun run webhook:register -- --url <public URL>  (creates a new one)",
+      );
+    }
   } catch (error) {
     note(liveTrack, "fail", `Airwallex sandbox login failed: ${error instanceof Error ? error.message : String(error)}`, "check AWX_CLIENT_ID and AWX_API_KEY in .env");
   }

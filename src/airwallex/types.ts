@@ -98,11 +98,124 @@ export interface ReconciliationApi {
   listTransfers(fromCreatedAt: string): Promise<Transfer[]>;
 }
 
-export const BalanceListSchema = z.array(z.looseObject({ currency: z.string(), available_amount: z.number() }));
+/** One wallet as `GET /api/v1/balances/current` lists it (a bare array, one row per currency, zero rows included). */
+export const WalletBalanceSchema = z.looseObject({ currency: z.string(), available_amount: z.number() });
+export type WalletBalance = z.infer<typeof WalletBalanceSchema>;
+export const BalanceListSchema = z.array(WalletBalanceSchema);
 
-/** Spendable wallet balance in major units. The Commander checks it before proposing a replacement. */
+/** Spendable wallet balances in major units, every currency at once. The Commander reads them before it proposes a replacement or a conversion. */
 export interface BalanceApi {
-  getAvailableBalance(currency: string): Promise<number>;
+  getBalances(): Promise<WalletBalance[]>;
+}
+
+/**
+ * Airwallex stamps FX times as `2026-11-03T14:57:22+0000` (no colon in the offset). Normalized to ISO 8601 UTC so every
+ * reader (Bun, Node, the browser) parses them the same way. An unparseable time is an unreadable response, not a guess.
+ */
+const AwxTime = z.string().transform((value, ctx) => {
+  const at = Date.parse(value.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+  if (Number.isNaN(at)) {
+    ctx.addIssue({ code: "custom", message: `unreadable time ${value}` });
+    return z.NEVER;
+  }
+  return new Date(at).toISOString();
+});
+
+/**
+ * An indicative rate (`GET /api/v1/fx/rates/current`). No quote id: it guarantees nothing and is only used to plan.
+ * `rate` is the client rate for `currency_pair` in market convention (EURUSD = US dollars per euro).
+ * https://www.airwallex.com/docs/api/transactional_fx/rates/current.md
+ */
+export const FxRateSchema = z.looseObject({
+  buy_currency: z.string(),
+  sell_currency: z.string(),
+  currency_pair: z.string(),
+  rate: z.number().positive(),
+});
+export type FxRate = z.infer<typeof FxRateSchema>;
+
+/**
+ * A quote (`POST /api/v1/fx/quotes/create`): a rate Airwallex guarantees until `valid_to_at`. The sandbox reports
+ * `usage: MULTI_USE` and accepts one quote for several conversions (verified 2026-11-03), so Tessera makes it single-use
+ * itself (a unique column), as the builder guide asks. https://www.airwallex.com/docs/api/transactional_fx/quotes/create.md
+ */
+export const FxQuoteSchema = z.looseObject({
+  quote_id: z.string(),
+  buy_currency: z.string(),
+  sell_currency: z.string(),
+  buy_amount: z.number().positive(),
+  sell_amount: z.number().positive(),
+  client_rate: z.number().positive(),
+  currency_pair: z.string(),
+  valid_from_at: AwxTime,
+  valid_to_at: AwxTime,
+  usage: z.string().optional(),
+});
+export type FxQuote = z.infer<typeof FxQuoteSchema>;
+
+/**
+ * A conversion (`POST /api/v1/fx/conversions/create`, `GET /api/v1/fx/conversions/{id}`). Status is SCHEDULED, SETTLED,
+ * OVERDUE or CANCELLED; the sandbox answers SETTLED at once. https://www.airwallex.com/docs/api/transactional_fx/conversion/create.md
+ */
+export const ConversionSchema = z.looseObject({
+  conversion_id: z.string(),
+  request_id: z.string().optional(),
+  quote_id: z.string().nullish(),
+  status: z.string(),
+  buy_currency: z.string(),
+  sell_currency: z.string(),
+  buy_amount: z.number(),
+  sell_amount: z.number(),
+  client_rate: z.number().optional(),
+  currency_pair: z.string().optional(),
+  short_reference_id: z.string().optional(),
+  created_at: AwxTime.optional(),
+  updated_at: AwxTime.optional(),
+});
+export type Conversion = z.infer<typeof ConversionSchema>;
+
+export const ConversionListSchema = z.looseObject({ items: z.array(ConversionSchema), has_more: z.boolean().optional() });
+
+/** Quote validity Airwallex offers. The agent's own path uses MIN_1; a person reviewing a quote gets MIN_15. */
+export type QuoteValidity = "MIN_1" | "MIN_15" | "MIN_30" | "HR_1";
+
+export interface CreateQuoteRequest {
+  buy_currency: string;
+  sell_currency: string;
+  /** The dealt (fixed) side: Tessera always fixes what it must buy and lets Airwallex price the sell side. */
+  buy_amount: number;
+  validity: QuoteValidity;
+}
+
+export interface CreateConversionRequest {
+  request_id: string;
+  quote_id: string;
+  buy_currency: string;
+  sell_currency: string;
+  buy_amount: number;
+}
+
+/**
+ * The slice of Airwallex the funding executor depends on. `x-api-version` is never sent: the account's stored version
+ * applies, and a stale header earns `incorrect_version` (builder guide, "Booking an FX conversion").
+ */
+export interface FxApi {
+  getRate(buyCurrency: string, sellCurrency: string, buyAmount: number): Promise<FxRate>;
+  createQuote(request: CreateQuoteRequest): Promise<FxQuote>;
+  createConversion(request: CreateConversionRequest): Promise<Conversion>;
+  getConversion(id: string): Promise<Conversion>;
+  /** The conversion created under `requestId`, if any. Airwallex searches 31 days unless told otherwise, so pass `fromCreatedAt`. */
+  findConversionByRequestId(requestId: string, fromCreatedAt?: string): Promise<Conversion | null>;
+}
+
+/**
+ * How many units of `sellCurrency` one unit of `buyCurrency` costs at `rate`, quoted for `pair` in market convention:
+ * EURUSD 1.13 means a euro costs 1.13 dollars, so buying EUR with USD multiplies and buying USD with EUR divides.
+ */
+export function sellPerBuy(pair: string, buyCurrency: string, sellCurrency: string, rate: number): number {
+  if (pair === `${buyCurrency}${sellCurrency}`) return rate;
+  if (pair === `${sellCurrency}${buyCurrency}`) return 1 / rate;
+  throw new AwxNetworkError(`currency pair ${pair} does not match ${buyCurrency}/${sellCurrency}`);
 }
 
 export interface Beneficiary {

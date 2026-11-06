@@ -1,10 +1,11 @@
 /**
- * The capability boundary for any agent that works an incident: nine typed tools, and nothing else.
+ * The capability boundary for any agent that works an incident: ten typed tools, and nothing else.
  *
  * What is missing is the point. There is no tool that creates a transfer, signs an approval, changes an amount or a
- * beneficiary, or releases a payment a policy forbids. An agent can read, record what a supplier said, defer, hand an
- * incident to a person, draft a reply for a person to send, ask for an automatic replacement the code will only grant
- * when it is provably safe, and ask the Closer to certify. Every refusal comes from the same code a human hits, and every call is written to the
+ * beneficiary, picks a currency or a rate, or releases a payment a policy forbids. An agent can read, record what a
+ * supplier said, defer, hand an incident to a person, draft a reply for a person to send, ask for the one conversion the
+ * code planned to fund a replacement, ask for an automatic replacement the code will only grant when it is provably safe,
+ * and ask the Closer to certify. Every refusal comes from the same code a human hits, and every call is written to the
  * hash-chained ledger.
  *
  * The same toolbox backs the in-process Claude loop (`loop.ts`) and the MCP server (`mcp.ts`).
@@ -19,7 +20,9 @@ import {
   ApprovalRejected,
   AutoReplacementRefused,
   DraftRejected,
+  DuplicateConversionError,
   DuplicateLockError,
+  FundingRefused,
   LedgerMismatchError,
   NotClosable,
   ObligationNotPayable,
@@ -44,7 +47,7 @@ export interface ToolboxDeps {
    * is the operator's own assistant. Otherwise the agent may only name a message already in the ledger inbox.
    */
   acceptClientText: boolean;
-  /** `triage` can read, record, defer, draft and escalate; it is never offered replace_payment or reconcile_and_close. */
+  /** `triage` can read, record, defer, draft and escalate; it is never offered replace_payment, fund_replacement or reconcile_and_close. */
   authority?: "operator" | "triage";
   /** Hard limit on which incidents this toolbox can see or touch. Absent means all of them. */
   scope?: ReadonlySet<string>;
@@ -191,7 +194,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
   };
 
   const requireIncident = (id: string): Obligation => {
-    if (!inScope(id)) throw new ToolInputError("that incident is outside the scope of this run");
+    if (!inScope(id)) throw new ToolInputError("that incident is outside the scope of this run; tools take the incidentId from list_incidents, not the reference");
     const found = ledger.getObligation(id);
     if (!found) throw new ToolInputError(`no incident with id ${id}; call list_incidents`);
     return found;
@@ -243,8 +246,10 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       annotations: hints({ idempotentHint: true, openWorldHint: true }),
       run: async ({ incidentId }) => {
         const o = requireIncident(incidentId);
-        // A payment stuck in INTENT is resolved first (submitted with its original request_id, or escalated).
+        // A payment or a conversion stuck in INTENT is resolved first (looked up and adopted, sent again with its original
+        // request_id, or escalated / released when its quote expired).
         if (ledger.attemptsFor(incidentId).some((x) => x.state === "INTENT")) await gateway.recover(incidentId);
+        if (ledger.conversionsIn(["INTENT"], incidentId).length > 0) await commander.recoverFunding(incidentId);
         const a = await commander.assess(incidentId, recordedEvidence(incidentId));
         const latest = ledger.requireObligation(incidentId);
         const { decision } = a;
@@ -263,6 +268,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
             severity: decision.severity,
             recheckAt: decision.recheckAt,
             replacement: decision.replacement,
+            funding: decision.funding,
           },
         };
       },
@@ -323,6 +329,39 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
           outcome: result.outcome,
           attempt: { seq: result.attempt.seq, state: result.attempt.state, awxStatus: result.attempt.awxStatus },
           note: "A new request_id was minted only because the original was provably CANCELLED.",
+        };
+      },
+    }),
+
+    tool({
+      name: "fund_replacement",
+      description:
+        "When assess_incident recommends FUND: a replacement the code would otherwise make cannot be paid because the wallet in the invoice's currency cannot cover the amount plus the fee and still keep its reserve floor. Tessera computes the conversion itself (which wallet to sell, how much to buy: exactly the shortfall), gets a fresh Airwallex quote, and books one conversion if it is within the automatic conversion limit. You give only the incident id: you cannot choose an amount, a currency or a rate, and a replacement is funded at most once. Above the limit, or if the quote drifted, it refuses with the plan for a person. After it reports SETTLED, call assess_incident again; if REPLACE is then allowed, call replace_payment.",
+      // Strict: an amount, a currency or a rate in the input is refused, not silently ignored.
+      schema: z.strictObject({ incidentId: IncidentId }),
+      annotations: hints({ destructiveHint: true, openWorldHint: true }),
+      operatorOnly: true,
+      run: async ({ incidentId }) => {
+        requireIncident(incidentId);
+        const { plan, result, replans } = await commander.fundAutomatically(incidentId, recordedEvidence(incidentId));
+        const c = result.conversion;
+        const wallets = result.walletsAfter;
+        return {
+          outcome: result.outcome,
+          conversion: {
+            state: c.state, conversionId: c.conversionId, quoteId: c.quoteId,
+            bought: formatMinor(c.buyMinor, c.buyCurrency), sold: formatMinor(c.sellMinor, c.sellCurrency), rate: `${c.rate} ${c.currencyPair}`,
+            ...(c.state === "ABANDONED" ? { refusedBecause: c.lastError } : {}),
+          },
+          plan: plan.summary,
+          walletsAfter: wallets ? Object.fromEntries([c.buyCurrency, c.sellCurrency].map((cur) => [cur, formatMinor(wallets[cur] ?? 0, cur)])) : null,
+          replans,
+          next:
+            c.state === "SETTLED"
+              ? "The money is in the wallet. Call assess_incident again; if REPLACE is allowed, call replace_payment."
+              : c.state === "ABANDONED"
+                ? "Airwallex refused the conversion, so nothing moved. Escalate it."
+                : "The conversion has not settled yet. Call assess_incident later.",
         };
       },
     }),
@@ -460,8 +499,14 @@ async function run(found: Tool, input: unknown): Promise<ToolOutcome> {
     if (error instanceof AutoReplacementRefused) {
       return { ok: false, kind: "refused", error: error.name, message: error.message, details: { reasons: error.decision.reasons } };
     }
+    if (error instanceof FundingRefused) {
+      return {
+        ok: false, kind: "refused", error: error.name, message: error.message,
+        details: { reasons: error.reasons, ...(error.plan ? { plan: error.plan.summary } : {}) },
+      };
+    }
     if (
-      error instanceof DuplicateLockError || error instanceof ReplacementDenied || error instanceof ApprovalRejected ||
+      error instanceof DuplicateLockError || error instanceof DuplicateConversionError || error instanceof ReplacementDenied || error instanceof ApprovalRejected ||
       error instanceof ObligationNotPayable || error instanceof LedgerMismatchError || error instanceof DraftRejected
     ) {
       return { ok: false, kind: "refused", error: error.name, message: error.message };

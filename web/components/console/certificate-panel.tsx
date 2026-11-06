@@ -42,6 +42,14 @@ export function CertificatePanel({ view }: { view: IncidentView }) {
           <Line label="Net wallet movement" value={money(totals.netWalletMinor, currency)} />
           <Line label="Issued" value={ago(cert.body.issuedAt)} />
         </div>
+        {(cert.body.funding ?? []).map((f) => (
+          <div key={f.fundingId} className="mt-5">
+            <Label>Funded by conversion {f.conversionId ?? f.requestId}</Label>
+            <Line label={`Bought ${f.buyCurrency}`} value={`${money(f.actual?.buyMinor ?? 0, f.buyCurrency)} of ${money(f.expected.buyMinor, f.buyCurrency)}`} />
+            <Line label={`Sold ${f.sellCurrency}`} value={`${money(-(f.actual?.sellMinor ?? 0), f.sellCurrency)} of ${money(-f.expected.sellMinor, f.sellCurrency)}`} />
+            <Line label="Rate" value={`${f.rate} ${f.currencyPair}`} />
+          </div>
+        ))}
         <a
           className="mt-5 inline-flex h-12 w-full items-center justify-center border border-ink text-[12px] font-medium uppercase tracking-[0.18em] hover:bg-ink hover:text-paper"
           href={`/api/obligations/${view.obligation.id}/certificate`}

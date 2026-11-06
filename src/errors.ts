@@ -67,6 +67,26 @@ export class DraftRejected extends Error {
   }
 }
 
+/** The database refused a second conversion for one replacement (the one-conversion-per-replacement index). */
+export class DuplicateConversionError extends Error {
+  constructor(readonly obligationId: string, readonly forAttemptId: string) {
+    super(`obligation ${obligationId} already has a conversion for replacing attempt ${forAttemptId}; Tessera books one per replacement`);
+    this.name = "DuplicateConversionError";
+  }
+}
+
+/**
+ * Tessera will not convert currency to fund this replacement. `reasons` are sentences a person can act on (the
+ * arithmetic included); `plan` is the code-computed plan when there is one, so a person can see what was refused.
+ * `replan` marks a refusal that a fresh plan and quote may cure (the wallets or the quote moved since the plan).
+ */
+export class FundingRefused extends Error {
+  constructor(readonly obligationId: string, readonly reasons: string[], readonly plan: { summary: string } | null = null, readonly replan = false) {
+    super(`obligation ${obligationId}: funding refused: ${reasons.join(" ")}`);
+    this.name = "FundingRefused";
+  }
+}
+
 /** The requested change does not apply to the record's current state (e.g. resolving an escalation that is not open). */
 export class StateConflict extends Error {
   constructor(message: string) {

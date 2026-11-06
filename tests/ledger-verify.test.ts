@@ -9,6 +9,7 @@ import { ApprovalRejected, StateConflict } from "../src/errors";
 import { PayoutGateway } from "../src/gateway/gateway";
 import { Ledger } from "../src/ledger/ledger";
 import { approve, killedAttempt, SECRET, world, type World } from "./helpers/world";
+import { fundingApproval, fundWorld } from "./helpers/fund-world";
 
 const NOTE = "checked the Airwallex dashboard with the supplier on the phone";
 const OPS = "ops@acme";
@@ -379,5 +380,57 @@ describe("verifyChain on every legitimate history the gateway writes", () => {
     await gateway.sync();
     ok("cancelled");
     expect(ledger.listObligations()).toHaveLength(6);
+  });
+});
+
+describe("8. conversion rows are verified against their events", () => {
+  it("catches a conversion's sell amount edited, and the replacement it funded is refused", async () => {
+    const w = await fundWorld();
+    const { result } = await w.commander.fundAutomatically(w.obligation.id);
+    expect(w.ledger.verifyChain().ok).toBe(true);
+
+    w.ledger.db.query("UPDATE conversions SET sellMinor = sellMinor - 100 WHERE id = ?").run(result.conversion.id);
+
+    expect(w.ledger.verifyChain()).toMatchObject({ ok: false, reason: expect.stringContaining(`conversion ${result.conversion.id}`) });
+    await expect(w.commander.replaceAutomatically(w.obligation.id)).rejects.toThrow();
+    expect(w.api.all).toHaveLength(1);
+  });
+
+  it("catches a settled conversion row deleted, which would otherwise free the lock for a second conversion", async () => {
+    const w = await fundWorld();
+    const { result } = await w.commander.fundAutomatically(w.obligation.id);
+
+    w.ledger.db.query("DELETE FROM conversions WHERE id = ?").run(result.conversion.id);
+
+    expect(w.ledger.verifyChain()).toMatchObject({ ok: false, reason: expect.stringContaining("missing from the conversions table") });
+    await expect(w.executor.book(await fundingApproval(w))).rejects.toMatchObject({ name: "ObligationNotPayable" });
+    expect(w.api.conversions.size).toBe(1);
+  });
+
+  it("catches a conversion row with no FUNDING_INTENT behind it", async () => {
+    const w = await fundWorld();
+
+    w.ledger.insertConversion({
+      obligationId: w.obligation.id, forAttemptId: w.dead.id, requestId: "req-forged", approvalNonce: "n".repeat(32), quoteId: "q-forged",
+      currencyPair: "EURUSD", buyCurrency: "EUR", buyMinor: 2_666, sellCurrency: "USD", sellMinor: 3_015, rate: 1.130824, quoteValidTo: new Date().toISOString(),
+    });
+
+    expect(w.ledger.verifyChain()).toMatchObject({ ok: false, reason: expect.stringContaining("has no FUNDING_INTENT event") });
+  });
+
+  it("stays ok through a whole funded lifecycle: ambiguous send, recovery, replacement, close", async () => {
+    const w = await fundWorld();
+    w.api.faults.loseConversionResponse = 1;
+    w.api.faults.failConversionLookup = 1;
+    await w.commander.fundAutomatically(w.obligation.id).catch(() => null);
+    expect(w.ledger.verifyChain().ok).toBe(true);
+    await w.commander.recoverFunding();
+    const { attempt } = await w.commander.replaceAutomatically(w.obligation.id);
+    w.api.advance(attempt.transferId!, "SENT");
+    w.api.advance(attempt.transferId!, "PAID");
+    await w.gateway.sync();
+    await w.closer.close(w.obligation.id);
+
+    expect(w.ledger.verifyChain().ok).toBe(true);
   });
 });

@@ -72,7 +72,7 @@ describe("replacing without a human", () => {
     await killedAttempt(w, "91402");
     const commander = new Commander({
       ledger: w.ledger, gateway: w.gateway, secret: SECRET,
-      balances: { getAvailableBalance: async () => { throw new Error("balance service is down"); } },
+      balances: { getBalances: async () => { throw new Error("balance service is down"); } },
     });
 
     await expect(commander.replaceAutomatically(w.obligation.id)).rejects.toBeInstanceOf(AutoReplacementRefused);

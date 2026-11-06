@@ -59,6 +59,33 @@ export const LedgerEventSchema = z.object({
 
 const Action = z.enum(ACTION_KINDS);
 
+/** A conversion computed by code to fund a replacement (`planFunding`): every number a person or agent is shown. */
+export const FundingPlanSchema = z.object({
+  currency: z.string(),
+  neededMinor: z.number().int(),
+  feeMinor: z.number().int(),
+  availableMinor: z.number().int(),
+  floorMinor: z.number().int(),
+  shortfallMinor: z.number().int(),
+  buyMinor: z.number().int(),
+  minConversionMinor: z.number().int(),
+  forAttemptId: z.string(),
+  feasible: z.boolean(),
+  sellCurrency: z.string().nullable(),
+  sellMinor: z.number().int().nullable(),
+  rate: z.number().nullable(),
+  sources: z.array(
+    z.object({
+      currency: z.string(), availableMinor: z.number().int(), floorMinor: z.number().int(), rate: z.number().nullable(),
+      sellMinor: z.number().int().nullable(), ok: z.boolean(),
+    }),
+  ),
+  limitMinor: z.number().int().nullable(),
+  autoApprovable: z.boolean(),
+  summary: z.string(),
+});
+export type FundingPlanWire = z.infer<typeof FundingPlanSchema>;
+
 export const DecisionSchema = z.object({
   recommended: Action,
   allowed: z.array(Action),
@@ -74,7 +101,73 @@ export const DecisionSchema = z.object({
       autoApprovable: z.boolean(),
     })
     .nullable(),
+  /** Set when a replacement needs another wallet's money first: the plan, feasible or not. */
+  funding: FundingPlanSchema.nullable(),
 });
+
+/** A funding conversion as the ledger records it (`conversions` table). */
+export const ConversionSchema = z.object({
+  id: z.string(),
+  obligationId: z.string(),
+  forAttemptId: z.string(),
+  requestId: z.string(),
+  quoteId: z.string(),
+  currencyPair: z.string(),
+  buyCurrency: z.string(),
+  buyMinor: z.number().int(),
+  sellCurrency: z.string(),
+  sellMinor: z.number().int(),
+  rate: z.number(),
+  quoteValidTo: z.string(),
+  state: z.enum(["INTENT", "BOOKED", "SETTLED", "CANCELLED", "ABANDONED"]),
+  conversionId: z.string().nullable(),
+  awxStatus: z.string().nullable(),
+  lastError: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ConversionWire = z.infer<typeof ConversionSchema>;
+
+/** GET /api/wallets: every wallet's available balance next to the reserve floor the policy keeps in it. */
+export const WalletsSchema = z.object({
+  /** False when Airwallex could not be read; `wallets` is then empty and every replacement fails closed. */
+  readable: z.boolean(),
+  wallets: z.array(z.object({ currency: z.string(), availableMinor: z.number().int(), floorMinor: z.number().int(), fundingSource: z.boolean() })),
+  /** Wallets the Commander may sell to fund a replacement, most preferred first. */
+  fundingSources: z.array(z.string()),
+  /** Largest conversion the Commander books on its own, per currency bought. */
+  autoConvertLimitMinor: z.record(z.string(), z.number().int()),
+});
+export type Wallets = z.infer<typeof WalletsSchema>;
+
+/** POST /fund, /fund/approve: the conversion booked (or found) and the wallets read after it settled. */
+export const FundingResultSchema = z.object({
+  outcome: z.enum(["BOOKED", "ADOPTED_DUPLICATE", "ADOPTED_AFTER_AMBIGUITY", "PENDING_RECOVERY", "REJECTED"]),
+  conversion: ConversionSchema,
+  walletsAfter: z.record(z.string(), z.number().int()).nullable(),
+  /** Why earlier quotes were thrown away (automatic funding only). */
+  replans: z.array(z.string()),
+});
+export type FundingResultWire = z.infer<typeof FundingResultSchema>;
+
+/** POST /fund/quote: step one of a person's approval. The approval must echo `quoteId`, `evidenceHash` and `fingerprint`. */
+export const FundingQuoteSchema = z.object({
+  obligationId: z.string(),
+  forAttemptId: z.string(),
+  quoteId: z.string(),
+  currencyPair: z.string(),
+  buyCurrency: z.string(),
+  buyMinor: z.number().int(),
+  sellCurrency: z.string(),
+  sellMinor: z.number().int(),
+  rate: z.number(),
+  validFrom: z.string(),
+  validTo: z.string(),
+  evidenceHash: z.string(),
+  fingerprint: z.string(),
+  plan: FundingPlanSchema,
+});
+export type FundingQuote = z.infer<typeof FundingQuoteSchema>;
 
 export const RecordedEvidenceSchema = EvidenceRecordedSchema.extend({ at: z.string() });
 
@@ -94,6 +187,25 @@ export const IncidentSummarySchema = z.object({
   lastAgentAction: z.object({ actor: z.string(), tool: z.string(), outcome: z.string(), at: z.string() }).nullable(),
   /** Why a person is needed, most urgent reason first; null when nothing is waiting for one. */
   attention: z.object({ kind: z.enum(["ESCALATED", "NEEDS_ACTION", "DRAFT"]), reason: z.string() }).nullable(),
+  /**
+   * Tessera's latest reaction to a bank-side transfer change on this incident: what made it look (a webhook, named, or
+   * the sweep), when, whether the Commander's decision changed, and whether an agent was woken for it.
+   */
+  lastReaction: z
+    .object({
+      source: z.enum(["webhook", "sweep", "setup"]),
+      eventName: z.string().nullable(),
+      eventId: z.string().nullable(),
+      at: z.string(),
+      to: z.string(),
+      before: z.string(),
+      after: z.string(),
+      decisionChanged: z.boolean(),
+      wake: z.enum(["requested", "not_needed", "off", "suppressed"]),
+      /** The event-driven run that followed: started, capped or skipped; null if none was asked for or it has not fired yet. */
+      woke: z.enum(["started", "capped", "skipped"]).nullable(),
+    })
+    .nullable(),
 });
 export type IncidentSummary = z.infer<typeof IncidentSummarySchema>;
 
@@ -120,6 +232,8 @@ export const IncidentViewSchema = z.object({
   evidenceHash: z.string().nullable(),
   assessmentError: z.string().nullable(),
   inbox: z.array(InboxItemSchema),
+  /** Every conversion made to fund this invoice's replacements, oldest first. */
+  conversions: z.array(ConversionSchema),
   certificate: SignedCertificateSchema.nullable(),
   chain: z.object({ ok: z.boolean(), brokenAt: z.number().int().nullable() }),
   paidHoldMs: z.number(),
@@ -134,8 +248,10 @@ export const HealthSchema = z.object({
   sandbox: z.boolean(),
   /** Simulated Airwallex in-process; no money and no network. */
   offline: z.boolean(),
-  /** POST /api/webhooks/airwallex is accepting signed events. */
+  /** Signed Airwallex webhooks are accepted (live: on the webhook-only listener; offline: from the simulator). */
   webhooks: z.boolean(),
+  /** A verified bank event that changes an incident's decision wakes an agent for that incident (TESSERA_AGENT_ON_EVENT). */
+  agentOnEvent: z.boolean(),
   operator: z.string(),
   /** Who drives agent runs: Claude, the deterministic scripted agent (not Claude), or nobody. */
   agent: z.enum(["claude", "scripted"]).nullable(),

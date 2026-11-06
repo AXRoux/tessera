@@ -53,7 +53,7 @@ export const MUTATIONS: Mutation[] = [
     describe: "Remove EVERY defence against spending an approval twice: the nonce check, the unique nonce column, the open-attempt lock and the replaces-the-latest-attempt binding",
     edits: [
       { file: "src/gateway/gateway.ts", find: `if (this.ledger.nonceUsed(p.nonce)) throw new ApprovalRejected("replayed", "approval nonce already used");`, replace: "" },
-      { file: "src/ledger/ledger.ts", find: "approvalNonce TEXT NOT NULL UNIQUE,", replace: "approvalNonce TEXT NOT NULL," },
+      { file: "src/ledger/ledger.ts", find: "payerPaysMinor INTEGER,\n  approvalNonce TEXT NOT NULL UNIQUE,", replace: "payerPaysMinor INTEGER,\n  approvalNonce TEXT NOT NULL," },
       { file: "src/gateway/gateway.ts", find: `if (latest && (latest.state === "INTENT" || latest.state === "LIVE" || latest.state === "PAID")) {`, replace: `if (latest && (latest.state === "INTENT" || latest.state === "LIVE" || latest.state === "PAID") && (false as boolean)) {` },
       { file: "src/gateway/gateway.ts", find: "if ((latest?.id ?? null) !== p.replacesAttemptId) {", replace: "if ((latest?.id ?? null) !== p.replacesAttemptId && (false as boolean)) {" },
       { file: "src/ledger/ledger.ts", find: "ON attempts (obligationId) WHERE state IN ('INTENT','LIVE','PAID');", replace: "ON attempts (obligationId) WHERE state IN ('NEVER');" },
@@ -117,7 +117,7 @@ export const MUTATIONS: Mutation[] = [
   {
     id: "no-amount-limit",
     describe: "Drop the automatic replacement amount limit",
-    edits: [{ file: "src/commander/policy.ts", find: "} else if (limit !== undefined && latest.amountMinor <= limit) {", replace: "} else if (true) {" }],
+    edits: [{ file: "src/commander/policy.ts", find: "const withinLimit = limit !== undefined && latest.amountMinor <= limit;", replace: "const withinLimit = limit !== undefined || true;" }],
     expect: { attacks: [10], tests: [T("policy.test.ts")] },
   },
   {
@@ -129,7 +129,7 @@ export const MUTATIONS: Mutation[] = [
   {
     id: "unknown-balance-auto",
     describe: "Treat an unreadable wallet balance as enough money",
-    edits: [{ file: "src/commander/commander.ts", find: "walletAvailableMinor: balance === null ? null :", replace: "walletAvailableMinor: balance === null ? Number.MAX_SAFE_INTEGER :" }],
+    edits: [{ file: "src/commander/commander.ts", find: "} catch {\n      return null;", replace: "} catch {\n      return { USD: Number.MAX_SAFE_INTEGER, EUR: Number.MAX_SAFE_INTEGER, GBP: Number.MAX_SAFE_INTEGER };" }],
     // The policy's own test builds a null balance by hand; this one makes the balance read FAIL, which is where fail-open would come from.
     expect: { tests: [T("commander.test.ts", "refuses when the wallet balance cannot be read")] },
   },
@@ -197,7 +197,7 @@ export const MUTATIONS: Mutation[] = [
   {
     id: "skip-evidence-hash-compare",
     describe: "Skip the evidenceHash comparison on a human approval",
-    edits: [{ file: "src/commander/commander.ts", find: "if (assessment.evidenceHash !== input.evidenceHash) {", replace: "if (false) {" }],
+    edits: [{ file: "src/commander/commander.ts", find: "if (assessment.evidenceHash !== input.evidenceHash) {\n      throw new ApprovalRejected(\"stale_evidence\", \"the incident changed since the approver reviewed it; review the current assessment and approve again\");\n    }\n    const previous", replace: "if (false) {\n      throw new ApprovalRejected(\"stale_evidence\", \"\");\n    }\n    const previous" }],
     expect: { attacks: [23], tests: [T("commander.test.ts", "rejects an approval of an assessment that has since changed")] },
   },
   {
@@ -270,7 +270,7 @@ export const MUTATIONS: Mutation[] = [
   {
     id: "chain-terms-unchecked",
     describe: "Stop comparing an attempt's terms and amounts with the event that created it",
-    edits: [{ file: "src/ledger/ledger.ts", find: "if (mismatch) return", replace: "if (false) return" }],
+    edits: [{ file: "src/ledger/ledger.ts", find: "if (mismatch) return { ok: false, brokenAt: null, reason: `attempt", replace: "if (false) return { ok: false, brokenAt: null, reason: `attempt" }],
     expect: { tests: [T("ledger-verify.test.ts", "4. attempt and obligation columns are verified against their events")] },
   },
   {
@@ -314,7 +314,7 @@ export const MUTATIONS: Mutation[] = [
   {
     id: "abandon-not-cas",
     describe: "Abandon an attempt without checking it is still an INTENT",
-    edits: [{ file: "src/ledger/ledger.ts", find: "WHERE id = ? AND state = 'INTENT'", replace: "WHERE id = ?" }],
+    edits: [{ file: "src/ledger/ledger.ts", find: "COALESCE(?, lastError), updatedAt = ? WHERE id = ? AND state = 'INTENT'", replace: "COALESCE(?, lastError), updatedAt = ? WHERE id = ?" }],
     expect: { tests: [T("money-path.test.ts", "10. abandon is a compare-and-set")] },
   },
   {
@@ -336,47 +336,304 @@ export const MUTATIONS: Mutation[] = [
     edits: [{ file: "src/gateway/gateway.ts", find: "request_id: attempt.requestId,", replace: "request_id: crypto.randomUUID()," }],
     expect: { attacks: [15], tests: [T("gateway.test.ts", "adopts the transfer by request_id when the create response is lost")] },
   },
+  // ---- funding a replacement (conversions) ------------------------------------------------------------------------------
+  {
+    id: "fund-tool-not-strict",
+    describe: "Let fund_replacement accept (and silently drop) an amount, a currency or a rate in its input",
+    edits: [{ file: "src/agent/toolbox.ts", find: "schema: z.strictObject({ incidentId: IncidentId }),", replace: "schema: z.object({ incidentId: IncidentId })," }],
+    expect: { attacks: [31], tests: [T("toolbox.test.ts", "funds a short wallet from the incident id alone")] },
+  },
+  {
+    id: "fund-db-lock",
+    describe: "Drop the database's one-conversion-per-replacement index",
+    edits: [{ file: "src/ledger/ledger.ts", find: "ON conversions (forAttemptId) WHERE state IN ('INTENT','BOOKED','SETTLED');", replace: "ON conversions (forAttemptId) WHERE state IN ('NEVER');" }],
+    expect: { attacks: [32], tests: [T("funding.test.ts", "refuses a second conversion for the same replacement")] },
+  },
+  {
+    id: "fund-lock-all-layers",
+    describe: "Drop the executor's funding-lock check AND the database index, so two processes can each convert",
+    edits: [
+      { file: "src/ledger/ledger.ts", find: "ON conversions (forAttemptId) WHERE state IN ('INTENT','BOOKED','SETTLED');", replace: "ON conversions (forAttemptId) WHERE state IN ('NEVER');" },
+      { file: "src/funding/executor.ts", find: "if (this.ledger.conversionsFor(obligation.id).some((c) => c.forAttemptId === latest.id && holdsFundingLock(c.state))) {", replace: "if (this.ledger.conversionsFor(obligation.id).some((c) => c.forAttemptId === latest.id && holdsFundingLock(c.state)) && (false as boolean)) {" },
+    ],
+    expect: { attacks: [32, 33] },
+  },
+  {
+    id: "fund-nonce-replay",
+    describe: "Stop refusing a spent funding approval nonce",
+    edits: [{ file: "src/funding/executor.ts", find: "if (this.ledger.fundingNonceUsed(p.nonce)) throw", replace: "if (false) throw" }],
+    expect: { attacks: [34], tests: [T("funding.test.ts", "rejects a changed amount, a payout-domain MAC")] },
+  },
+  {
+    id: "fund-mac-domain",
+    describe: "Sign funding approvals without their own MAC domain (so a payout-style signature verifies)",
+    edits: [{ file: "src/funding/approval.ts", find: "update(`tessera-funding-v1|${canonicalJson(payload)}`)", replace: "update(canonicalJson(payload))" }],
+    expect: { attacks: [34], tests: [T("funding.test.ts", "rejects a changed amount, a payout-domain MAC")] },
+  },
+  {
+    id: "fund-fingerprint-unchecked",
+    describe: "Accept a person's funding approval whatever fingerprint it echoes back",
+    edits: [{ file: "src/commander/commander.ts", find: "if (recomputed !== quoted.fingerprint || input.fingerprint !== quoted.fingerprint) {", replace: "if (recomputed !== quoted.fingerprint) {" }],
+    expect: { tests: [T("funding.test.ts", "refuses a fingerprint that is not the one shown")] },
+  },
+  {
+    id: "fund-quote-age",
+    describe: "Book a quote however long ago it was fetched (until Airwallex's own expiry)",
+    edits: [{ file: "src/commander/commander.ts", find: "if (now - Date.parse(quote.validFrom) > this.policy.maxQuoteAgeMs) return", replace: "if (false) return" }],
+    expect: { attacks: [35], tests: [T("funding.test.ts", "refuses a reviewed quote older than the policy")] },
+  },
+  {
+    id: "fund-rate-drift",
+    describe: "Book a quote whose rate drifted past maxRateDriftBps from the plan",
+    edits: [{ file: "src/commander/commander.ts", find: "if (quote.sellMinor > ceiling) {", replace: "if (false) {" }],
+    expect: { tests: [T("funding.test.ts", "throws away a quote whose rate drifted")] },
+  },
+  {
+    id: "fund-plan-ignores-source-floor",
+    describe: "Plan a conversion from a wallet that would end below its own reserve floor",
+    edits: [{ file: "src/commander/policy.ts", find: "ok: sellMinor !== null && availableMinor - sellMinor >= floorMinor", replace: "ok: sellMinor !== null" }],
+    // The quote check and the executor still refuse to book it (attack 36 holds); the plan itself must not propose it.
+    expect: { tests: [T("funding-policy.test.ts", "sells the first source in policy order")] },
+  },
+  {
+    id: "fund-executor-source-floor",
+    describe: "Book a conversion that takes the source wallet below its reserve floor",
+    edits: [{ file: "src/funding/executor.ts", find: "if (sourceAvailable - p.sellMinor < sourceFloor) {", replace: "if (false) {" }],
+    expect: { attacks: [36], tests: [T("funding.test.ts", "refuses once the wallet no longer needs it")] },
+  },
+  {
+    id: "fund-overbuy",
+    describe: "Book a conversion that buys more than the shortfall",
+    edits: [{ file: "src/funding/executor.ts", find: "if (p.buyMinor > need.buyMinor) refuse(", replace: "if (false) refuse(" }],
+    expect: { attacks: [37], tests: [T("funding.test.ts", "refuses to buy more, or less, than the shortfall")] },
+  },
+  {
+    id: "fund-no-auto-limit",
+    describe: "Drop the automatic conversion limit",
+    edits: [{ file: "src/commander/policy.ts", find: "limit !== undefined && need.buyMinor <= limit;", replace: "limit !== undefined;" }],
+    expect: { tests: [T("funding-policy.test.ts", "books on its own up to the automatic conversion limit")] },
+  },
+  {
+    id: "fund-auto-ignores-plan",
+    describe: "Book automatically a conversion the plan says needs a person",
+    edits: [{ file: "src/commander/commander.ts", find: "if (!plan.autoApprovable) throw", replace: "if (false) throw" }],
+    expect: { tests: [T("funding.test.ts", "asks a person above the automatic conversion limit")] },
+  },
+  {
+    id: "fund-when-replace-refused",
+    describe: "Allow FUND even where the replacement itself is refused (escalated, bank-detail change, statement credit)",
+    edits: [{ file: "src/commander/policy.ts", find: `if (candidates.includes("FUND") && blocked.some((b) => b.action === "REPLACE" && b !== fundFirst)) {`, replace: "if (false) {" }],
+    expect: { tests: [T("funding-policy.test.ts", "refuses FUND when the incident is with a person")] },
+  },
+  {
+    id: "fund-escalated-converts",
+    describe: "Convert for an escalated incident",
+    edits: [{ file: "src/funding/executor.ts", find: `if (obligation.status === "ESCALATED") throw new ObligationNotPayable(obligation.id, \`escalated (`, replace: `if (obligation.status === "ESCALATED" && (false as boolean)) throw new ObligationNotPayable(obligation.id, \`escalated (` }],
+    expect: { tests: [T("funding.test.ts", "converts nothing for an escalated incident")] },
+  },
+  {
+    id: "fund-balances-fail-open",
+    describe: "Treat unreadable balances as full wallets just before booking",
+    edits: [{ file: "src/funding/executor.ts", find: "} catch {\n      return null;", replace: "} catch {\n      return { USD: Number.MAX_SAFE_INTEGER, EUR: 0, GBP: Number.MAX_SAFE_INTEGER };" }],
+    expect: { tests: [T("funding.test.ts", "refuses when the balances cannot be read")] },
+  },
+  {
+    id: "fund-quote-reuse",
+    describe: "Book a quote more than once (the sandbox reports quotes as MULTI_USE)",
+    edits: [{ file: "src/funding/executor.ts", find: "if (this.ledger.quoteUsed(p.quoteId)) refuse(", replace: "if (false) refuse(" }],
+    expect: { tests: [T("funding.test.ts", "books a quote once")] },
+  },
+  {
+    id: "fund-recover-skips-lookup",
+    describe: "Resolve a conversion left in INTENT by sending again instead of looking its request_id up first",
+    edits: [{ file: "src/funding/executor.ts", find: `if (found) return this.settled("ADOPTED_AFTER_AMBIGUITY", this.adopt(row, this.checked(row, found), "recover_lookup"));`, replace: "" }],
+    expect: { attacks: [38], tests: [T("funding.test.ts", "survives being killed between the intent")] },
+  },
+  {
+    id: "fund-reused-request-id-unrecognised",
+    describe: "Stop recognising the sandbox's 'request_id used in the past' answer as a conversion that already exists",
+    edits: [{ file: "src/funding/executor.ts", find: `DuplicateBodySchema.safeParse(error.body).data?.source === "request_id"`, replace: "false" }],
+    expect: { tests: [T("funding.test.ts", "adopts the conversion Airwallex already holds")] },
+  },
+  {
+    id: "fund-expired-intent-kept",
+    describe: "Never release an intent whose quote expired with nothing at Airwallex",
+    edits: [{ file: "src/funding/executor.ts", find: "if (now > expiresAt + this.graceMs) return", replace: "if (false) return" }],
+    expect: { tests: [T("funding.test.ts", "releases an intent by itself once its quote expired")] },
+  },
+  {
+    id: "fund-adopt-mismatch",
+    describe: "Adopt whatever Airwallex holds under our request_id, whatever its terms",
+    edits: [{ file: "src/funding/executor.ts", find: "if (matches) return conversion;", replace: "if (matches || true) return conversion;" }],
+    expect: { tests: [T("funding.test.ts", "escalates, and adopts nothing")] },
+  },
+  {
+    id: "fund-book-on-broken-chain",
+    describe: "Book a conversion on a ledger that does not verify",
+    edits: [{ file: "src/funding/executor.ts", find: "if (!chain.ok) throw new ObligationNotPayable(p.obligationId, `ledger does not verify", replace: "if (!chain.ok && (false as boolean)) throw new ObligationNotPayable(p.obligationId, `ledger does not verify" }],
+    expect: { attacks: [39], tests: [T("ledger-verify.test.ts", "catches a settled conversion row deleted")] },
+  },
+  {
+    id: "chain-conversion-row-missing",
+    describe: "Stop noticing a conversion row deleted from the conversions table",
+    edits: [{ file: "src/ledger/ledger.ts", find: "if (!conversionIds.has(id)) return", replace: "if (false) return" }],
+    expect: { attacks: [39], tests: [T("ledger-verify.test.ts", "catches a settled conversion row deleted")] },
+  },
+  {
+    id: "chain-conversion-terms",
+    describe: "Stop comparing a conversion row with the FUNDING_INTENT that created it",
+    edits: [{ file: "src/ledger/ledger.ts", find: "if (mismatch) return { ok: false, brokenAt: null, reason: `conversion", replace: "if (false) return { ok: false, brokenAt: null, reason: `conversion" }],
+    expect: { tests: [T("ledger-verify.test.ts", "catches a conversion's sell amount edited")] },
+  },
+  {
+    id: "closer-skips-conversions",
+    describe: "Certify a funded invoice without reconciling its conversions",
+    edits: [{ file: "src/closer/closer.ts", find: "for (const row of conversions) funding.push(await this.reconcileFunding(row));", replace: "" }],
+    expect: { attacks: [40], tests: [T("funding.test.ts", "certifies version 3")] },
+  },
+  {
+    id: "closer-conversion-in-flight",
+    describe: "Stop naming a conversion that has not settled as a reason not to certify",
+    edits: [{ file: "src/closer/closer.ts", find: `if (row.state === "INTENT" || row.state === "BOOKED") return`, replace: "if (false) return" }],
+    expect: { tests: [T("funding.test.ts", "refuses to certify while the conversion has not settled")] },
+  },
   // ---- webhooks -----------------------------------------------------------------------------------------------------------
   {
     id: "webhook-signature",
     describe: "Skip the webhook signature check",
     edits: [{ file: "src/airwallex/webhook.ts", find: "if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {", replace: "if (false) {" }],
-    expect: { attacks: [25], tests: [T("airwallex.test.ts", "rejects a body that does not match its signature")] },
+    expect: { attacks: [25, 41], tests: [T("airwallex.test.ts", "rejects a body that does not match its signature")] },
   },
   {
     id: "webhook-window",
     describe: "Skip the five-minute timestamp window on a webhook",
     edits: [{ file: "src/airwallex/webhook.ts", find: "if (skew > (input.toleranceMs ?? DEFAULT_TOLERANCE_MS)) {", replace: "if (false) {" }],
-    expect: { attacks: [25], tests: [T("airwallex.test.ts", "rejects a correctly signed delivery replayed more than five minutes later")] },
+    expect: { attacks: [25, 42], tests: [T("airwallex.test.ts", "rejects a correctly signed delivery replayed more than five minutes later")] },
   },
   {
     id: "webhook-first-seen",
     describe: "Report every webhook event id as new",
-    edits: [
-      {
-        file: "src/ledger/ledger.ts",
-        find: ".run(event.id, event.name, event.transferId, event.createdAt, this.now().toISOString());\n    return result.changes > 0;",
-        replace: ".run(event.id, event.name, event.transferId, event.createdAt, this.now().toISOString());\n    return true;",
-      },
-    ],
+    edits: [{ file: "src/ledger/ledger.ts", find: "if (result.changes === 0) return false;", replace: "" }],
     expect: { attacks: [25], tests: [T("ledger.test.ts", "webhook")] },
   },
   {
     id: "webhook-dedupe-route",
-    describe: "Stop deduplicating redelivered webhooks in the API route",
-    edits: [{ file: "src/server/api.ts", find: "if (ledger.webhookEventSeen(event.id)) return json({ ok: true, duplicate: true });", replace: "" }],
-    expect: { tests: [T("api.test.ts", "re-reads the transfer on the first delivery and ignores a redelivery")] },
+    describe: "Stop deduplicating redelivered webhooks: the route's seen-check and the ledger's first-seen answer",
+    edits: [
+      { file: "src/server/webhook.ts", find: "if (ledger.webhookEventSeen(event.id)) return json({ ok: true, duplicate: true });", replace: "" },
+      { file: "src/ledger/ledger.ts", find: "if (result.changes === 0) return false;", replace: "" },
+    ],
+    expect: { attacks: [42], tests: [T("webhook.test.ts", "re-reads the transfer on the first delivery and ignores a redelivery")] },
   },
   {
     id: "webhook-swallows-failed-sync",
     describe: "Mark a webhook handled even when its sync failed",
     edits: [
       {
-        file: "src/server/api.ts",
+        file: "src/server/webhook.ts",
         find: `return json({ error: "SyncFailed", message: "the transfer could not be re-read; redeliver this event" }, 503);`,
         replace: "/* swallowed */",
       },
     ],
-    expect: { tests: [T("api.test.ts", "15. a failed sync is not swallowed by the dedupe")] },
+    expect: { tests: [T("webhook.test.ts", "15. a failed sync is not swallowed by the dedupe")] },
+  },
+  {
+    id: "listener-path",
+    describe: "Let the public webhook listener route any path to the handler",
+    edits: [{ file: "src/server/webhook-listener.ts", find: `if (path !== WEBHOOK_PATH) return refuse(404, "NotFound");`, replace: "" }],
+    expect: { attacks: [47], tests: [T("webhook.test.ts", "serves exactly one route")] },
+  },
+  {
+    id: "listener-method",
+    describe: "Let the public webhook listener take any method on the webhook path",
+    edits: [{ file: "src/server/webhook-listener.ts", find: `if (request.method !== "POST") return refuse(405, "MethodNotAllowed", { allow: "POST" });`, replace: "" }],
+    expect: { attacks: [47], tests: [T("webhook.test.ts", "serves exactly one route")] },
+  },
+  {
+    id: "listener-source-allowlist",
+    describe: "Ignore TESSERA_WEBHOOK_SOURCE_IPS on the public listener",
+    edits: [{ file: "src/server/webhook-listener.ts", find: `if (options.allowedSources && !options.allowedSources.has(request.headers.get("cf-connecting-ip") ?? "")) return refuse(403, "Forbidden");`, replace: "" }],
+    expect: { tests: [T("webhook.test.ts", "with a source allowlist")] },
+  },
+  {
+    id: "webhook-receipts-unchained",
+    describe: "Stop checking the webhook dedupe table against the chain in verifyChain",
+    edits: [{ file: "src/ledger/ledger.ts", find: "if (webhooks) return { ok: false, brokenAt: null, reason: webhooks };", replace: "" }],
+    expect: { attacks: [48], tests: [T("webhook.test.ts", "chains every taken delivery")] },
+  },
+  {
+    id: "reactions-unreplayed",
+    describe: "Stop replaying reactions and wakes in verifyChain",
+    edits: [{ file: "src/ledger/ledger.ts", find: "if (reactions) return { ok: false, brokenAt: null, reason: reactions };", replace: "" }],
+    expect: { attacks: [49], tests: [T("webhook.test.ts", "verifyChain refuses a reaction")] },
+  },
+  {
+    id: "reaction-twice",
+    describe: "React to a bank change again when a reaction already covers it (the pending filter and the in-transaction recheck)",
+    edits: [
+      { file: "src/server/reactions.ts", find: "reacted.has(event.seq) || ", replace: "" },
+      { file: "src/server/reactions.ts", find: "if (changes.some((c) => covered.has(c.statusSeq))) return null;", replace: "" },
+    ],
+    expect: { tests: [T("webhook.test.ts", "the sweep and a webhook behave the same")] },
+  },
+  {
+    id: "reaction-own-actions",
+    describe: "Treat Tessera's own transfers (created, not moved by the bank) as bank news",
+    edits: [{ file: "src/server/reactions.ts", find: "if (!p.success || p.data.from === null || !Object.hasOwn(REACTABLE_VIA, p.data.via)) continue;", replace: "if (!p.success) continue;" }],
+    expect: { tests: [T("webhook.test.ts", "the scripted agent is woken and replaces the payment")] },
+  },
+  {
+    id: "wake-any-reaction",
+    describe: "Wake an agent for every reaction, not only when the decision changed into something an agent can act on",
+    edits: [{ file: "src/server/reactions.ts", find: "const actionable = decisionChanged && !Object.hasOwn(QUIET, after.recommended)", replace: "const actionable = true || decisionChanged && !Object.hasOwn(QUIET, after.recommended)" }],
+    expect: { tests: [T("webhook.test.ts", "wakes one run scoped to the incident")] },
+  },
+  {
+    id: "wake-unscoped",
+    describe: "Give the woken agent a toolbox that is not scoped to its incident",
+    edits: [{ file: "src/server/wake.ts", find: "actor: agent.actor, acceptClientText: false, scope,", replace: "actor: agent.actor, acceptClientText: false," }],
+    expect: { tests: [T("webhook.test.ts", "wakes one run scoped to the incident")] },
+  },
+  {
+    id: "wake-single-flight",
+    describe: "Start a fresh wake for every request instead of joining the incident's open or running one",
+    edits: [{ file: "src/server/wake.ts", find: "if (slot) {", replace: "if (slot && (false as boolean)) {" }],
+    expect: { tests: [T("webhook.test.ts", "single flight per incident")] },
+  },
+  {
+    id: "wake-cap-incident",
+    describe: "Drop the per-incident cap on event-driven runs",
+    edits: [{ file: "src/server/wake.ts", find: "if (used.incident >= this.limits.perIncident) {", replace: "if (false as boolean) {" }],
+    expect: { tests: [T("webhook.test.ts", "caps runs per incident")] },
+  },
+  {
+    id: "wake-cap-global",
+    describe: "Drop the overall cap on event-driven runs",
+    edits: [{ file: "src/server/wake.ts", find: "if (used.all >= this.limits.global) {", replace: "if (false as boolean) {" }],
+    expect: { attacks: [46], tests: [T("webhook.test.ts", "caps runs across all incidents")] },
+  },
+  {
+    id: "wake-ignores-gate",
+    describe: "Start an event-driven run while another agent run holds the ledger",
+    edits: [{ file: "src/server/wake.ts", find: "while (!gate.tryAcquire()) {", replace: "while (false as boolean) {" }],
+    expect: { tests: [T("webhook.test.ts", "shares the one-run-at-a-time gate")] },
+  },
+  {
+    id: "wake-in-public-demo",
+    describe: "Let TESSERA_AGENT_ON_EVENT turn event-driven runs on in a public demo",
+    edits: [{ file: "src/server/runtime.ts", find: "    agentOnEvent = false;\n", replace: "" }],
+    expect: { tests: [T("webhook.test.ts", "never on in a public demo")] },
+  },
+  {
+    id: "seed-emits-events",
+    describe: "Deliver simulated webhooks while the offline demo seeds its history",
+    edits: [{ file: "src/airwallex/fake-webhooks.ts", find: "if (!this.route || this.quiet > 0) return;", replace: "if (!this.route) return;" }],
+    expect: { tests: [T("webhook.test.ts", "seeding the demo delivers nothing")] },
+  },
+  {
+    id: "wake-brief-reference-only",
+    describe: "Brief a scoped agent run with the incident's reference only, not the incidentId its tools take",
+    edits: [{ file: "src/server/agent-runs.ts", find: "Work incident ${incident.reference} (incidentId ${incident.id}) only.", replace: "Work incident ${incident.reference} only." }],
+    expect: { tests: [T("webhook.test.ts", "the brief names the incidentId the tools take")] },
   },
 ];

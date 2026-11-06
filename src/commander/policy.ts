@@ -1,6 +1,7 @@
 import { lookupFailure, type FailureClass, type ReplacePolicy } from "../domain/playbook";
+import type { ConversionState } from "../ledger/conversions";
 import type { Attempt, Method, Obligation } from "../ledger/ledger";
-import { formatMinor } from "../money";
+import { currencyExponent, formatMinor, fromMinor } from "../money";
 import type { ActionKind, Severity } from "./actions";
 import type { SupplierEvidence } from "./evidence";
 
@@ -16,6 +17,21 @@ export interface CommanderPolicy {
   maxAutoReplacements: number;
   /** How long a transfer may sit FAILED (awaiting cancellation) before a person is asked to look. */
   failedSlaMs: number;
+  /**
+   * Cash each wallet keeps, per currency (minor units). An automatic replacement must leave its wallet at or above it,
+   * and a conversion may not take the wallet it sells from below it. Absent = 0.
+   */
+  reserveFloorMinor: Record<string, number>;
+  /** Wallets the Commander may sell to fund a replacement, most preferred first. Anything else is never sold. */
+  fundingSources: readonly string[];
+  /** Largest conversion the Commander may book on its own, per currency bought (minor units). Absent = always a person. */
+  autoConvertLimitMinor: Record<string, number>;
+  /** Smallest conversion worth booking, per currency bought (minor units); Airwallex refuses below about USD 1. Default 100. */
+  minConversionMinor: Record<string, number>;
+  /** A quote is booked only while younger than this (and before Airwallex's own expiry); otherwise Tessera re-plans. */
+  maxQuoteAgeMs: number;
+  /** How far (basis points) a quote's sell amount may exceed the plan's before Tessera re-plans instead of booking it. */
+  maxRateDriftBps: number;
 }
 
 export const DEFAULT_POLICY: CommanderPolicy = {
@@ -24,7 +40,24 @@ export const DEFAULT_POLICY: CommanderPolicy = {
   paidHoldMs: 24 * 3600_000,
   maxAutoReplacements: 2,
   failedSlaMs: 30 * 60_000,
+  reserveFloorMinor: { USD: 100_000, EUR: 100_000, GBP: 100_000 },
+  fundingSources: ["USD", "GBP", "EUR"],
+  autoConvertLimitMinor: { USD: 25_000, EUR: 25_000, GBP: 25_000 },
+  minConversionMinor: { USD: 100, EUR: 100, GBP: 100 },
+  maxQuoteAgeMs: 5 * 60_000,
+  maxRateDriftBps: 50,
 };
+
+/** The conversion already recorded for the replacement of the latest attempt, if any (the newest one for it). */
+export interface FundingFacts {
+  forAttemptId: string;
+  state: ConversionState;
+  conversionId: string | null;
+  buyCurrency: string;
+  buyMinor: number;
+  sellCurrency: string;
+  sellMinor: number;
+}
 
 export interface IncidentFacts {
   obligation: Pick<Obligation, "id" | "amountMinor" | "currency" | "status" | "escalationReason">;
@@ -36,8 +69,14 @@ export interface IncidentFacts {
   failedObservedAt: string | null;
   /** Replacements already made under a POLICY (non-human) approval for this invoice. */
   automaticReplacements: number;
-  /** Null when the balance could not be read. */
-  walletAvailableMinor: number | null;
+  /** Available balance of every wallet, minor units by currency. Null when the balances could not be read (fails closed). */
+  wallets: Record<string, number> | null;
+  /**
+   * Indicative rates for funding the obligation's currency: units of each source currency one unit of it costs. Read only
+   * when a replacement would need funding; a missing or null entry is a rate that could not be read, so that source is not used.
+   */
+  fxRates: Record<string, number | null>;
+  funding: FundingFacts | null;
   evidence: SupplierEvidence | null;
   now: Date;
 }
@@ -50,6 +89,52 @@ export interface ReplacementAssessment {
   autoApprovable: boolean;
 }
 
+/** How a replacement measures against its wallet: what it needs, what may be spent, and what is missing. */
+export interface FundingNeed {
+  currency: string;
+  /** The replacement's amount plus its fee (the last attempt's fee: Tessera never hardcodes one). */
+  neededMinor: number;
+  feeMinor: number;
+  availableMinor: number;
+  floorMinor: number;
+  /** Missing to pay and keep the floor; zero or less when the wallet covers it. */
+  shortfallMinor: number;
+  /** What a conversion buys: the shortfall, rounded up to the smallest conversion. */
+  buyMinor: number;
+  /** The smallest conversion for this currency, so a reader can tell a rounded-up buy from the shortfall itself. */
+  minConversionMinor: number;
+}
+
+/** One wallet considered as a source, and why it can or cannot fund. */
+export interface FundingSourceCheck {
+  currency: string;
+  availableMinor: number;
+  floorMinor: number;
+  /** Indicative units of this currency per unit bought; null when it could not be read. */
+  rate: number | null;
+  /** Indicative cost of the buy in this currency, rounded up; null without a rate. */
+  sellMinor: number | null;
+  ok: boolean;
+}
+
+/**
+ * A conversion computed by code: which wallet to sell, what to buy, and whether the Commander may book it on its own.
+ * The sell amount is indicative; the booking uses a fresh quote and is refused if the quote drifts from it.
+ */
+export interface FundingPlan extends FundingNeed {
+  forAttemptId: string;
+  feasible: boolean;
+  sellCurrency: string | null;
+  sellMinor: number | null;
+  rate: number | null;
+  sources: FundingSourceCheck[];
+  /** Largest automatic conversion for this currency; null means a person always approves. */
+  limitMinor: number | null;
+  autoApprovable: boolean;
+  /** The arithmetic in plain English. */
+  summary: string;
+}
+
 export interface Decision {
   recommended: ActionKind;
   /** Actions that are safe to take now. `recommended` is always one of them. */
@@ -60,10 +145,83 @@ export interface Decision {
   severity: Severity;
   recheckAt: string | null;
   replacement: ReplacementAssessment | null;
+  /** Set when a replacement needs another wallet's money first: the plan, feasible or not. */
+  funding: FundingPlan | null;
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { ROUTINE: 0, ATTENTION: 1, CRITICAL: 2 };
 const HOUR_MS = 3600_000;
+const DEFAULT_MIN_CONVERSION_MINOR = 100;
+
+/**
+ * What replacing `replaced` would need from its wallet. Shared by the Commander (to plan) and the funding executor (to
+ * re-check against balances read just before booking), so both measure the same thing.
+ */
+export function fundingNeed(replaced: Pick<Attempt, "amountMinor" | "feeMinor" | "currency">, wallets: Record<string, number>, policy: CommanderPolicy): FundingNeed {
+  const currency = replaced.currency;
+  const feeMinor = replaced.feeMinor ?? 0;
+  const neededMinor = replaced.amountMinor + feeMinor;
+  const availableMinor = wallets[currency] ?? 0;
+  const floorMinor = policy.reserveFloorMinor[currency] ?? 0;
+  const shortfallMinor = neededMinor + floorMinor - availableMinor;
+  const minConversionMinor = policy.minConversionMinor[currency] ?? DEFAULT_MIN_CONVERSION_MINOR;
+  return {
+    currency, neededMinor, feeMinor, availableMinor, floorMinor, shortfallMinor,
+    buyMinor: Math.max(shortfallMinor, minConversionMinor), minConversionMinor,
+  };
+}
+
+/** Minor units of `sellCurrency` that `buyMinor` of `buyCurrency` costs at `rate` (sell per buy), rounded up: planning errs high. */
+export function sellMinorFor(buyMinor: number, buyCurrency: string, sellCurrency: string, rate: number): number {
+  // The epsilon keeps a product like 3580.0000000001 (float noise) from rounding up a whole cent.
+  return Math.ceil(fromMinor(buyMinor, buyCurrency) * rate * 10 ** currencyExponent(sellCurrency) - 1e-6);
+}
+
+/** Plans the conversion for `need`: the first source in policy order whose wallet can pay it and still keep its floor. */
+export function planFunding(need: FundingNeed, forAttemptId: string, facts: Pick<IncidentFacts, "wallets" | "fxRates">, policy: CommanderPolicy, replacementAuto: boolean): FundingPlan {
+  const wallets = facts.wallets ?? {};
+  const money = (minor: number, currency: string) => formatMinor(minor, currency);
+  const sources: FundingSourceCheck[] = policy.fundingSources
+    .filter((currency) => currency !== need.currency)
+    .map((currency) => {
+      const rate = facts.fxRates[currency] ?? null;
+      const availableMinor = wallets[currency] ?? 0;
+      const floorMinor = policy.reserveFloorMinor[currency] ?? 0;
+      const sellMinor = rate === null ? null : sellMinorFor(need.buyMinor, need.currency, currency, rate);
+      return { currency, availableMinor, floorMinor, rate, sellMinor, ok: sellMinor !== null && availableMinor - sellMinor >= floorMinor };
+    });
+  const chosen = sources.find((s) => s.ok) ?? null;
+  const limit = policy.autoConvertLimitMinor[need.currency];
+  const autoApprovable = chosen !== null && replacementAuto && limit !== undefined && need.buyMinor <= limit;
+
+  const spendable = Math.max(need.availableMinor - need.floorMinor, 0);
+  const lines = [
+    `The ${need.currency} wallet holds ${money(need.availableMinor, need.currency)} and keeps a ${money(need.floorMinor, need.currency)} reserve, so ${money(spendable, need.currency)} can be spent; the replacement needs ${money(need.neededMinor, need.currency)} (${money(need.neededMinor - need.feeMinor, need.currency)} plus the ${money(need.feeMinor, need.currency)} fee the last attempt cost).`,
+    `It is ${money(need.shortfallMinor, need.currency)} short${need.buyMinor > need.shortfallMinor ? `, rounded up to the smallest conversion, ${money(need.buyMinor, need.currency)}` : ""}.`,
+  ];
+  const describe = (s: FundingSourceCheck): string =>
+    s.sellMinor === null
+      ? `${s.currency}: no rate could be read`
+      : `${s.currency} holds ${money(s.availableMinor, s.currency)} and keeps ${money(s.floorMinor, s.currency)}, and buying ${money(need.buyMinor, need.currency)} costs about ${money(s.sellMinor, s.currency)}`;
+  if (chosen) {
+    lines.push(`Plan: buy ${money(need.buyMinor, need.currency)} with about ${money(chosen.sellMinor!, chosen.currency)} from the ${chosen.currency} wallet (${describe(chosen)}).`);
+    lines.push(
+      autoApprovable
+        ? `That is within the ${money(limit!, need.currency)} automatic conversion limit.`
+        : limit === undefined
+          ? `There is no automatic conversion limit for ${need.currency}, so a person approves the quote.`
+          : need.buyMinor > limit
+            ? `That is above the ${money(limit, need.currency)} automatic conversion limit, so a person approves the quote.`
+            : "The replacement itself needs a person's approval, so the conversion does too.",
+    );
+  } else {
+    lines.push(sources.length === 0 ? "No other wallet is allowed to fund it." : `No wallet can fund it and keep its own reserve: ${sources.map(describe).join("; ")}.`);
+  }
+  return {
+    ...need, forAttemptId, feasible: chosen !== null, sellCurrency: chosen?.currency ?? null, sellMinor: chosen?.sellMinor ?? null,
+    rate: chosen?.rate ?? null, sources, limitMinor: limit ?? null, autoApprovable, summary: lines.join(" "),
+  };
+}
 
 export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_POLICY): Decision {
   const { obligation, evidence, now } = facts;
@@ -75,6 +233,9 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
   let severity: Severity = "ROUTINE";
   let recheckAt: string | null = null;
   let replacement: ReplacementAssessment | null = null;
+  let funding: FundingPlan | null = null;
+  /** The one refusal of REPLACE that funding answers ("fund it first"); any other refusal of REPLACE also refuses FUND. */
+  let fundFirst: Decision["blocked"][number] | null = null;
   let forced: ActionKind | null = null;
   let fromState: ActionKind = "NONE";
 
@@ -83,10 +244,18 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
   };
   const refuse = (action: ActionKind, reason: string) => blocked.push({ action, reason });
   const finish = (): Decision => {
+    // Money is converted only for a replacement the code would otherwise make: an escalation, a bank-detail change or any
+    // other refusal of REPLACE refuses FUND too, whatever the wallets say.
+    if (candidates.includes("FUND") && blocked.some((b) => b.action === "REPLACE" && b !== fundFirst)) {
+      refuse("FUND", "The replacement itself is not allowed, so there is nothing to fund.");
+      funding = null;
+      if (forced === null && fromState === "FUND") forced = "ESCALATE";
+      candidates.push("ESCALATE");
+    }
     const recommended = forced ?? fromState;
     const refused = new Set(blocked.map((b) => b.action));
     const allowed = [...new Set([recommended, ...candidates])].filter((a) => a === "NONE" || !refused.has(a));
-    return { recommended, allowed, blocked, reasons, severity, recheckAt, replacement };
+    return { recommended, allowed, blocked, reasons, severity, recheckAt, replacement, funding };
   };
 
   if (obligation.status === "CLOSED") {
@@ -234,35 +403,75 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         break;
       }
 
-      // A replacement pays its own fee; the previous attempt's fee is the best estimate of it.
-      const neededMinor = latest.amountMinor + (latest.feeMinor ?? 0);
+      // A replacement pays its own fee; the previous attempt's fee is the best estimate of it (`fundingNeed`).
       const limit = policy.autoReplaceLimitMinor[obligation.currency];
+      const withinLimit = limit !== undefined && latest.amountMinor <= limit;
+      const conversion = facts.funding?.forAttemptId === latest.id ? facts.funding : null;
+      const bought = conversion
+        ? `${formatMinor(conversion.buyMinor, conversion.buyCurrency)} for ${formatMinor(conversion.sellMinor, conversion.sellCurrency)}`
+        : "";
       if (facts.automaticReplacements >= policy.maxAutoReplacements) {
         fromState = "ESCALATE";
         candidates.push("ESCALATE", "REPLACE");
         raise("ATTENTION");
         reasons.push(`This invoice has already been replaced automatically ${facts.automaticReplacements} times. Repeated failures need a person's eyes before paying again.`);
-      } else if (facts.walletAvailableMinor === null) {
+      } else if (facts.wallets === null) {
         fromState = "REPLACE";
         candidates.push("REPLACE", "ESCALATE");
         raise("ATTENTION");
-        reasons.push("The wallet balance could not be read, so the replacement cannot be approved automatically. A person must confirm the funds.");
-      } else if (facts.walletAvailableMinor < neededMinor) {
-        fromState = "ESCALATE";
-        candidates.push("ESCALATE");
+        reasons.push("The wallet balances could not be read, so the replacement cannot be approved automatically. A person must confirm the funds.");
+      } else if (conversion && (conversion.state === "INTENT" || conversion.state === "BOOKED")) {
+        fromState = "WAIT";
+        candidates.push("WAIT", "ESCALATE");
         raise("ATTENTION");
-        reasons.push(`The wallet holds ${formatMinor(facts.walletAvailableMinor, obligation.currency)} but a replacement needs ${formatMinor(neededMinor, obligation.currency)}. Top up first.`);
-        refuse("REPLACE", "The wallet balance is too low.");
-      } else if (limit !== undefined && latest.amountMinor <= limit) {
-        fromState = "REPLACE";
-        candidates.push("REPLACE", "ESCALATE");
-        replacement.autoApprovable = true;
-        reasons.push("A temporary fault: the original is cancelled and the money is back in the wallet. A replacement is within the automatic limit.");
+        recheckAt = new Date(now.getTime() + 60_000).toISOString();
+        reasons.push(
+          conversion.state === "INTENT"
+            ? `A conversion to fund this replacement (${bought}) is recorded but its outcome is unknown. Tessera looks it up by its request ID before anything else.`
+            : `The conversion that funds this replacement (${bought}) is booked but has not settled, so the money is not in the wallet yet.`,
+        );
+        refuse("REPLACE", "The conversion that funds it has not settled yet.");
+        refuse("FUND", "This replacement already has a conversion; Tessera books one per replacement.");
       } else {
-        fromState = "REPLACE";
-        candidates.push("REPLACE", "ESCALATE");
-        raise("ATTENTION");
-        reasons.push("A replacement is allowed but exceeds the automatic limit, so a person must approve it.");
+        const need = fundingNeed(latest, facts.wallets, policy);
+        const fundedBy = conversion?.state === "SETTLED" ? ` It was funded by conversion ${conversion.conversionId ?? "(no id)"}: ${bought}.` : "";
+        if (need.shortfallMinor <= 0 && withinLimit) {
+          fromState = "REPLACE";
+          candidates.push("REPLACE", "ESCALATE");
+          replacement.autoApprovable = true;
+          reasons.push(`A temporary fault: the original is cancelled and the money is back in the wallet. A replacement is within the automatic limit.${fundedBy}`);
+        } else if (need.shortfallMinor <= 0) {
+          fromState = "REPLACE";
+          candidates.push("REPLACE", "ESCALATE");
+          raise("ATTENTION");
+          reasons.push(`A replacement is allowed but exceeds the automatic limit, so a person must approve it.${fundedBy}`);
+        } else if (conversion?.state === "SETTLED") {
+          fromState = "ESCALATE";
+          candidates.push("ESCALATE");
+          raise("ATTENTION");
+          reasons.push(
+            `This replacement was already funded once (${bought}), yet the ${need.currency} wallet holds ${formatMinor(need.availableMinor, need.currency)}, keeps ${formatMinor(need.floorMinor, need.currency)} and the replacement needs ${formatMinor(need.neededMinor, need.currency)}. Tessera books one conversion per replacement, so a person must look.`,
+          );
+          refuse("REPLACE", "The wallet balance is too low.");
+          refuse("FUND", "This replacement already had its conversion; Tessera books one per replacement.");
+        } else {
+          const plan = planFunding(need, latest.id, facts, policy, withinLimit);
+          funding = plan;
+          reasons.push(plan.summary);
+          if (plan.feasible) {
+            fromState = "FUND";
+            candidates.push("FUND", "ESCALATE");
+            if (!plan.autoApprovable) raise("ATTENTION");
+            fundFirst = { action: "REPLACE", reason: `The ${need.currency} wallet is ${formatMinor(need.shortfallMinor, need.currency)} short; fund it first.` };
+            blocked.push(fundFirst);
+          } else {
+            fromState = "ESCALATE";
+            candidates.push("ESCALATE");
+            raise("ATTENTION");
+            refuse("REPLACE", "The wallet balance is too low, and no other wallet can fund it.");
+            refuse("FUND", "No wallet can fund it and keep its own reserve.");
+          }
+        }
       }
       break;
     }

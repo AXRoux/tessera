@@ -2,7 +2,6 @@ import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { WRITTEN_NOTE_MIN_CHARS } from "../approval/approval";
 import { AwxHttpError } from "../airwallex/types";
-import { verifyWebhook } from "../airwallex/webhook";
 import { sha256Hex } from "../canonical";
 import { createToolbox } from "../agent/toolbox";
 import { ADVERSARY_SYSTEM, adversaryTask, COMMANDER_SYSTEM, runAgent, type AgentModel } from "../agent/loop";
@@ -21,13 +20,14 @@ import {
 import {
   ApprovalRejected,
   AutoReplacementRefused,
+  DuplicateConversionError,
   DuplicateLockError,
+  FundingRefused,
   LedgerMismatchError,
   NotClosable,
   ObligationNotPayable,
   ReplacementDenied,
   StateConflict,
-  WebhookRejected,
 } from "../errors";
 import { seedAcme } from "../demo/scenario";
 import type { PayoutGateway } from "../gateway/gateway";
@@ -35,12 +35,21 @@ import type { Ledger, Obligation } from "../ledger/ledger";
 import { toMinor } from "../money";
 import { EmlNotPlainText, parseEml } from "./eml";
 import { computeMetrics } from "./metrics";
-import { attentionOf, lastAgentAction } from "./attention";
-import type { AgentStreamEvent, Health, IncidentSummary, IncidentView, SeedResult } from "./wire";
+import { attentionOf, lastAgentAction, lastReaction } from "./attention";
+import { AgentGate, runLimits, scopedTask } from "./agent-runs";
+import type { Reactor } from "./reactions";
+import type { AgentStreamEvent, FundingQuote, FundingResultWire, Health, IncidentSummary, IncidentView, SeedResult, Wallets } from "./wire";
 
 /** Sandbox or offline only: moves a transfer through Airwallex's simulator (or the fake's). Kept behind one interface so it can be removed. */
 export interface Simulator {
   advance(transferId: string, status: string, failureType?: string): Promise<void>;
+  /** Offline only: runs `fn` without the simulated webhook deliveries (seeding the demo writes history, not news). */
+  withoutEvents?<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Sets a wallet's available balance (major units) before demo incidents are seeded: the fake's balance offline, spot
+   * conversions against USD on the sandbox (`src/demo/stage-wallet.ts`). Absent: the funding incident cannot be staged.
+   */
+  stageWallet?(currency: string, availableMajor: number): Promise<void>;
 }
 
 /** The model that drives the console's agent runs. Null or absent means the run endpoint answers 503. */
@@ -67,14 +76,20 @@ export interface ApiDeps {
   /** Identity stamped on every human approval. Authentication of a person happens upstream of this API. */
   operator: string;
   beneficiaryId: string;
+  /** The EUR (SWIFT) supplier the funding demo incident pays. Absent or null: seeding answers 409 until `bun run setup` creates it. */
+  eurBeneficiaryId?: string | null;
   paidHoldMs: number;
   /** Largest obligation this sandbox API will create, in major units. */
   maxAmount?: number;
   agent?: AgentDeps | null;
   /** Airwallex is the in-process simulator: no money, no network. */
   offline?: boolean;
-  /** Endpoint secret for POST /api/webhooks/airwallex. Absent means the route answers 404. */
-  webhookSecret?: string | null;
+  /** Whether the webhook listener is on (AWX_WEBHOOK_SECRET set), and whether a verified bank event may wake an agent. */
+  webhooks?: { listening: boolean; agentOnEvent: boolean };
+  /** Shared with the event-driven wakes (src/server/wake.ts), so a console run and a woken one never overlap. */
+  agentGate?: AgentGate;
+  /** Reassesses incidents after bank-side changes (src/server/reactions.ts); used here to mark demo seeding as history. */
+  reactor?: Pick<Reactor, "react">;
   /** Offline demo only: throw the in-memory state away and start empty. Absent means the route answers 403. */
   reset?: () => Promise<void>;
 }
@@ -129,11 +144,19 @@ const InboxBody = z.object({
   statementText: z.string().max(20_000).optional(),
 });
 const SimulateBody = z.object({ status: z.enum(["SENT", "PAID", "FAILED"]), failureType: z.string().regex(/^[A-Z0-9_]+$/).optional() });
+/** Step two of a person's funding approval: the quote they reviewed, echoed back with its fingerprint. No amount, no rate. */
+const FundApproveBody = z.object({
+  note: WrittenNote,
+  evidenceHash: z.string().regex(/^[0-9a-f]{64}$/),
+  quoteId: z.string().min(1).max(64),
+  fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+});
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
 const KNOWN: Array<[new (...args: never[]) => Error, number]> = [
   [DuplicateLockError, 409],
+  [DuplicateConversionError, 409],
   [ReplacementDenied, 409],
   [AutoReplacementRefused, 409],
   [ApprovalRejected, 409],
@@ -142,18 +165,20 @@ const KNOWN: Array<[new (...args: never[]) => Error, number]> = [
   [StateConflict, 409],
 ];
 
-/** Refusals of a money-moving request. Raised on /replace or /approve, each is written to the ledger as PAYMENT_REFUSED. */
+/**
+ * Refusals of a money-moving request. Raised on /replace, /approve, /fund or /fund/approve, each is written to the
+ * ledger as PAYMENT_REFUSED.
+ */
 const PAYMENT_REFUSALS: Array<new (...args: never[]) => Error> = [
-  AutoReplacementRefused, ReplacementDenied, DuplicateLockError, ApprovalRejected, ObligationNotPayable,
+  AutoReplacementRefused, ReplacementDenied, DuplicateLockError, ApprovalRejected, ObligationNotPayable, FundingRefused, DuplicateConversionError,
 ];
-
-const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
 function problem(error: unknown): Response {
   if (error instanceof NotClosable) return json({ error: error.name, message: error.message, blockers: error.blockers }, 409);
   if (error instanceof AutoReplacementRefused) {
     return json({ error: error.name, message: error.message, reasons: error.decision.reasons }, 409);
   }
+  if (error instanceof FundingRefused) return json({ error: error.name, message: error.message, reasons: error.reasons }, 409);
   if (error instanceof ApprovalRejected) return json({ error: error.name, message: error.message, code: error.reason }, 409);
   if (error instanceof z.ZodError) return json({ error: "BadRequest", message: z.prettifyError(error) }, 400);
   if (error instanceof EmlNotPlainText) return json({ error: "BadRequest", message: error.message }, 400);
@@ -193,6 +218,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       latest: latest ? { seq: latest.seq, state: latest.state, awxStatus: latest.awxStatus, failureCode: latest.failureCode } : null,
       lastAgentAction: lastAgentAction(events),
       attention: attentionOf(o, latest, events),
+      lastReaction: lastReaction(events),
     };
   };
 
@@ -220,6 +246,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       evidenceHash: assessment?.evidenceHash ?? null,
       assessmentError,
       inbox: ledger.inboxMessages(id).map((m) => ({ id: m.id, from: m.from, receivedAt: m.receivedAt, read: read.has(m.id) })),
+      conversions: ledger.conversionsFor(id),
       certificate: stored ? SignedCertificateSchema.parse(JSON.parse(stored)) : null,
       chain: { ok: chain.ok, brokenAt: chain.ok ? null : chain.brokenAt },
       paidHoldMs: deps.paidHoldMs,
@@ -235,22 +262,21 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
   ) => ledger.tx(() => ledger.append(obligationId, "EVIDENCE_RECORDED", { evidence, source, enteredBy: deps.operator, message, messageId }));
 
   /** A typed refusal of a money-moving request goes on the record before the operator sees it, then propagates. */
-  const onRefusal = (obligationId: string, route: "replace" | "approve") => (error: unknown): never => {
+  const onRefusal = (obligationId: string, route: "replace" | "approve" | "fund" | "fund/quote" | "fund/approve") => (error: unknown): never => {
     if (error instanceof Error && PAYMENT_REFUSALS.some((type) => error instanceof type)) {
       ledger.append(obligationId, "PAYMENT_REFUSED", { by: deps.operator, route, error: error.name, message: error.message.slice(0, 300) });
     }
     throw error;
   };
 
-  let agentRunning = false;
+  const gate = deps.agentGate ?? new AgentGate();
 
   /** Streams an agent run as server-sent events. One run at a time: two agents on one ledger help nobody. */
   async function startAgentRun(request: Request): Promise<Response> {
     const agent = deps.agent;
     if (!agent) return json({ error: "ModelUnavailable", message: "no model is configured on this server" }, 503);
-    if (agentRunning) return json({ error: "Conflict", message: "an agent run is already in progress" }, 409);
-    // Claimed before the first await: two requests arriving together must not both pass the check above.
-    agentRunning = true;
+    // Claimed before the first await: two requests arriving together must not both pass. Shared with event-driven wakes.
+    if (!gate.tryAcquire()) return json({ error: "Conflict", message: "an agent run is already in progress" }, 409);
     let streaming = false;
     try {
       const response = await openAgentStream(request, agent);
@@ -258,7 +284,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       streaming = response.headers.get("content-type") === "text/event-stream";
       return response;
     } finally {
-      if (!streaming) agentRunning = false;
+      if (!streaming) gate.release();
     }
   }
 
@@ -272,16 +298,14 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
     const actor = adversary ? "agent:adversary" : agent.actor;
     let scope: Set<string> | null = null;
     let scopeLabel: string | null = null;
+    let scoped: Obligation | null = null;
     if (input.incidentId) {
-      const target = ledger.getObligation(input.incidentId);
-      if (!target) return json({ error: "NotFound", message: "no such obligation" }, 404);
-      scope = new Set([target.id]);
-      scopeLabel = target.reference;
+      scoped = ledger.getObligation(input.incidentId);
+      if (!scoped) return json({ error: "NotFound", message: "no such obligation" }, 404);
+      scope = new Set([scoped.id]);
+      scopeLabel = scoped.reference;
     }
-    // Room for every open incident in scope: about three model turns and six tool calls each.
-    const open = ledger.listObligations().filter((o) => o.status !== "CLOSED" && (!scope || scope.has(o.id))).length;
-    const maxSteps = adversary ? 24 : (agent.maxSteps ?? clamp(4 + 3 * open, 16, 48));
-    const maxCalls = clamp(10 + 6 * open, 40, 300);
+    const { maxSteps, maxCalls } = runLimits(ledger, scope, { adversary, ...(agent.maxSteps !== undefined ? { fixedSteps: agent.maxSteps } : {}) });
 
     const abort = new AbortController();
     const encoder = new TextEncoder();
@@ -313,8 +337,8 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
           });
           const task = adversary
             ? adversaryTask(scopeLabel)
-            : scopeLabel
-              ? `Work incident ${scopeLabel} only. Do not touch any other incident. Report in one or two sentences.`
+            : scoped
+              ? scopedTask(scoped)
               : "Work every open incident and report.";
           const run = await runAgent({
             model: agent.model, toolbox, system: adversary ? ADVERSARY_SYSTEM : COMMANDER_SYSTEM, task,
@@ -344,7 +368,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
           send({ type: "error", message: error instanceof Error ? error.message.slice(0, 200) : "the agent run failed" });
         } finally {
           clearInterval(keepalive);
-          agentRunning = false;
+          gate.release();
           try {
             controller.close();
           } catch {
@@ -362,56 +386,19 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
     });
   }
 
-  /**
-   * Airwallex webhooks are hints: verified by signature, deduplicated by event id, then the transfer is re-read from
-   * Airwallex like any sync. A delivery counts as handled only after its sync succeeded; if the sync fails the event
-   * is not recorded and the answer is 503, so Airwallex redelivers it instead of the dedupe swallowing it. (A transfer
-   * that mismatches the ledger is escalated in the ledger by the sync itself, so it is handled, not retried.) The
-   * body is bounded before it is read: the content-length is checked first, and the server caps the rest.
-   */
-  async function webhook(request: Request): Promise<Response> {
-    if (!deps.webhookSecret) return json({ error: "NotFound", message: "no such route" }, 404);
-    if (request.method !== "POST") return json({ error: "MethodNotAllowed", message: "unsupported method" }, 405);
-    const declared = Number(request.headers.get("content-length") ?? 0);
-    if (declared > MAX_BODY_BYTES) throw new PayloadTooLarge();
-    const rawBody = await request.text();
-    if (rawBody.length > MAX_BODY_BYTES) throw new PayloadTooLarge();
-    let event;
-    try {
-      event = verifyWebhook({
-        secret: deps.webhookSecret, timestamp: request.headers.get("x-timestamp"), signature: request.headers.get("x-signature"), rawBody,
-      });
-    } catch (error) {
-      if (!(error instanceof WebhookRejected)) throw error;
-      return json({ error: error.name, message: error.message }, error.reason === "malformed" ? 400 : 401);
-    }
-    if (ledger.webhookEventSeen(event.id)) return json({ ok: true, duplicate: true });
-    if (event.transferId) {
-      try {
-        await gateway.syncTransfer(event.transferId);
-      } catch (error) {
-        if (!(error instanceof LedgerMismatchError)) {
-          console.error("webhook sync failed; leaving the event retryable", error instanceof Error ? error.message : error);
-          return json({ error: "SyncFailed", message: "the transfer could not be re-read; redeliver this event" }, 503);
-        }
-      }
-    }
-    ledger.recordWebhookEvent(event);
-    return json({ ok: true, duplicate: false });
-  }
-
   return async (request) => {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
-      // Authenticated by Airwallex's signature, not the operator token: Airwallex cannot hold our token.
-      if (path === "/api/webhooks/airwallex") return await webhook(request);
+      // Airwallex's webhooks are not served here: they reach the webhook-only listener (src/server/webhook-listener.ts),
+      // so a tunnel never needs to expose this port.
       if (!authorized(request)) return json({ error: "Unauthorized", message: "missing or invalid token" }, 401);
 
       if (request.method === "GET" && path === "/api/health") {
         const health: Health = {
           ok: true, model: deps.model !== null, sandbox: deps.simulator !== null, offline: deps.offline ?? false,
-          webhooks: Boolean(deps.webhookSecret), operator: deps.operator, agent: deps.agent?.kind ?? null, canReset: deps.reset !== undefined,
+          webhooks: deps.webhooks?.listening ?? false, agentOnEvent: deps.webhooks?.agentOnEvent ?? false,
+          operator: deps.operator, agent: deps.agent?.kind ?? null, canReset: deps.reset !== undefined,
         };
         return json(health);
       }
@@ -419,7 +406,15 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       if (request.method === "POST" && path === "/api/demo/seed") {
         // Demo incidents move simulated or sandbox money only; against production there is no simulator and no seeding.
         if (!deps.simulator) return json({ error: "Forbidden", message: "demo incidents can be seeded only offline or against the Airwallex sandbox" }, 403);
-        const seeded = await seedAcme({ ledger, gateway, commander, simulator: deps.simulator, approver: deps.operator }, deps.beneficiaryId);
+        const simulator = deps.simulator;
+        const eur = deps.eurBeneficiaryId;
+        if (!eur) return json({ error: "Conflict", message: "no EUR beneficiary for the funding incident: run `bun run setup` to create spike-eu-supplier" }, 409);
+        const seed = () => seedAcme({ ledger, gateway, commander, simulator, approver: deps.operator }, { USD: deps.beneficiaryId, EUR: eur });
+        // Offline, seeding writes seven incidents' history at once; it is not news for the event-driven agent. (Against the
+        // sandbox Airwallex sends its real webhooks regardless, and they are handled like any other.)
+        const seeded = await (simulator.withoutEvents ? simulator.withoutEvents(seed) : seed());
+        // Their transfer changes are recorded as reacted to, so the sweep does not later mistake them for news.
+        await deps.reactor?.react({ source: "setup" });
         const result: SeedResult = { seeded: seeded.map(({ id, reference, expected }) => ({ id, reference, expected })) };
         return json(result, 201);
       }
@@ -430,6 +425,20 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         return json({ ok: true });
       }
       if (request.method === "POST" && path === "/api/agent/run") return await startAgentRun(request);
+      if (request.method === "GET" && path === "/api/wallets") {
+        const read = await commander.readWallets();
+        const { reserveFloorMinor, fundingSources, autoConvertLimitMinor } = commander.policy;
+        const wallets: Wallets = {
+          readable: read !== null,
+          wallets: Object.entries(read ?? {})
+            .filter(([currency, availableMinor]) => availableMinor !== 0 || currency in reserveFloorMinor)
+            .map(([currency, availableMinor]) => ({ currency, availableMinor, floorMinor: reserveFloorMinor[currency] ?? 0, fundingSource: fundingSources.includes(currency) }))
+            .sort((a, b) => a.currency.localeCompare(b.currency)),
+          fundingSources: [...fundingSources],
+          autoConvertLimitMinor,
+        };
+        return json(wallets);
+      }
       if (request.method === "GET" && path === "/api/obligations") {
         return json({ items: ledger.listObligations().map(summary).toReversed() });
       }
@@ -495,6 +504,27 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
             .then((approval) => gateway.submit(approval))
             .catch(onRefusal(id, "approve"));
           return json({ outcome: result.outcome, attemptId: result.attempt.id }, 201);
+        }
+        case "fund": {
+          const { result, replans } = await commander.fundAutomatically(id, effectiveEvidence(ledger.events(id), ledger.requireObligation(id).amountMinor)?.evidence ?? null).catch(onRefusal(id, "fund"));
+          const funded: FundingResultWire = { outcome: result.outcome, conversion: result.conversion, walletsAfter: result.walletsAfter, replans };
+          return json(funded, 201);
+        }
+        case "fund/quote": {
+          const { plan, ...quote } = await commander.quoteForReview(id, effectiveEvidence(ledger.events(id), ledger.requireObligation(id).amountMinor)?.evidence ?? null).catch(onRefusal(id, "fund/quote"));
+          const review: FundingQuote = { ...quote, plan };
+          return json(review, 201);
+        }
+        case "fund/approve": {
+          const input = await body(request, FundApproveBody);
+          const result = await commander
+            .approveFunding({
+              obligationId: id, approver: deps.operator, note: input.note, evidenceHash: input.evidenceHash, quoteId: input.quoteId,
+              fingerprint: input.fingerprint, evidence: effectiveEvidence(ledger.events(id), ledger.requireObligation(id).amountMinor)?.evidence ?? null,
+            })
+            .catch(onRefusal(id, "fund/approve"));
+          const funded: FundingResultWire = { outcome: result.outcome, conversion: result.conversion, walletsAfter: result.walletsAfter, replans: [] };
+          return json(funded, 201);
         }
         case "escalation/resolve": {
           const input = await body(request, NoteBody);

@@ -20,6 +20,7 @@
     "doctor": "bun run scripts/doctor.ts",
     "mutate": "bun run scripts/mutate.ts",
     "webhook:ping": "bun run scripts/webhook-ping.ts",
+    "webhook:register": "bun run scripts/webhook-register.ts",
     "scale": "bun run scripts/scale.ts",
     "smoke:offline": "bun run scripts/offline-smoke.ts"
   },

@@ -3,19 +3,30 @@ import {
   AwxHttpError,
   AwxNetworkError,
   BalanceListSchema,
+  ConversionListSchema,
+  ConversionSchema,
   FinancialTransactionListSchema,
+  FxQuoteSchema,
+  FxRateSchema,
   TransferListSchema,
   TransferSchema,
   type Beneficiary,
   type BeneficiaryApi,
+  type Conversion,
+  type CreateConversionRequest,
+  type CreateQuoteRequest,
   type CreateTransferRequest,
   type FinancialTransaction,
   type BalanceApi,
+  type FxApi,
+  type FxQuote,
+  type FxRate,
   type NewEuBeneficiary,
   type NewUsBeneficiary,
   type PayoutApi,
   type ReconciliationApi,
   type Transfer,
+  type WalletBalance,
 } from "./types";
 
 export interface ClientOptions {
@@ -35,6 +46,17 @@ const ErrorBodySchema = z.looseObject({ code: z.string().optional(), message: z.
 const BeneficiarySchema = z.looseObject({ id: z.string(), nickname: z.string().nullish() });
 const BeneficiaryListSchema = z.looseObject({ items: z.array(BeneficiarySchema) });
 const TOKEN_TTL_MS = 25 * 60_000; // tokens last 30 minutes
+const WebhookSubscriptionSchema = z.looseObject({
+  id: z.string(),
+  url: z.string(),
+  events: z.array(z.string()),
+  version: z.string(),
+  secret: z.string().optional(),
+});
+const WebhookListSchema = z.looseObject({ items: z.array(WebhookSubscriptionSchema), page_after: z.string().nullish() });
+
+/** An Airwallex webhook subscription. `secret` signs every delivery to `url`; never log it. */
+export type WebhookSubscription = z.infer<typeof WebhookSubscriptionSchema>;
 const MAX_RETRY_WAIT_MS = 30_000;
 /** Stops a cursor loop that never ends (a server bug), rather than paging forever. */
 const MAX_PAGES = 500;
@@ -48,7 +70,7 @@ function parseRetryAfter(header: string | null, now: number): number | undefined
   return Number.isNaN(at) ? undefined : Math.max(0, at - now);
 }
 
-export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi, BeneficiaryApi {
+export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi, BeneficiaryApi, FxApi {
   private token: { value: string; expiresAt: number } | null = null;
   /** The login in flight, shared by every caller that needs a token meanwhile (one login, not one per request). */
   private login: Promise<string> | null = null;
@@ -82,6 +104,17 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
   }
 
   // ---- sandbox helpers (used by scenarios and the smoke scripts) -------------
+
+  /**
+   * Sandbox demos only: a spot conversion (no quote) that fixes either side, used to stage a wallet's balance before a demo
+   * (`stageWalletOnSandbox`). Never on the funding path, which always fixes the bought amount against a quote.
+   */
+  async sandboxSpotConversion(
+    request: { request_id: string; sell_currency: string; buy_currency: string } & ({ sell_amount: number } | { buy_amount: number }),
+  ): Promise<Conversion> {
+    if (!this.opts.baseUrl.includes("sandbox")) throw new Error("sandboxSpotConversion is for the Airwallex sandbox only");
+    return this.parse(ConversionSchema, await this.request("POST", "/api/v1/fx/conversions/create", { body: request }));
+  }
 
   /**
    * The sandbox simulator answers 500 operation_failed now and then. It is off the payout path (no money, no
@@ -163,6 +196,44 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
     return { id: created.id, nickname: input.nickname };
   }
 
+  // ---- webhook subscriptions (used by `bun run webhook:register`, never by the API process) --------------------
+
+  /**
+   * Subscriptions can be managed over the API as well as in the web app (Settings > Developer > Webhooks):
+   * https://www.airwallex.com/docs/api/webhooks/webhooks/create.md. Events and version are fixed at creation; only
+   * the URL can be updated, and the secret survives an update.
+   */
+  async listWebhooks(): Promise<WebhookSubscription[]> {
+    const subscriptions: WebhookSubscription[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const query: Record<string, string> = { page_size: "100" };
+      if (cursor !== null) query.page = cursor;
+      const body = this.parse(WebhookListSchema, await this.request("GET", "/api/v1/webhooks", { query }));
+      subscriptions.push(...body.items);
+      const next = body.page_after ?? null;
+      if (next === null || next === cursor || body.items.length === 0) return subscriptions;
+      cursor = next;
+    }
+    throw new AwxNetworkError(`listing webhooks did not end after ${MAX_PAGES} pages`);
+  }
+
+  /** Not retried: `request_id` makes a resend safe, but the caller decides whether to resend. */
+  async createWebhook(input: { url: string; events: string[]; version: string; requestId: string }): Promise<WebhookSubscription> {
+    const body = await this.request("POST", "/api/v1/webhooks/create", {
+      body: { url: input.url, events: input.events, version: input.version, request_id: input.requestId },
+    });
+    return this.parse(WebhookSubscriptionSchema, body);
+  }
+
+  async updateWebhookUrl(id: string, url: string): Promise<WebhookSubscription> {
+    return this.parse(WebhookSubscriptionSchema, await this.request("POST", `/api/v1/webhooks/${encodeURIComponent(id)}/update`, { body: { url } }));
+  }
+
+  async deleteWebhook(id: string): Promise<void> {
+    await this.request("POST", `/api/v1/webhooks/${encodeURIComponent(id)}/delete`);
+  }
+
   /**
    * Every transfer created since `fromCreatedAt` (ISO 8601), following `page_after` to the last page. Used to prove
    * no duplicate exists for a reference, so stopping at page one would be a false "none found".
@@ -188,10 +259,41 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
     return this.parse(FinancialTransactionListSchema, body).items;
   }
 
-  /** Available wallet balance for one currency, in major units. */
-  async getAvailableBalance(currency: string): Promise<number> {
-    const balances = this.parse(BalanceListSchema, await this.request("GET", "/api/v1/balances/current"));
-    return balances.find((b) => b.currency === currency)?.available_amount ?? 0;
+  /** Every wallet's available balance, in major units (one call; Airwallex lists every currency, zero ones included). */
+  async getBalances(): Promise<WalletBalance[]> {
+    return this.parse(BalanceListSchema, await this.request("GET", "/api/v1/balances/current"));
+  }
+
+  // ---- FX (funding a replacement from another wallet) ----------------------
+
+  /** Indicative only: no quote id, nothing guaranteed. Used to plan; the booking uses a quote. */
+  async getRate(buyCurrency: string, sellCurrency: string, buyAmount: number): Promise<FxRate> {
+    const query = { buy_currency: buyCurrency, sell_currency: sellCurrency, buy_amount: String(buyAmount) };
+    return this.parse(FxRateSchema, await this.request("GET", "/api/v1/fx/rates/current", { query }));
+  }
+
+  /** A guaranteed rate until `valid_to_at`. A POST, so not retried here; a lost quote costs nothing but a fresh one. */
+  async createQuote(request: CreateQuoteRequest): Promise<FxQuote> {
+    return this.parse(FxQuoteSchema, await this.request("POST", "/api/v1/fx/quotes/create", { body: request }));
+  }
+
+  /**
+   * Books a conversion. Never retried here: the funding executor owns the request_id and resolves an ambiguous answer
+   * by looking the request_id up (`findConversionByRequestId`).
+   */
+  async createConversion(request: CreateConversionRequest): Promise<Conversion> {
+    return this.parse(ConversionSchema, await this.request("POST", "/api/v1/fx/conversions/create", { body: request }));
+  }
+
+  async getConversion(id: string): Promise<Conversion> {
+    return this.parse(ConversionSchema, await this.request("GET", `/api/v1/fx/conversions/${encodeURIComponent(id)}`));
+  }
+
+  async findConversionByRequestId(requestId: string, fromCreatedAt?: string): Promise<Conversion | null> {
+    const query: Record<string, string> = { request_id: requestId };
+    if (fromCreatedAt !== undefined) query.from_created_at = fromCreatedAt;
+    const body = this.parse(ConversionListSchema, await this.request("GET", "/api/v1/fx/conversions", { query }));
+    return body.items.find((c) => c.request_id === undefined || c.request_id === requestId) ?? null;
   }
 
   // ---- transport ------------------------------------------------------------

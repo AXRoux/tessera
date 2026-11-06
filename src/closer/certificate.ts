@@ -32,9 +32,32 @@ const CertificateAttemptSchema = z.object({
   actual: WalletLinesSchema.nullable(),
 });
 
-/** Version 2 adds the Airwallex status of every attempt and of the settled transfer; version 1 certificates still verify. */
+/**
+ * One funding conversion as the Closer found it (version 3 on): both legs as planned and as Airwallex booked them in
+ * its wallet lines (CONVERSION_BUY and CONVERSION_SELL, keyed by the conversion id), and the quote they were bound to.
+ */
+export const CertificateFundingSchema = z.object({
+  fundingId: z.string(),
+  conversionId: z.string().nullable(),
+  requestId: z.string(),
+  quoteId: z.string(),
+  forAttemptId: z.string(),
+  state: z.enum(["INTENT", "BOOKED", "SETTLED", "CANCELLED", "ABANDONED"]),
+  currencyPair: z.string(),
+  rate: z.number(),
+  buyCurrency: z.string(),
+  sellCurrency: z.string(),
+  expected: z.object({ buyMinor: z.number().int(), sellMinor: z.number().int() }),
+  actual: z.object({ buyMinor: z.number().int(), sellMinor: z.number().int() }).nullable(),
+});
+export type CertificateFunding = z.infer<typeof CertificateFundingSchema>;
+
+/**
+ * Version 2 adds the Airwallex status of every attempt and of the settled transfer; version 3 adds the conversions that
+ * funded a replacement. Version 1 and 2 certificates still verify.
+ */
 export const ClosureCertificateBodySchema = z.object({
-  version: z.union([z.literal(1), z.literal(2)]),
+  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   obligationId: z.string(),
   reference: z.string(),
   currency: z.string(),
@@ -46,6 +69,8 @@ export const ClosureCertificateBodySchema = z.object({
   settledAwxStatus: z.literal("PAID").optional(),
   attempts: z.array(CertificateAttemptSchema),
   totals: TotalsSchema,
+  /** Version 3: every conversion made for this invoice, reconciled leg by leg. Totals stay in the invoice's currency. */
+  funding: z.array(CertificateFundingSchema).optional(),
   /** Head of the event chain just before this certificate; pins the whole history to it. */
   eventChainHead: z.string(),
   issuedAt: z.string(),

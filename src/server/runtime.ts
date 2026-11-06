@@ -11,8 +11,9 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { AirwallexClient } from "../airwallex/client";
+import { OfflineWebhooks } from "../airwallex/fake-webhooks";
 import { FakePayoutApi } from "../airwallex/fake";
-import type { BalanceApi, BeneficiaryApi, PayoutApi, ReconciliationApi } from "../airwallex/types";
+import type { BalanceApi, BeneficiaryApi, FxApi, PayoutApi, ReconciliationApi } from "../airwallex/types";
 import { Closer } from "../closer/closer";
 import { AnthropicModel } from "../commander/anthropic";
 import { Commander } from "../commander/commander";
@@ -20,6 +21,8 @@ import type { StructuredModel } from "../commander/evidence";
 import { DEFAULT_POLICY } from "../commander/policy";
 import { OfflineReader } from "../demo/offline-reader";
 import { ScriptedAgentModel } from "../demo/scripted-agent";
+import { stageWalletOnSandbox } from "../demo/stage-wallet";
+import { FundingExecutor } from "../funding/executor";
 import { PayoutGateway } from "../gateway/gateway";
 import { Ledger } from "../ledger/ledger";
 import type { AgentDeps, Simulator } from "./api";
@@ -27,7 +30,7 @@ import type { AgentDeps, Simulator } from "./api";
 type Env = Record<string, string | undefined>;
 
 /** Everything Tessera needs from Airwallex, real or simulated. */
-export type AirwallexApi = PayoutApi & ReconciliationApi & BalanceApi & BeneficiaryApi;
+export type AirwallexApi = PayoutApi & ReconciliationApi & BalanceApi & BeneficiaryApi & FxApi;
 
 export interface RuntimeOptions {
   /** Wraps the Airwallex client and the simulator, e.g. to rate-limit a sandbox run. */
@@ -68,13 +71,23 @@ export function parseHoldMs(setting: string | undefined, fallback: number): numb
 
 /**
  * The sandbox simulator as the fake plays it: FAILED is followed at once by CANCELLED (funds back), which the real
- * sandbox does by itself a few seconds later.
+ * sandbox does by itself a few seconds later. With `webhooks`, every step is also delivered as a signed
+ * `payout.transfer.*` event to Tessera's webhook route before the next one, as the real sandbox does.
  */
-export function offlineSimulator(fake: FakePayoutApi): Simulator {
+export function offlineSimulator(fake: FakePayoutApi, webhooks: OfflineWebhooks | null = null): Simulator {
+  const step = async (transferId: string, status: string, failureType?: string): Promise<void> => {
+    fake.advance(transferId, status, failureType);
+    const transfer = fake.transfers.get(transferId);
+    if (webhooks && transfer) await webhooks.emit(transfer);
+  };
   return {
     async advance(transferId, status, failureType) {
-      fake.advance(transferId, status, failureType);
-      if (status === "FAILED") fake.advance(transferId, "CANCELLED");
+      await step(transferId, status, failureType);
+      if (status === "FAILED") await step(transferId, "CANCELLED");
+    },
+    ...(webhooks ? { withoutEvents: <T>(fn: () => Promise<T>) => webhooks.withoutEvents(fn) } : {}),
+    async stageWallet(currency, availableMajor) {
+      fake.balances.set(currency, availableMajor);
     },
   };
 }
@@ -113,23 +126,34 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   let api: AirwallexApi;
   let simulator: Simulator | null;
   let sandbox: boolean;
+  // Offline, Airwallex's webhooks come from the simulator itself, signed with a secret generated for this process.
+  const webhookSecret = env.AWX_WEBHOOK_SECRET || (offline ? randomBytes(32).toString("hex") : null);
+  let offlineWebhooks: OfflineWebhooks | null = null;
   if (offline) {
     const fake = new FakePayoutApi({ beneficiaries: structuredClone(OFFLINE_BENEFICIARIES) });
+    offlineWebhooks = new OfflineWebhooks(webhookSecret!);
     api = wrap(fake);
-    simulator = wrap(offlineSimulator(fake));
+    simulator = wrap(offlineSimulator(fake, offlineWebhooks));
     sandbox = false;
   } else {
     const client = AirwallexClient.fromEnv(env);
     sandbox = (env.AWX_BASE_URL ?? "https://api.sandbox.airwallex.com").includes("sandbox");
     api = wrap(client);
-    simulator = sandbox ? wrap<Simulator>({ advance: (id, status, failureType) => client.simulateTransition(id, status, failureType) }) : null;
+    simulator = sandbox
+      ? wrap<Simulator>({
+          advance: (id, status, failureType) => client.simulateTransition(id, status, failureType),
+          stageWallet: (currency, availableMajor) => stageWalletOnSandbox(client, currency, availableMajor),
+        })
+      : null;
   }
 
   if (dbPath !== ":memory:") mkdirSync(dirname(dbPath), { recursive: true });
   const ledger = new Ledger(dbPath);
   const gateway = new PayoutGateway({ ledger, api, approvalSecret });
-  // One hold window for both: what the Commander tells the operator to wait for is what the Closer enforces.
-  const commander = new Commander({ ledger, gateway, balances: api, secret: approvalSecret, policy: { ...DEFAULT_POLICY, paidHoldMs } });
+  // One policy for all three: what the Commander plans, the funding executor re-checks, and the hold window the Closer enforces.
+  const policy = { ...DEFAULT_POLICY, paidHoldMs };
+  const funder = new FundingExecutor({ ledger, api, approvalSecret, policy });
+  const commander = new Commander({ ledger, gateway, balances: api, funding: { fx: api, executor: funder }, secret: approvalSecret, policy });
   const closer = new Closer({ ledger, api, gateway, secret: approvalSecret, paidHoldMs });
 
   if (env.ANTHROPIC_API_KEY && !env.TESSERA_MODEL) {
@@ -147,10 +171,17 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
     // Never named after Claude, whatever TESSERA_AGENT_NAME says: the ledger must not credit a model that did not run.
     agent = { model: new ScriptedAgentModel(), actor: "agent:scripted", kind: "scripted" };
   }
+  // Event-driven agent runs spend model calls nobody asked for in the moment, so they are opt-in and never public.
+  let agentOnEvent = truthy(env.TESSERA_AGENT_ON_EVENT);
+  if (agentOnEvent && publicDemo) {
+    warnings.push("TESSERA_AGENT_ON_EVENT is ignored: a public demo never starts agent runs on its own");
+    agentOnEvent = false;
+  }
+  if (agentOnEvent && !agent) warnings.push("TESSERA_AGENT_ON_EVENT=1 but no agent is configured; reactions are recorded, nothing is woken");
 
   return {
     offline, publicDemo, sandbox, approvalSecret, apiToken, generatedToken, dbPath, paidHoldMs,
-    api, simulator, ledger, gateway, commander, closer, model, agent, warnings,
-    webhookSecret: env.AWX_WEBHOOK_SECRET || null,
+    api, simulator, ledger, gateway, commander, closer, model, agent, warnings, policy, funder,
+    webhookSecret, offlineWebhooks, agentOnEvent: agentOnEvent && agent !== null,
   };
 }

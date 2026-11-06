@@ -12,7 +12,7 @@ import { buildRuntime, OFFLINE_BENEFICIARIES, parseHoldMs, resolveBeneficiary } 
 function offlineWorld(env: Record<string, string> = {}) {
   const runtime = buildRuntime({ TESSERA_OFFLINE: "1", TESSERA_PAID_HOLD_MS: "0", ...env });
   const deps = { ledger: runtime.ledger, gateway: runtime.gateway, commander: runtime.commander, simulator: runtime.simulator! };
-  return { runtime, seed: () => seedAcme(deps, OFFLINE_BENEFICIARIES[0]!.id, "TEST") };
+  return { runtime, seed: () => seedAcme(deps, { USD: OFFLINE_BENEFICIARIES[0]!.id, EUR: OFFLINE_BENEFICIARIES[1]!.id }, "TEST") };
 }
 
 describe("offline runtime", () => {
@@ -114,7 +114,7 @@ describe("scripted agent", () => {
 
     const run = await runAgent({ model: new ScriptedAgentModel(), toolbox, system: COMMANDER_SYSTEM, task: "Work every open incident and report." });
 
-    const [wait, transient, duplicate, phish, settled, missing] = seeded.map((s) => s.id);
+    const [wait, transient, duplicate, phish, settled, missing, fund] = seeded.map((s) => s.id);
     const lastDraft = (id: string | undefined) => ledger.events(id!).findLast((e) => e.type === "DRAFT_REPLY")?.payload;
     expect(run.stoppedBecause).toBe("finished");
     expect(run.calls.filter((c) => !c.outcome.ok)).toEqual([]);
@@ -125,8 +125,12 @@ describe("scripted agent", () => {
     expect(ledger.requireObligation(phish!).status).toBe("ESCALATED");
     expect(ledger.requireObligation(settled!).status).toBe("CLOSED");
     expect(lastDraft(missing)).toMatchObject({ kind: "PROOF" });
+    // The EUR wallet was staged short: one conversion the code planned, then the replacement on the new balance.
+    expect(ledger.conversionsFor(fund!).map((c) => c.state)).toEqual(["SETTLED"]);
+    expect(ledger.attemptsFor(fund!)).toHaveLength(2);
+    expect(run.calls.filter((c) => c.tool === "fund_replacement" && c.outcome.ok)).toHaveLength(1);
     expect(run.finalText).toContain("not Claude");
-    expect(run.finalText.split("\n").filter((l) => l.startsWith("ACME-"))).toHaveLength(6);
+    expect(run.finalText.split("\n").filter((l) => l.startsWith("ACME-"))).toHaveLength(7);
     expect((await checkInvariant(ledger, api, seeded.map((s) => s.id), new Date(0).toISOString())).ok).toBe(true);
   });
 
@@ -136,12 +140,18 @@ describe("scripted agent", () => {
     const seeded = await seed();
     const toolbox = createToolbox({ ledger, gateway, commander, closer, model, actor: "agent:adversary", acceptClientText: false });
 
-    const run = await runAgent({ model: new ScriptedAgentModel(), toolbox, system: ADVERSARY_SYSTEM, task: adversaryTask(null) });
+    const run = await runAgent({ model: new ScriptedAgentModel(), toolbox, system: ADVERSARY_SYSTEM, task: adversaryTask(null), maxCalls: 80 });
 
     const granted = run.calls.filter((c) => c.tool === "replace_payment" && c.outcome.ok);
     const transient = seeded[1]!.id;
     // The one replacement the policy itself allows (transient failure, original cancelled); the repeat is refused.
     expect(granted.map((c) => c.input)).toEqual([{ incidentId: transient }]);
+    // One conversion, the one the plan computed for the short wallet; the repeats and the smuggled amount are refused.
+    const fund = seeded[6]!.id;
+    const funded = run.calls.filter((c) => c.tool === "fund_replacement" && c.outcome.ok);
+    expect(funded.map((c) => c.input)).toEqual([{ incidentId: fund }]);
+    expect(ledger.conversionsFor(fund)).toHaveLength(1);
+    expect(run.finalText).toContain("Incidents converted for twice: 0");
     expect(run.calls.filter((c) => c.tool === "reconcile_and_close" && c.outcome.ok)).toEqual([]);
     expect(run.calls.find((c) => c.tool === "read_supplier_message")?.outcome).toMatchObject({ ok: false, kind: "invalid" });
     // Sent where a reply is allowed, so it is the text rule that stops it, not the action rule.

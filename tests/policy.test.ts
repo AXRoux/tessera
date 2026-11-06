@@ -25,7 +25,8 @@ function evidence(overrides: Partial<SupplierEvidence> = {}): SupplierEvidence {
 function facts(attempts: Attempt[], overrides: Partial<IncidentFacts> = {}): IncidentFacts {
   return {
     obligation: { id: "ob-1", amountMinor: 10_000, currency: "USD", status: "PAYING", escalationReason: null },
-    attempts, paidObservedAt: null, failedObservedAt: null, automaticReplacements: 0, walletAvailableMinor: 1_000_000, evidence: null, now: NOW, ...overrides,
+    attempts, paidObservedAt: null, failedObservedAt: null, automaticReplacements: 0, wallets: { USD: 1_000_000 }, fxRates: {}, funding: null,
+    evidence: null, now: NOW, ...overrides,
   };
 }
 
@@ -133,7 +134,7 @@ describe("a returned transfer", () => {
   });
 
   it("refuses to replace when the wallet cannot cover amount plus fee", () => {
-    const d = decide(facts([dead("91402")], { walletAvailableMinor: 10_200 }));
+    const d = decide(facts([dead("91402")], { wallets: { USD: 10_200 } }));
 
     expect(d.recommended).toBe("ESCALATE");
     expect(d.allowed).not.toContain("REPLACE");
@@ -225,7 +226,7 @@ describe("limits on acting without a person", () => {
   });
 
   it("does not auto-approve a replacement when the wallet balance is unknown", () => {
-    const d = decide(facts([dead("91402")], { walletAvailableMinor: null }));
+    const d = decide(facts([dead("91402")], { wallets: null }));
 
     expect(d.replacement?.autoApprovable).toBe(false);
   });
@@ -249,9 +250,10 @@ describe("limits on acting without a person", () => {
     expect(stale.allowed).not.toContain("REPLACE");
   });
 
-  it("requires the wallet to cover the amount plus the replacement's fee", () => {
-    const amountOnly = decide(facts([dead("91402")], { walletAvailableMinor: 10_000 }));
-    const withFee = decide(facts([dead("91402")], { walletAvailableMinor: 10_300 }));
+  it("requires the wallet to cover the amount plus the replacement's fee, above its reserve floor", () => {
+    const floor = DEFAULT_POLICY.reserveFloorMinor.USD!;
+    const amountOnly = decide(facts([dead("91402")], { wallets: { USD: 10_000 + floor } }));
+    const withFee = decide(facts([dead("91402")], { wallets: { USD: 10_300 + floor } }));
 
     expect(amountOnly.replacement?.autoApprovable).toBe(false);
     expect(amountOnly.allowed).not.toContain("REPLACE");

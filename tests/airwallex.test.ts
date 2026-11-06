@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { createHmac } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { FakePayoutApi } from "../src/airwallex/fake";
 import { AwxHttpError } from "../src/airwallex/types";
-import { verifyWebhook } from "../src/airwallex/webhook";
+import { parseAirwallexTime, verifyWebhook } from "../src/airwallex/webhook";
 import { WebhookRejected } from "../src/errors";
 import { fakeHttp, jsonResponse } from "./helpers/fake-fetch";
 
@@ -23,8 +25,35 @@ const paidEvent = {
 describe("webhook verification", () => {
   it("accepts a correctly signed, fresh delivery and names the transfer", () => {
     expect(verifyWebhook(signed(paidEvent))).toEqual({
-      id: "evt_1", name: "payout.transfer.paid", createdAt: "2026-10-30T11:59:58Z", transferId: "tr_123",
+      id: "evt_1", name: "payout.transfer.paid", createdAt: "2026-10-30T11:59:58.000Z", accountId: "acct_1", version: null,
+      transferId: "tr_123", claimedStatus: "PAID",
     });
+  });
+
+  it("reads real sandbox deliveries byte for byte: the transfer is `data` itself, and `+0000` timestamps become ISO 8601", () => {
+    const dir = join(import.meta.dir, "../fixtures/webhooks");
+    const fixtures = readdirSync(dir).filter((f) => f.endsWith(".json"));
+    expect(fixtures.length).toBeGreaterThanOrEqual(3);
+    for (const file of fixtures) {
+      const { rawBody } = JSON.parse(readFileSync(join(dir, file), "utf8")) as { rawBody: string };
+      const raw = JSON.parse(rawBody) as { id: string; name: string; created_at: string; data: { id: string; status: string } };
+      const timestamp = String(NOW);
+      const event = verifyWebhook({ secret: SECRET, timestamp, signature: createHmac("sha256", SECRET).update(timestamp + rawBody).digest("hex"), rawBody, now: NOW });
+
+      expect(event.id).toBe(raw.id);
+      expect(event.transferId).toBe(raw.data.id);
+      expect(event.claimedStatus).toBe(raw.data.status);
+      expect(raw.created_at).toMatch(/\+0000$/);
+      expect(event.createdAt).toBe(new Date(Date.parse(raw.created_at.replace(/\+0000$/, "Z"))).toISOString());
+      expect(event.accountId).toMatch(/^acct_/);
+      expect(event.version).toBe("2026-08-21");
+    }
+  });
+
+  it("normalises Airwallex's offset style and leaves an unreadable time alone", () => {
+    expect(parseAirwallexTime("2026-11-03T15:09:16+0000")).toBe("2026-11-03T15:09:16.000Z");
+    expect(parseAirwallexTime("2026-11-03T23:09:16+0800")).toBe("2026-11-03T15:09:16.000Z");
+    expect(parseAirwallexTime("yesterday")).toBeNull();
   });
 
   it("rejects a body that does not match its signature", () => {

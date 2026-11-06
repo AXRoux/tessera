@@ -2,8 +2,9 @@ import { Database } from "bun:sqlite";
 import { z } from "zod";
 import { requireHumanNote } from "../approval/approval";
 import { canonicalJson, sha256Hex } from "../canonical";
-import { DuplicateLockError, StateConflict } from "../errors";
-import { replayAttempts, replayObligations, type ReplayedAttempt } from "./events";
+import { DuplicateConversionError, DuplicateLockError, StateConflict } from "../errors";
+import { conversionMismatch, replayConversions, type ConversionAttempt, type ConversionState, type ConversionTerms } from "./conversions";
+import { replayAttempts, replayObligations, replayReactions, WebhookReceivedSchema, type ReplayedAttempt } from "./events";
 
 export type Method = "LOCAL" | "SWIFT";
 /**
@@ -104,6 +105,15 @@ export interface WebhookEventRecord {
   name: string;
   transferId: string | null;
   createdAt: string;
+}
+
+/** How a delivery was handled, chained with it as `WEBHOOK_RECEIVED`. */
+export interface WebhookReceipt {
+  /** The incident whose transfer the event names, when the ledger holds it. */
+  obligationId: string | null;
+  /** The status the event body claimed; never applied, only recorded. */
+  claimedStatus: string | null;
+  outcome: string;
 }
 
 /**
@@ -234,10 +244,37 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   createdAt TEXT NOT NULL,
   receivedAt TEXT NOT NULL
 );
+-- One row per funding conversion, keyed to the DEAD attempt whose replacement it pays for.
+CREATE TABLE IF NOT EXISTS conversions (
+  id TEXT PRIMARY KEY,
+  obligationId TEXT NOT NULL REFERENCES obligations(id),
+  forAttemptId TEXT NOT NULL REFERENCES attempts(id),
+  requestId TEXT NOT NULL UNIQUE,
+  -- A quote is booked once: the sandbox reports quotes as MULTI_USE, so single use is enforced here.
+  quoteId TEXT NOT NULL UNIQUE,
+  currencyPair TEXT NOT NULL,
+  buyCurrency TEXT NOT NULL,
+  buyMinor INTEGER NOT NULL CHECK (buyMinor > 0),
+  sellCurrency TEXT NOT NULL,
+  sellMinor INTEGER NOT NULL CHECK (sellMinor > 0),
+  rate REAL NOT NULL CHECK (rate > 0),
+  quoteValidTo TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('INTENT','BOOKED','SETTLED','CANCELLED','ABANDONED')),
+  conversionId TEXT UNIQUE,
+  awxStatus TEXT,
+  approvalNonce TEXT NOT NULL UNIQUE,
+  lastError TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  CHECK (buyCurrency <> sellCurrency)
+);
+-- The funding lock: the database itself refuses a second conversion for the same replacement.
+CREATE UNIQUE INDEX IF NOT EXISTS one_conversion_per_replacement
+  ON conversions (forAttemptId) WHERE state IN ('INTENT','BOOKED','SETTLED');
 `;
 
 /** Status implied by the latest attempt, ignoring the sticky CLOSED and ESCALATED. */
-function statusFor(latest: Attempt | null): ObligationStatus {
+export function statusFor(latest: Attempt | null): ObligationStatus {
   if (latest?.state === "INTENT" || latest?.state === "LIVE") return "PAYING";
   if (latest?.state === "PAID") return "PAID";
   if (latest?.state === "DEAD") return "NEEDS_ACTION";
@@ -278,6 +315,43 @@ function attemptMismatch(attempt: Attempt, r: ReplayedAttempt): string | null {
   if (found) return found;
   if (r.failureCodeVerifiable && (attempt.failureCode ?? null) !== r.failureCode) {
     return `has failureCode ${attempt.failureCode ?? "none"} in its table but ${r.failureCode ?? "none"} by its events`;
+  }
+  return null;
+}
+
+interface WebhookRow {
+  id: string;
+  name: string;
+  transferId: string | null;
+  receivedAt: string;
+}
+
+/**
+ * The dedupe table against the chain: every `WEBHOOK_RECEIVED` needs its row unchanged (deleting one would let a
+ * captured delivery be processed again), and every row taken since the first `WEBHOOK_RECEIVED` needs its event (an
+ * inserted row would make Tessera drop a real delivery as a duplicate). Rows from builds before the event existed
+ * have no event and are left alone.
+ */
+function webhookRowsMismatch(events: LedgerEvent[], rows: WebhookRow[]): string | null {
+  const received = new Map<string, { name: string; transferId: string | null }>();
+  let since: string | null = null;
+  for (const event of events) {
+    if (event.type !== "WEBHOOK_RECEIVED") continue;
+    const p = WebhookReceivedSchema.safeParse(event.payload);
+    if (!p.success) return `webhook receipt ${event.seq} is unreadable`;
+    since ??= event.ts;
+    received.set(p.data.eventId, { name: p.data.name, transferId: p.data.transferId });
+  }
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  for (const [id, chained] of received) {
+    const row = byId.get(id);
+    if (!row) return `webhook event ${id} is in the history but missing from the dedupe table`;
+    if (row.name !== chained.name || row.transferId !== chained.transferId) return `webhook event ${id} was edited in the dedupe table`;
+  }
+  for (const row of rows) {
+    if (since !== null && row.receivedAt >= since && !received.has(row.id)) {
+      return `webhook event ${row.id} is in the dedupe table but not in the history`;
+    }
   }
   return null;
 }
@@ -503,6 +577,85 @@ export class Ledger {
     return result.changes > 0 ? this.requireAttempt(id) : null;
   }
 
+  // ---- funding conversions -----------------------------------------------
+
+  /** Writes a conversion INTENT. The partial unique index refuses a second open or settled one for the same replacement. */
+  insertConversion(input: ConversionTerms & { obligationId: string; forAttemptId: string; requestId: string; approvalNonce: string }): ConversionAttempt {
+    const id = crypto.randomUUID();
+    const ts = this.now().toISOString();
+    try {
+      this.db
+        .query(
+          `INSERT INTO conversions (id, obligationId, forAttemptId, requestId, quoteId, currencyPair, buyCurrency, buyMinor, sellCurrency,
+             sellMinor, rate, quoteValidTo, state, approvalNonce, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INTENT', ?, ?, ?)`,
+        )
+        .run(
+          id, input.obligationId, input.forAttemptId, input.requestId, input.quoteId, input.currencyPair, input.buyCurrency, input.buyMinor,
+          input.sellCurrency, input.sellMinor, input.rate, input.quoteValidTo, input.approvalNonce, ts, ts,
+        );
+    } catch (error) {
+      if (error instanceof Error && /UNIQUE constraint failed: conversions\.forAttemptId$/.test(error.message)) {
+        throw new DuplicateConversionError(input.obligationId, input.forAttemptId);
+      }
+      throw error;
+    }
+    return this.requireConversion(id);
+  }
+
+  getConversion(id: string): ConversionAttempt | null {
+    return this.db.query("SELECT * FROM conversions WHERE id = ?").get(id) as ConversionAttempt | null;
+  }
+
+  requireConversion(id: string): ConversionAttempt {
+    const row = this.getConversion(id);
+    if (!row) throw new Error(`unknown conversion ${id}`);
+    return row;
+  }
+
+  conversionsFor(obligationId: string): ConversionAttempt[] {
+    return this.db.query("SELECT * FROM conversions WHERE obligationId = ? ORDER BY createdAt, rowid").all(obligationId) as ConversionAttempt[];
+  }
+
+  conversionByAwxId(conversionId: string): ConversionAttempt | null {
+    return this.db.query("SELECT * FROM conversions WHERE conversionId = ?").get(conversionId) as ConversionAttempt | null;
+  }
+
+  quoteUsed(quoteId: string): boolean {
+    return this.db.query("SELECT 1 FROM conversions WHERE quoteId = ?").get(quoteId) !== null;
+  }
+
+  fundingNonceUsed(nonce: string): boolean {
+    return this.db.query("SELECT 1 FROM conversions WHERE approvalNonce = ?").get(nonce) !== null;
+  }
+
+  /** Conversions in the given states, for one obligation or all, oldest first. */
+  conversionsIn(states: readonly ConversionState[], obligationId?: string): ConversionAttempt[] {
+    const marks = states.map(() => "?").join(", ");
+    const where = obligationId ? "AND obligationId = ?" : "";
+    return this.db
+      .query(`SELECT * FROM conversions WHERE state IN (${marks}) ${where} ORDER BY createdAt, rowid`)
+      .all(...states, ...(obligationId ? [obligationId] : [])) as ConversionAttempt[];
+  }
+
+  updateConversion(id: string, patch: Partial<Pick<ConversionAttempt, "state" | "conversionId" | "awxStatus" | "lastError">>): ConversionAttempt {
+    const keys = (["state", "conversionId", "awxStatus", "lastError"] as const).filter((key) => patch[key] !== undefined);
+    if (keys.length > 0) {
+      this.db
+        .query(`UPDATE conversions SET ${keys.map((key) => `${key} = ?`).join(", ")}, updatedAt = ? WHERE id = ?`)
+        .run(...keys.map((key) => patch[key] as string | null), this.now().toISOString(), id);
+    }
+    return this.requireConversion(id);
+  }
+
+  /** Compare-and-set INTENT -> ABANDONED; null when another process already moved it. */
+  abandonConversionIntent(id: string, reason: string): ConversionAttempt | null {
+    const result = this.db
+      .query("UPDATE conversions SET state = 'ABANDONED', lastError = ?, updatedAt = ? WHERE id = ? AND state = 'INTENT'")
+      .run(reason, this.now().toISOString(), id);
+    return result.changes > 0 ? this.requireConversion(id) : null;
+  }
+
   // ---- closure certificates ----------------------------------------------
 
   saveCertificate(obligationId: string, hash: string, json: string): void {
@@ -576,12 +729,39 @@ export class Ledger {
 
   // ---- webhooks ----------------------------------------------------------
 
-  /** Records a webhook delivery by its event id. True the first time it is seen; Airwallex redelivers. */
-  recordWebhookEvent(event: WebhookEventRecord): boolean {
-    const result = this.db
-      .query("INSERT OR IGNORE INTO webhook_events (id, name, transferId, createdAt, receivedAt) VALUES (?, ?, ?, ?, ?)")
-      .run(event.id, event.name, event.transferId, event.createdAt, this.now().toISOString());
-    return result.changes > 0;
+  /**
+   * Records a verified webhook delivery by its event id: the dedupe row and a `WEBHOOK_RECEIVED` event, in one
+   * transaction, so the chain proves which deliveries were taken (deleting a row to let a delivery replay breaks
+   * `verifyChain`). True the first time the id is seen; Airwallex redelivers, and a redelivery writes nothing.
+   */
+  recordWebhookEvent(event: WebhookEventRecord, receipt: WebhookReceipt = { obligationId: null, claimedStatus: null, outcome: "recorded" }): boolean {
+    return this.tx(() => {
+      const result = this.db
+        .query("INSERT OR IGNORE INTO webhook_events (id, name, transferId, createdAt, receivedAt) VALUES (?, ?, ?, ?, ?)")
+        .run(event.id, event.name, event.transferId, event.createdAt, this.now().toISOString());
+      if (result.changes === 0) return false;
+      this.append(receipt.obligationId, "WEBHOOK_RECEIVED", {
+        eventId: event.id, name: event.name, transferId: event.transferId, createdAt: event.createdAt,
+        claimedStatus: receipt.claimedStatus, outcome: receipt.outcome,
+      });
+      return true;
+    });
+  }
+
+  /** The latest-created delivery already taken for a transfer, to tell an out-of-order one apart. */
+  latestWebhookFor(transferId: string): { id: string; name: string; createdAt: string } | null {
+    return this.db
+      .query("SELECT id, name, createdAt FROM webhook_events WHERE transferId = ? ORDER BY createdAt DESC LIMIT 1")
+      .get(transferId) as { id: string; name: string; createdAt: string } | null;
+  }
+
+  /** Events of the given types written at or after `sinceIso`, in chain order. */
+  recentEvents(types: string[], sinceIso: string): LedgerEvent[] {
+    if (types.length === 0) return [];
+    const rows = this.db
+      .query(`SELECT * FROM events WHERE type IN (${types.map(() => "?").join(", ")}) AND ts >= ? ORDER BY seq`)
+      .all(...types, sinceIso) as EventRow[];
+    return rows.map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
   }
 
   /** Whether this delivery was already handled. Recorded only after its sync succeeded, so a failed one is retried. */
@@ -712,6 +892,24 @@ export class Ledger {
       const mismatch = attemptMismatch(attempt, r);
       if (mismatch) return { ok: false, brokenAt: null, reason: `attempt ${attempt.id} ${mismatch}` };
     }
+
+    const replayedConversions = replayConversions(events);
+    const conversions = this.db.query("SELECT * FROM conversions ORDER BY createdAt").all() as ConversionAttempt[];
+    const conversionIds = new Set(conversions.map((c) => c.id));
+    for (const id of replayedConversions.keys()) {
+      if (!conversionIds.has(id)) return { ok: false, brokenAt: null, reason: `conversion ${id} is in the history but missing from the conversions table` };
+    }
+    for (const conversion of conversions) {
+      const r = replayedConversions.get(conversion.id);
+      if (!r) return { ok: false, brokenAt: null, reason: `conversion ${conversion.id} has no FUNDING_INTENT event` };
+      const mismatch = conversionMismatch(conversion, r);
+      if (mismatch) return { ok: false, brokenAt: null, reason: `conversion ${conversion.id} ${mismatch}` };
+    }
+
+    const webhooks = webhookRowsMismatch(events, this.db.query("SELECT id, name, transferId, receivedAt FROM webhook_events").all() as WebhookRow[]);
+    if (webhooks) return { ok: false, brokenAt: null, reason: webhooks };
+    const reactions = replayReactions(events);
+    if (reactions) return { ok: false, brokenAt: null, reason: reactions };
 
     const rebaselinedAt = events.findLast((e) => e.type === "CHAIN_REBASELINED")?.ts;
     return { ok: true, head: prev, ...(rebaselinedAt ? { rebaselinedAt } : {}) };

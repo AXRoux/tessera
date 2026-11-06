@@ -3,6 +3,7 @@
  * what an agent last did there, and why a person is needed. Neither is stored anywhere else.
  */
 import { z } from "zod";
+import { AgentWakeSchema, IncidentReactionSchema } from "../ledger/events";
 import { pendingDraft } from "../commander/drafts";
 import type { Attempt, LedgerEvent, Obligation } from "../ledger/ledger";
 import type { IncidentSummary } from "./wire";
@@ -43,4 +44,29 @@ export function attentionOf(obligation: Obligation, latest: Attempt | undefined,
     return { kind: "DRAFT", reason: "A drafted reply to the supplier is waiting for a person to send it." };
   }
   return null;
+}
+
+/** The incident's latest reaction to a bank-side change and the wake that followed it, from the ledger alone. */
+export function lastReaction(events: LedgerEvent[]): IncidentSummary["lastReaction"] {
+  const at = events.findLastIndex((e) => e.type === "INCIDENT_REACTION");
+  if (at < 0) return null;
+  const event = events[at]!;
+  const p = IncidentReactionSchema.safeParse(event.payload);
+  if (!p.success) return null;
+  const wake = events.slice(at + 1).find((e) => {
+    if (e.type !== "AGENT_WAKE") return false;
+    return AgentWakeSchema.safeParse(e.payload).data?.reactionSeqs.includes(event.seq) ?? false;
+  });
+  return {
+    source: p.data.trigger.source,
+    eventName: p.data.trigger.eventName,
+    eventId: p.data.trigger.eventId,
+    at: event.ts,
+    to: p.data.changes.at(-1)!.to,
+    before: p.data.before.recommended,
+    after: p.data.after.recommended,
+    decisionChanged: p.data.decisionChanged,
+    wake: p.data.wake,
+    woke: wake ? (AgentWakeSchema.safeParse(wake.payload).data?.outcome ?? null) : null,
+  };
 }

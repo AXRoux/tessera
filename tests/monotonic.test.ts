@@ -23,7 +23,9 @@ const facts = (latest: Attempt, evidence: SupplierEvidence | null, status = "PAY
   paidObservedAt: latest.state === "PAID" ? new Date(NOW.getTime() - 60_000).toISOString() : null,
   failedObservedAt: null,
   automaticReplacements: 0,
-  walletAvailableMinor: 1_000_000,
+  wallets: { USD: 1_000_000 },
+  fxRates: {},
+  funding: null,
   evidence,
   now: NOW,
 });
@@ -62,6 +64,24 @@ describe("evidence is monotone toward caution", () => {
       }
     }
     expect(checked).toBeGreaterThan(1_000);
+  });
+
+  it("never allows FUND, or makes a conversion automatic, when the same facts without evidence did not", () => {
+    // The USD wallet is empty and GBP is priced, so every transient failure's replacement would need a conversion.
+    const short = (latest: Attempt, evidence: SupplierEvidence | null): IncidentFacts => ({
+      ...facts(latest, evidence), wallets: { USD: 0, GBP: 10_000_000 }, fxRates: { GBP: 0.76, EUR: null },
+    });
+    let fundable = 0;
+    for (const latest of states) {
+      const bare = decide(short(latest, null));
+      if (bare.allowed.includes("FUND")) fundable++;
+      for (const evidence of allEvidence()) {
+        const withEvidence = decide(short(latest, evidence));
+        if (!bare.allowed.includes("FUND")) expect(withEvidence.allowed).not.toContain("FUND");
+        if (!bare.funding?.autoApprovable) expect(withEvidence.funding?.autoApprovable ?? false).toBe(false);
+      }
+    }
+    expect(fundable).toBeGreaterThan(0); // the property is exercised, not vacuous
   });
 
   it("never recommends CLOSE unless the same facts without evidence did", () => {

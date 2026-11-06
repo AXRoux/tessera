@@ -6,6 +6,7 @@ import { AnthropicModel, type Block, type ConverseRequest, type ConverseResult }
 import { Closer } from "../src/closer/closer";
 import { Commander } from "../src/commander/commander";
 import { approve, killedAttempt, SECRET, world, type World } from "./helpers/world";
+import { fundWorld } from "./helpers/fund-world";
 
 function toolboxFor(w: World, options: Partial<Pick<ToolboxDeps, "acceptClientText" | "authority" | "scope" | "model" | "actor" | "commander">> = {}) {
   const commander = new Commander({ ledger: w.ledger, gateway: w.gateway, balances: w.api, secret: SECRET });
@@ -21,10 +22,10 @@ const otherIncident = (w: World) =>
   w.ledger.createObligation({ reference: "INV-2002", beneficiaryId: "ben-A", amountMinor: 5_000, currency: "USD", method: "LOCAL", reason: "professional_business_services" });
 
 describe("toolbox", () => {
-  it("offers exactly the tools that can only read, record, draft, defer, escalate, ask for a safe replacement, or certify", () => {
+  it("offers exactly the tools that can only read, record, draft, defer, escalate, ask for a safe replacement or its funding, or certify", () => {
     const { specs } = toolboxFor(world());
     expect(specs.map((s) => s.name).sort()).toEqual([
-      "assess_incident", "defer_incident", "draft_supplier_reply", "escalate_to_human", "list_incidents",
+      "assess_incident", "defer_incident", "draft_supplier_reply", "escalate_to_human", "fund_replacement", "list_incidents",
       "read_supplier_message", "reconcile_and_close", "replace_payment", "verify_ledger",
     ]);
     // Nothing that could move money by itself: no create, approve, pay, transfer, or terms editing.
@@ -149,9 +150,29 @@ describe("toolbox boundaries", () => {
 
     expect(toolbox.specs.map((s) => s.name)).not.toContain("replace_payment");
     expect(toolbox.specs.map((s) => s.name)).not.toContain("reconcile_and_close");
+    expect(toolbox.specs.map((s) => s.name)).not.toContain("fund_replacement");
     expect(await toolbox.call("replace_payment", { incidentId: w.obligation.id })).toMatchObject({ ok: false, kind: "invalid" });
     expect(await toolbox.call("reconcile_and_close", { incidentId: w.obligation.id })).toMatchObject({ ok: false, kind: "invalid" });
+    expect(await toolbox.call("fund_replacement", { incidentId: w.obligation.id })).toMatchObject({ ok: false, kind: "invalid" });
     expect(w.api.all).toHaveLength(1);
+  });
+
+  it("funds a short wallet from the incident id alone, and refuses an amount, a currency or a rate in the input", async () => {
+    const w = await fundWorld();
+    const toolbox = createToolbox({ ledger: w.ledger, gateway: w.gateway, commander: w.commander, closer: w.closer, model: null, actor: "agent:test", acceptClientText: false });
+    const triage = createToolbox({ ledger: w.ledger, gateway: w.gateway, commander: w.commander, closer: w.closer, model: null, actor: "agent:test", acceptClientText: false, authority: "triage" });
+
+    expect(await toolbox.call("fund_replacement", { incidentId: w.obligation.id, buyAmountMinor: 100_000_000 })).toMatchObject({ ok: false, kind: "invalid" });
+    expect(await toolbox.call("fund_replacement", { incidentId: w.obligation.id, sellCurrency: "GBP", rate: 0.01 })).toMatchObject({ ok: false, kind: "invalid" });
+    expect(await triage.call("fund_replacement", { incidentId: w.obligation.id })).toMatchObject({ ok: false, kind: "invalid" });
+    expect(w.api.conversionCalls).toBe(0);
+
+    const funded = await toolbox.call("fund_replacement", { incidentId: w.obligation.id });
+    const again = await toolbox.call("fund_replacement", { incidentId: w.obligation.id });
+
+    expect(funded).toMatchObject({ ok: true, result: { outcome: "BOOKED", conversion: { state: "SETTLED", bought: "€26.66", sold: "$30.15" } } });
+    expect(again).toMatchObject({ ok: false, kind: "refused" });
+    expect(w.api.conversions.size).toBe(1);
   });
 
   it("never shows any part of a sender's address, only an opaque id and whether the domain matches earlier mail", async () => {
@@ -315,7 +336,7 @@ describe("MCP server", () => {
 
     const listed = await handleMessage(toolbox(), { jsonrpc: "2.0", id: 2, method: "tools/list" });
     const tools = (listed as { result: { tools: Array<{ name: string; annotations: { readOnlyHint: boolean } }> } }).result.tools;
-    expect(tools).toHaveLength(9);
+    expect(tools).toHaveLength(10);
     expect(tools.find((t) => t.name === "list_incidents")!.annotations.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === "replace_payment")!.annotations.readOnlyHint).toBe(false);
   });

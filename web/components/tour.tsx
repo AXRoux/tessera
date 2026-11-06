@@ -152,10 +152,10 @@ export function Tour({ items, metrics, health, onSeed, onRun, seeding, running }
 
   const detail: Record<TourStepId, { text: string; action: ReactNode }> = {
     seed: {
-      text: `Opens six invoices that each go wrong in a different way, so every branch of the playbook is on the board at once. ${simulated}`,
+      text: `Opens seven invoices that each go wrong in a different way, one of them paid from a wallet too short to replace it, so every branch of the playbook is on the board at once. ${simulated}`,
       action: (
         <Button onClick={onSeed} busy={seeding} disabled={running}>
-          Load six incidents
+          Load seven incidents
         </Button>
       ),
     },

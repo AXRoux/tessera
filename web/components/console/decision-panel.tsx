@@ -14,6 +14,7 @@ const HEADLINE: Record<Action, string> = {
   SEND_PROOF_TO_SUPPLIER: "Send proof of payment",
   REQUEST_CORRECTION: "Ask for corrected details",
   REPLACE: "Replace the payment",
+  FUND: "Fund the replacement",
   CLOSE: "Close the incident",
   ESCALATE: "Hand to a person",
 };
@@ -27,6 +28,7 @@ const SHORT: Record<Action, string> = {
   SEND_PROOF_TO_SUPPLIER: "Send proof",
   REQUEST_CORRECTION: "Correct details",
   REPLACE: "Replace",
+  FUND: "Fund",
   CLOSE: "Close",
   ESCALATE: "Hand off",
 };
