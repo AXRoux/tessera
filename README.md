@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/AXRoux/tessera/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AXRoux/tessera/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="attacks held 50/50" src="https://img.shields.io/badge/attacks_held-50%2F50-1f4dff">
-  <img alt="527 tests passing" src="https://img.shields.io/badge/tests-527_passing-0b0d12">
+  <img alt="530 tests passing" src="https://img.shields.io/badge/tests-530_passing-0b0d12">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-1f4dff">
   <img alt="Airwallex sandbox" src="https://img.shields.io/badge/Airwallex-sandbox-0b0d12">
   <img alt="Bun and TypeScript" src="https://img.shields.io/badge/Bun_%C2%B7_TypeScript-strict-1f4dff?logo=bun&logoColor=white">
@@ -62,7 +62,7 @@ bun run redteam        # no keys: 50 attacks on the invariants, with a scoreboar
 | **An agent that cannot hurt you** | Told to get a supplier paid twice, the same Claude was **refused seven times in the recorded run and could not**. The database, the playbook, the draft guard and the Closer said no. |
 | **Plugs into anything** | A zero-dependency [MCP server](#use-it-from-any-mcp-client) exposes ten typed tools over stdio, so any MCP client can hold them: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or a loop of your own. Hermes Agent has worked a full sandbox run through it, protocol checked with the official MCP Inspector. The built-in agent runs on Claude or on any OpenAI-compatible model ([choose the model](#choose-the-model)). |
 | **In the console, one click** | **Let Claude work them all** (the button names whichever model you set) streams the agent live. **Try to break it** tells the same agent to pay twice and shows every refusal in black. |
-| **Proof, not claims** | 50 adversarial attacks, 527 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 94 guards removed one at a time from a private copy, every one caught. |
+| **Proof, not claims** | 50 adversarial attacks, 530 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 94 guards removed one at a time from a private copy, every one caught. |
 
 ### Why this is worth building
 
@@ -327,6 +327,8 @@ Five design rules make this safe to hand to a model, any model:
 
 `bun run mcp` serves the same toolbox over stdio. It is written against the MCP spec with **no SDK**, so there is no new dependency, and it was checked end to end with the official `@modelcontextprotocol/inspector`. Any client that can launch a stdio server works the same way, bringing its own model and its own credentials, and the ten tools and their refusals do not change with it. The command is always the same: `bun run --silent --cwd /absolute/path/to/tessera mcp`.
 
+**No keys? Run it offline.** Run `bun install` in the repo once, then set `TESSERA_OFFLINE=1` in the server's environment. The server then runs on the simulated Airwallex with no keys, no network and no money, and starts with the seven `ACME` demo incidents already in its ledger, so any client has something to work (`TESSERA_MCP_SEED=0` starts it empty). Without that flag the server is live: it needs the `.env` that `bun run setup` writes, with your Airwallex sandbox credentials, and it exits naming the variable it is missing.
+
 ```jsonc
 // claude_desktop_config.json
 {
@@ -343,6 +345,9 @@ Five design rules make this safe to hand to a model, any model:
 ```sh
 # Claude Code
 claude mcp add tessera -- bun run --silent --cwd /absolute/path/to/tessera mcp
+
+# the same, offline with no keys
+claude mcp add tessera -e TESSERA_OFFLINE=1 -- bun run --silent --cwd /absolute/path/to/tessera mcp
 
 # poke it by hand
 npx @modelcontextprotocol/inspector bun src/agent/mcp-main.ts
@@ -405,7 +410,7 @@ The loop is about 60 lines, and it has no authority of its own: no gateway, no s
 ## Prove it
 
 ```sh
-bun test                   # 527 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
+bun test                   # 530 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
 bun run redteam            # 50 attacks, offline, with a scoreboard
 bun run mutate             # 94 guard removals on a private copy of the repo; fails unless each is caught (about a minute)
 bun run typecheck && (cd web && bun run typecheck)
