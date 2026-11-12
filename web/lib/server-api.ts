@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import type { z } from "zod";
 
 export type Loaded<T> = { ok: true; data: T } | { ok: false; status: number | null; message: string };
@@ -12,9 +13,11 @@ export async function loadFromApi<S extends z.ZodType>(path: string, schema: S):
   if (!base || !token) {
     return { ok: false, status: null, message: "The web server has no API token. Set TESSERA_API_TOKEN in the repo root .env (bun run setup writes one), or start both with: bun run demo" };
   }
+  const cookie = (await headers()).get("cookie");
   try {
     const response = await fetch(`${base}${path}`, {
-      headers: { "x-tessera-token": token },
+      // The visitor's session cookie: in multi-tenant mode it is how the API knows whose workspace this page shows.
+      headers: { "x-tessera-token": token, ...(cookie ? { cookie } : {}) },
       cache: "no-store",
       signal: AbortSignal.timeout(20_000),
     });

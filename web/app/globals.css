@@ -499,3 +499,41 @@
 .metal-fx-root.mfx-disabled {
   opacity: 0.5 !important;
 }
+
+/* The liquid-metal card: metal-fx's content wrapper must fill the card so the face (tint, text) covers it edge to edge. */
+.metal-fx-root.mfx-card > .metal-fx-content {
+  height: 100%;
+  align-items: stretch;
+}
+
+/* The chromatic edge of the liquid-metal card, after the folder references: a slow, living rainbow rim. */
+@property --edge-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes edge-turn {
+  to {
+    --edge-angle: 360deg;
+  }
+}
+@utility chroma-edge {
+  background: conic-gradient(
+    from var(--edge-angle),
+    #c9ccd6 0deg,
+    #6fa8ff 40deg,
+    #f2f4f8 80deg,
+    #ff8a5c 120deg,
+    #c9ccd6 160deg,
+    #7cf0d0 210deg,
+    #f2f4f8 250deg,
+    #b48cff 300deg,
+    #c9ccd6 360deg
+  );
+  animation: edge-turn 9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chroma-edge {
+    animation: none;
+  }
+}

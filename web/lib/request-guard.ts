@@ -10,7 +10,8 @@ export type GuardResult = { ok: true } | { ok: false; message: string };
  * An entry without a port matches that name on any port; malformed entries are dropped.
  */
 export function allowedHostsFromEnv(env: Record<string, string | undefined>): string[] {
-  if (env.TESSERA_PUBLIC_DEMO !== "1") return [];
+  // A public offline demo, or the signed-in multi-tenant host: the two modes that are meant to answer on a public name.
+  if (env.TESSERA_PUBLIC_DEMO !== "1" && env.TESSERA_AUTH !== "1") return [];
   return (env.TESSERA_ALLOWED_HOSTS ?? "")
     .split(",")
     .map((entry) => entry.trim().toLowerCase())

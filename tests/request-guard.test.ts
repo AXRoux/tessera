@@ -49,6 +49,13 @@ describe("public demo host allowlist", () => {
     expect(get("tessera-demo.fly.dev", allowedHostsFromEnv({ TESSERA_ALLOWED_HOSTS: "tessera-demo.fly.dev" })).ok).toBe(false);
   });
 
+  it("also opens for the signed-in multi-tenant host, where every page is behind a session", () => {
+    const allowed = allowedHostsFromEnv({ TESSERA_AUTH: "1", TESSERA_ALLOWED_HOSTS: "tessera.example.com" });
+    expect(get("tessera.example.com", allowed).ok).toBe(true);
+    expect(get("attacker.example", allowed).ok).toBe(false);
+    expect(allowedHostsFromEnv({ TESSERA_AUTH: "true", TESSERA_ALLOWED_HOSTS: "tessera.example.com" })).toEqual([]);
+  });
+
   it("answers on a listed host, on any port when the entry names none, case-insensitively", () => {
     const allowed = allowedHostsFromEnv(demo);
     expect(get("tessera-demo.fly.dev", allowed).ok).toBe(true);

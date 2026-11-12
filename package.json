@@ -25,6 +25,7 @@
     "smoke:offline": "bun run scripts/offline-smoke.ts"
   },
   "dependencies": {
+    "better-auth": "1.7.22",
     "zod": "^4.6.6"
   },
   "devDependencies": {

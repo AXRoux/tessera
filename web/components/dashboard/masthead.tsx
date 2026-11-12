@@ -9,7 +9,7 @@ const WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eig
 /** The state of the room in one sentence, so a glance from across the stage is enough. */
 function headline(items: IncidentSummary[], waiting: number, running: boolean): string {
   if (running) return "The agent is working the board.";
-  if (items.length === 0) return "A quiet ledger, ready for its first payout.";
+  if (items.length === 0) return "A quiet ledger, ready to begin.";
   if (waiting === 1) return "One decision awaits you.";
   if (waiting > 1) return `${WORDS[waiting] ?? waiting} decisions await you.`;
   return "Everything is accounted for.";

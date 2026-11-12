@@ -289,6 +289,11 @@ async function whenReady(): Promise<void> {
     try {
       const api = await fetch(`http://127.0.0.1:${apiPort}/api/health`, { headers: { "x-tessera-token": token }, signal: AbortSignal.timeout(2_000) });
       const page = await fetch(`http://127.0.0.1:${webPort}/`, { signal: AbortSignal.timeout(5_000) });
+      // The multi-tenant host answers 401 to anyone not signed in: that is it being up.
+      if (process.env.TESSERA_AUTH === "1" && api.status === 401 && page.ok) {
+        console.log(`\n  \x1b[1mReady.\x1b[0m  Multi-tenant: create an account at \x1b[1m${process.env.BETTER_AUTH_URL ?? consoleUrl}/sign-up\x1b[0m. Each person brings their own keys.\n`);
+        return;
+      }
       if (api.ok && page.ok) {
         health = HealthSchema.pick({ agent: true, agentOnEvent: true }).parse(await api.json());
         break;

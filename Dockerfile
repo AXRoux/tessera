@@ -18,7 +18,26 @@ RUN cd web && bun run build
 # The build needs the dev dependencies (Tailwind, TypeScript); running does not. Drop them before the final copy.
 RUN rm -rf node_modules web/node_modules && bun install --production --frozen-lockfile && cd web && bun install --production --frozen-lockfile
 
-FROM oven/bun:1
+# The multi-tenant host (docker build --target live): people sign in with Better Auth and bring their own Airwallex sandbox
+# and model keys. It needs TESSERA_API_TOKEN, TESSERA_MASTER_KEY, BETTER_AUTH_SECRET, BETTER_AUTH_URL and
+# TESSERA_ALLOWED_HOSTS at run time (never baked in), and a volume at /data for accounts, sealed keys and ledgers.
+# See docs/DEPLOY.md. Built before the demo stage so that a plain `docker build` still produces the public demo.
+FROM oven/bun:1 AS live
+WORKDIR /app
+COPY --from=build --chown=bun:bun /app /app
+RUN mkdir -p /data && chown bun:bun /data
+ENV NODE_ENV=production \
+    TESSERA_AUTH=1 \
+    TESSERA_DATA_DIR=/data
+USER bun
+VOLUME /data
+EXPOSE 3100
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD bun -e "fetch('http://127.0.0.1:3100/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+# umask 077: accounts, sealed keys and ledgers are readable by this user alone.
+CMD ["sh", "-c", "umask 077 && exec bun run scripts/dev.ts --production --host 0.0.0.0"]
+
+FROM oven/bun:1 AS demo
 WORKDIR /app
 COPY --from=build --chown=bun:bun /app /app
 ENV NODE_ENV=production \

@@ -85,7 +85,7 @@ export function ControlPanel({
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <p className="text-[16px] font-medium">Nothing in Tessera&rsquo;s care yet</p>
-              <p className="max-w-md text-[13px] leading-relaxed text-fg/60">Send a real payout through Airwallex and it appears here, followed status by status as the bank reports it.</p>
+              <p className="max-w-md text-[13px] leading-relaxed text-fg/60">Send a payout and it appears here, followed status by status as the bank reports it.</p>
               <Btn onClick={onCompose}>Send the first payout</Btn>
             </div>
           ) : view === "invoice" ? (

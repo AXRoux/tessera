@@ -42,6 +42,27 @@ export default async function Home() {
         <div className="mt-14">
           {list.ok ? (
             <Board initial={list.data.items} initialMetrics={metrics.ok ? metrics.data : null} health={health.ok ? health.data : null} />
+          ) : !list.ok && list.status === 401 ? (
+            // Multi-tenant mode: the board belongs to a workspace, and a visitor has none yet.
+            <Container>
+              <Frame>
+                <div className="px-6 py-16 text-center">
+                  <Logo size={44} className="mx-auto mb-6" />
+                  <p className="text-2xl font-light tracking-[-0.03em]">Your own control room is one sign-up away</p>
+                  <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted">
+                    Every account gets a private workspace. It opens in offline rehearsal, so everything works at once; bring your Airwallex sandbox keys and any model when you want the real thing.
+                  </p>
+                  <div className="mt-8 flex flex-wrap justify-center gap-3">
+                    <LinkButton href="/sign-up" arrow>
+                      Create your workspace
+                    </LinkButton>
+                    <LinkButton href="/sign-in" variant="secondary">
+                      Sign in
+                    </LinkButton>
+                  </div>
+                </div>
+              </Frame>
+            </Container>
           ) : (
             <Container>
               <Frame>

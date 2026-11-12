@@ -328,3 +328,19 @@ export const PayeeSchema = z.object({
   operator: z.string(),
 });
 export type Payee = z.infer<typeof PayeeSchema>;
+
+/**
+ * The signed-in person and their workspace, as the host shows it (multi-tenant mode only). Keys never appear: only
+ * hints such as "…a3f9", enough to recognise which key is connected.
+ */
+export const WorkspaceResponseSchema = z.object({
+  user: z.object({ name: z.string(), email: z.string() }),
+  workspace: z.object({
+    mode: z.enum(["offline", "live"]),
+    airwallex: z.object({ clientIdHint: z.string(), keyHint: z.string(), beneficiaryId: z.string(), connectedAt: z.string() }).nullable(),
+    model: z
+      .object({ provider: z.enum(["anthropic", "openai"]), modelId: z.string(), baseUrl: z.string().nullable(), keyHint: z.string(), connectedAt: z.string() })
+      .nullable(),
+  }),
+});
+export type WorkspaceResponse = z.infer<typeof WorkspaceResponseSchema>;

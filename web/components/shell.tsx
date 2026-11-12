@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { authClient } from "@/lib/auth-client";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IncidentListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
 import { api } from "@/lib/client-api";
@@ -104,11 +105,12 @@ function SearchField() {
 }
 
 /** Where you are, as a segmented track of links: the room, the queue, and the incident when you are in one. */
-function Nav({ waiting }: { waiting: number }) {
+function Nav({ waiting, accounts }: { waiting: number; accounts: boolean }) {
   const pathname = usePathname();
   const items: { href: string; label: string; icon: Parameters<typeof Icon>[0]["name"]; on: boolean; count?: number }[] = [
     { href: "/dashboard", label: "Control room", icon: "dashboard", on: pathname === "/dashboard" },
     { href: "/queue", label: "Queue", icon: "inbox", on: pathname === "/queue", count: waiting },
+    ...(accounts ? [{ href: "/workspace", label: "Keys", icon: "lock" as const, on: pathname === "/workspace" }] : []),
   ];
   if (pathname.startsWith("/incidents/")) items.push({ href: pathname, label: "Incident", icon: "file", on: true });
   return (
@@ -151,7 +153,85 @@ function initials(who: string): string {
   return local.slice(0, 2).toUpperCase();
 }
 
-function Menubar({ health }: { health: Health | null }) {
+export interface Account {
+  name: string;
+  email: string;
+  mode: "offline" | "live";
+}
+
+/**
+ * The person signed in, as a raised avatar that opens their menu: who they are, which mode their workspace is in, the
+ * page for their keys, and sign out. Only in multi-tenant mode; one operator has no menu to open.
+ */
+function AccountMenu({ account }: { account: Account }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !box.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", close);
+    };
+  }, [open]);
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((was) => !was)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="flex cursor-pointer items-center gap-2.5 rounded-full text-left"
+      >
+        <span aria-hidden className="tile inverse flex size-11 items-center justify-center rounded-full! text-[12px] font-semibold text-fg">
+          {initials(account.name || account.email)}
+        </span>
+        <span className="hidden min-w-0 leading-tight lg:block">
+          <span className="block max-w-[160px] truncate text-[12.5px] font-medium">{account.name || account.email}</span>
+          <span className="block text-[11px] text-fg/50">{account.mode === "live" ? "Live sandbox" : "Offline rehearsal"}</span>
+        </span>
+      </button>
+      {open ? (
+        <div role="menu" className="tray absolute right-0 top-[calc(100%+10px)] z-50 w-[300px] p-2">
+          <div className="tile rounded-[20px]! px-4 py-3">
+            <p className="truncate text-[13.5px] font-semibold">{account.name}</p>
+            <p className="readout truncate text-[11.5px] text-fg/55">{account.email}</p>
+            <span className="mt-2 inline-flex">
+              <Chip tone={account.mode === "live" ? "accent" : "neutral"}>{account.mode === "live" ? "Live: your Airwallex sandbox" : "Offline rehearsal"}</Chip>
+            </span>
+          </div>
+          <Link role="menuitem" href="/workspace" onClick={() => setOpen(false)} className="mt-1 flex items-center gap-3 rounded-[16px] px-4 py-2.5 text-[13px] hover:bg-fg/[0.05]">
+            <Icon name="lock" className="size-4 text-fg/60" />
+            Workspace and keys
+          </Link>
+          <button
+            role="menuitem"
+            type="button"
+            disabled={leaving}
+            onClick={async () => {
+              setLeaving(true);
+              await authClient.signOut().catch(() => undefined);
+              router.push("/sign-in");
+              router.refresh();
+            }}
+            className="flex w-full cursor-pointer items-center gap-3 rounded-[16px] px-4 py-2.5 text-left text-[13px] hover:bg-fg/[0.05] disabled:opacity-50"
+          >
+            <Icon name="back" className="size-4 text-fg/60" />
+            {leaving ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Menubar({ health, account }: { health: Health | null; account: Account | null }) {
   const agent = useAgentRun();
   const { waiting } = useShell();
   const model = health?.agent ? agentName(health.agent, true) : null;
@@ -165,7 +245,7 @@ function Menubar({ health }: { health: Health | null }) {
           <span className="hidden text-[16px] font-semibold tracking-[-0.03em] 2xl:block">Tessera</span>
         </Link>
 
-        <Nav waiting={waiting.length} />
+        <Nav waiting={waiting.length} accounts={account !== null} />
 
         <div className="hidden min-w-0 max-w-[380px] flex-1 sm:block">
           <SearchField />
@@ -193,15 +273,19 @@ function Menubar({ health }: { health: Health | null }) {
               </span>
             ) : null}
           </span>
-          <span className="flex items-center gap-2.5">
-            <span aria-hidden className="tile inverse flex size-11 items-center justify-center rounded-full! text-[12px] font-semibold text-fg">
-              {initials(health?.operator ?? "operator")}
+          {account ? (
+            <AccountMenu account={account} />
+          ) : (
+            <span className="flex items-center gap-2.5">
+              <span aria-hidden className="tile inverse flex size-11 items-center justify-center rounded-full! text-[12px] font-semibold text-fg">
+                {initials(health?.operator ?? "operator")}
+              </span>
+              <span className="hidden min-w-0 leading-tight lg:block">
+                <span className="block max-w-[160px] truncate text-[12.5px] font-medium">{health?.operator ?? "operator"}</span>
+                <span className="block text-[11px] text-fg/50">Operator</span>
+              </span>
             </span>
-            <span className="hidden min-w-0 leading-tight lg:block">
-              <span className="block max-w-[160px] truncate text-[12.5px] font-medium">{health?.operator ?? "operator"}</span>
-              <span className="block text-[11px] text-fg/50">Operator</span>
-            </span>
-          </span>
+          )}
         </div>
       </div>
       <div className="mt-3 sm:hidden">
@@ -211,7 +295,7 @@ function Menubar({ health }: { health: Health | null }) {
   );
 }
 
-export function AppShell({ health, theme, children }: { health: Health | null; theme: Theme; children: ReactNode }) {
+export function AppShell({ health, theme, account = null, children }: { health: Health | null; theme: Theme; account?: Account | null; children: ReactNode }) {
   const [query, setQuery] = useState("");
   const waiting = useWaiting();
   const value = useMemo<ShellState>(() => ({ query, setQuery, waiting }), [query, waiting]);
@@ -220,7 +304,7 @@ export function AppShell({ health, theme, children }: { health: Health | null; t
       <ThemeProvider initial={theme}>
         {(current) => (
           <div data-theme={current} className="desk flex min-h-dvh flex-col font-ui antialiased xl:h-dvh xl:min-h-[640px]">
-            <Menubar health={health} />
+            <Menubar health={health} account={account} />
             <main className="flex min-h-0 min-w-0 flex-1 flex-col xl:overflow-hidden">{children}</main>
           </div>
         )}
