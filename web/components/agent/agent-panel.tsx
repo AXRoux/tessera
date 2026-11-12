@@ -78,7 +78,7 @@ export function AgentPanel({ incidentId, health, refresh }: { incidentId: string
       </div>
       {mine ? (
         <div className="border-t border-rule">
-          <AgentTimeline state={agent.state} />
+          <AgentTimeline state={agent.state} idFor={() => incidentId} />
         </div>
       ) : null}
     </Frame>

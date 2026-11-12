@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiProblem, streamAgentRun } from "@/lib/client-api";
 import type { AgentStreamEvent, Health } from "../../../src/server/wire";
@@ -168,73 +169,133 @@ export function useAgentRun(onProgress?: () => void): AgentRun {
 /** The model sometimes reaches for markdown. The console shows plain text, so strip the markers rather than print them. */
 const plain = (text: string): string => text.replace(/\*\*/g, "").replace(/`/g, "").replace(/^#+\s*/gm, "");
 
-const toolLabel = (tool: string): string => {
-  const words = tool.replaceAll("_", " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
+/** What each tool is, in the words an operator watching would use. The name alone means little on a screen. */
+const ACTION: Record<string, string> = {
+  list_incidents: "Read the board",
+  assess_incident: "Ask the code what is safe",
+  read_supplier_message: "Read the supplier's message",
+  replace_payment: "Ask to replace the payment",
+  fund_replacement: "Ask to fund the replacement",
+  draft_supplier_reply: "Draft a reply for a person",
+  defer_incident: "Decide to wait",
+  escalate_to_human: "Hand it to a person",
+  reconcile_and_close: "Ask to certify",
+  verify_ledger: "Check the history",
+};
+const actionLabel = (tool: string): string => ACTION[tool] ?? tool.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
+
+/** The tools whose success means a person now has to do something. */
+const HANDOFF: Record<string, string> = {
+  escalate_to_human: "A person now owns this incident. Nothing moves until they decide.",
+  draft_supplier_reply: "A person reviews the draft and sends it from their own mail.",
 };
 
-function ToolStep({ step }: { step: Extract<Step, { kind: "tool" }> }) {
-  const { result } = step;
+/** The reference a result names, so a handoff can link to the incident it belongs to. */
+const referenceIn = (summary: string): string | null => /\b([A-Z]{2,}-\d{3,}(?:-[A-Z0-9]{2,})?)\b/.exec(summary)?.[1] ?? null;
+
+/** A vertical spine, a numbered disc per step, and the step itself. The spine is what makes the order readable at a glance. */
+function StepRow({ n, tone, result, children }: { n: number; tone: "ok" | "bad" | "live"; result: "ok" | "bad" | "live" | null; children: ReactNode }) {
   return (
-    <li className="px-5 py-3.5">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span aria-hidden className={`mt-1.5 size-2 shrink-0 self-start rounded-full ${result ? (result.ok ? "bg-blue" : "bg-danger") : "beat bg-blue"}`} />
-        <Label className="text-ink">{toolLabel(step.tool)}</Label>
-        {step.incident ? <span className="font-mono text-[13px]">{step.incident}</span> : null}
+    <li className="flex gap-4 sm:gap-5">
+      <div className="flex w-9 shrink-0 flex-col items-center">
+        <span
+          className={`tnum flex size-9 items-center justify-center rounded-full border text-[13px] ${
+            tone === "bad"
+              ? "border-danger/60 bg-danger/15 font-medium text-danger"
+              : tone === "live"
+                ? "beat border-blue/60 bg-wash text-white"
+                : "border-white/20 bg-white/[0.04] text-soft"
+          }`}
+        >
+          {n}
+        </span>
+        <span aria-hidden className="mt-2 w-px flex-1 bg-white/10" />
       </div>
-      {step.detail ? <p className="mt-1.5 pl-5 text-[13px] italic leading-relaxed text-muted">&ldquo;{step.detail}&rdquo;</p> : null}
-      {result ? (
-        result.kind === "refused" ? (
-          <div role="alert" className="ml-5 mt-2.5 rounded-xl border border-danger/50 bg-danger/10 px-4 py-3">
-            <Label className="font-medium text-danger">Refused by code</Label>
-            <p className="mt-1.5 text-sm leading-relaxed">{result.summary}</p>
-          </div>
-        ) : result.ok ? (
-          <p className="mt-1.5 pl-5 text-sm leading-relaxed text-muted">{result.summary}</p>
-        ) : (
-          <p className="ml-5 mt-2.5 rounded-xl border border-white/20 px-4 py-2.5 text-sm leading-relaxed">
-            <Label className="mr-2 text-ink">Turned away</Label>
-            {result.summary}
-          </p>
-        )
-      ) : null}
+      <div className={`min-w-0 flex-1 pb-7 ${result === "bad" ? "" : ""}`}>{children}</div>
     </li>
   );
 }
 
-/** What the agent said, each tool it reached for, and what the code answered. Refusals are the loudest thing on it. */
-export function AgentTimeline({ state }: { state: AgentRunState }) {
+function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n: number; href: string | null }) {
+  const { result } = step;
+  const handoff = result?.ok ? HANDOFF[step.tool] : undefined;
+  const reference = handoff ? (step.incident ?? referenceIn(result?.summary ?? "")) : null;
+  return (
+    <StepRow n={n} tone={result ? (result.ok ? "ok" : result.kind === "refused" ? "bad" : "bad") : "live"} result={result ? (result.ok ? "ok" : "bad") : "live"}>
+      <p className="pt-1.5 text-[15px] font-medium tracking-[-0.01em] text-white">{actionLabel(step.tool)}</p>
+      {step.incident ? <p className="mt-1 font-mono text-[12.5px] text-muted">{step.incident}</p> : null}
+      {step.detail ? <p className="mt-2 border-l-2 border-white/15 pl-3 text-[13px] italic leading-relaxed text-muted">&ldquo;{step.detail}&rdquo;</p> : null}
+      {result ? (
+        result.kind === "refused" ? (
+          <div role="alert" className="mt-3 rounded-xl border border-danger/50 bg-danger/10 px-4 py-3">
+            <Label className="font-medium text-danger">Refused by code</Label>
+            <p className="mt-1.5 text-sm leading-relaxed">{result.summary}</p>
+          </div>
+        ) : result.ok ? (
+          <p className="mt-3 border-l-2 border-sky/40 pl-3 text-sm leading-relaxed text-soft">{result.summary}</p>
+        ) : (
+          <div className="mt-3 rounded-xl border border-white/20 px-4 py-3">
+            <Label className="font-medium text-ink">Turned away</Label>
+            <p className="mt-1.5 text-sm leading-relaxed">{result.summary}</p>
+          </div>
+        )
+      ) : (
+        <p className="mt-3 text-[13px] text-muted">Waiting for the code…</p>
+      )}
+      {handoff && result?.ok ? (
+        <div className="ml-0 mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-blue/45 bg-wash px-4 py-3">
+          <span className="text-[13px] font-medium text-sky">Your turn</span>
+          <span className="text-[13px] leading-relaxed text-soft">{handoff}</span>
+          {reference && href ? (
+            <Link href={href} className="text-[13px] text-soft underline decoration-white/30 underline-offset-4 hover:text-white">
+              Open {reference}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+    </StepRow>
+  );
+}
+
+/** What the agent said, each tool it reached for, and what the code answered. A vertical spine, refusals in red, handoffs in blue. */
+/** `idFor` maps the reference a step names to its incident id, so a handoff can be opened from here. */
+export function AgentTimeline({ state, idFor = () => undefined }: { state: AgentRunState; idFor?: (reference: string) => string | undefined }) {
   const [showAll, setShowAll] = useState(false);
   if (state.status === "idle") return null;
   const refused = state.done?.refused ?? state.steps.filter((s) => s.kind === "tool" && s.result?.kind === "refused").length;
+  const calls = state.steps.filter((s) => s.kind === "tool").length;
 
-  // Live, every step shows as it happens. Once the run is done the page is for reading the outcome: keep the agent's
-  // closing report and everything the code refused or turned away, and fold the routine steps behind a toggle.
+  // Live, every step shows as it happens. Once the run ends, the outcome matters more than the routine: fold the
+  // calls that simply worked, and keep everything the code refused, the agent's closing report, and every handoff.
   const finished = state.status === "done";
   const lastText = state.steps.findLastIndex((s) => s.kind === "text");
   const visible = state.steps.flatMap((step, i) => {
-    const keep = !finished || showAll || i === lastText || (step.kind === "tool" && step.result?.ok === false);
+    // Everything the code refused, every handoff to a person, and the agent's closing report survive the fold.
+    const matters = step.kind === "tool" && (step.result?.ok === false || (step.result?.ok === true && step.tool in HANDOFF));
+    const keep = !finished || showAll || i === lastText || matters;
     return keep ? [{ step, i }] : [];
   });
   const folded = state.steps.length - visible.length;
 
   return (
-    <div>
-      <ol className="divide-y divide-rule">
-        {visible.map(({ step, i }) =>
+    <div className="max-h-[620px] overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
+      <ol>
+        {visible.map(({ step, i }, position) =>
           step.kind === "text" ? (
-            <li key={i} className="px-5 py-4">
-              <p className="whitespace-pre-line border-l-2 border-blue pl-4 text-sm leading-relaxed">{plain(step.text)}</p>
-            </li>
+            <StepRow key={i} n={position + 1} tone="ok" result={null}>
+              <p className="whitespace-pre-line rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-[14px] leading-relaxed">{plain(step.text)}</p>
+            </StepRow>
           ) : (
-            <ToolStep key={step.id} step={step} />
+            <ToolStep key={step.id} step={step} n={position + 1} href={step.incident ? (idFor(step.incident) ? `/incidents/${idFor(step.incident)}` : null) : null} />
           ),
         )}
         {state.status === "running" ? (
-          <li className="flex items-center gap-3 px-5 py-4">
-            <span aria-hidden className="beat size-2 bg-blue" />
-            <Label>{state.steps.length === 0 ? "Starting" : "Thinking"}</Label>
-          </li>
+          <StepRow n={visible.length + 1} tone="live" result="live">
+            <p className="pt-1.5 flex items-center gap-3 text-[15px] text-soft">
+              <span aria-hidden className="beat size-2 rounded-full bg-blue" />
+              {state.steps.length === 0 ? "Starting…" : "Working…"}
+            </p>
+          </StepRow>
         ) : null}
       </ol>
       {finished && (folded > 0 || showAll) ? (
@@ -242,18 +303,18 @@ export function AgentTimeline({ state }: { state: AgentRunState }) {
           type="button"
           aria-expanded={showAll}
           onClick={() => setShowAll((open) => !open)}
-          className="label w-full cursor-pointer border-t border-rule px-5 py-3.5 text-left text-ink hover:text-sky"
+          className="mt-1 w-full cursor-pointer rounded-full border border-white/15 px-4 py-2 text-[13px] text-soft transition-colors hover:bg-white/5"
         >
-          {showAll ? "Hide routine steps" : `Show ${folded} routine step${folded === 1 ? "" : "s"}`}
+          {showAll ? `Show only what mattered` : `Show all ${calls} steps`}
         </button>
       ) : null}
       {state.error ? (
-        <p role="alert" className="border-t border-danger/50 bg-danger/10 px-5 py-4 text-sm text-danger">
+        <p role="alert" className="mt-4 rounded-xl border border-danger/50 bg-danger/10 px-4 py-3 text-sm text-danger">
           {state.error}
         </p>
       ) : null}
       {state.done ? (
-        <p className="tnum border-t border-rule px-5 py-3.5 text-[13px] text-muted">
+        <p className="tnum mt-4 border-t border-rule pt-4 text-[13px] text-muted">
           {state.done.calls} tool call{state.done.calls === 1 ? "" : "s"} &middot; {refused} refused by code &middot; {state.done.steps} model turn
           {state.done.steps === 1 ? "" : "s"}
           {state.done.stoppedBecause === "step_limit" ? " · stopped at the step limit" : ""}

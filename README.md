@@ -322,6 +322,7 @@ Five design rules make this safe to hand to a model, any model:
 3. **The agent cannot forge evidence.** Outside MCP, `read_supplier_message` takes a `messageId` of a message in the ledger's inbox, not text. Over MCP the client passes the text itself, which can only add caution.
 4. **Everything is audited.** Every mutating call and every refusal is appended to the ledger as `AGENT_TOOL_CALL`, with the text of untrusted messages replaced by a hash.
 5. **Whatever goes out is checked too.** Supplier-facing drafts are tied to an action the Commander has allowed, scanned for account details, links and promises of more money, and carry facts that code, not the agent, wrote.
+6. **A wrong guess at an argument does not end the run.** The tools accept the shapes a model reaches for: `id`, `incident_id`, `reference` or the bare id instead of `incidentId`, a reference where an id belongs, the message text as a plain string. When validation still fails, the error names the keys it wanted and echoes what arrived, so the model corrects itself on the next turn instead of stopping.
 
 ### Use it from any MCP client
 

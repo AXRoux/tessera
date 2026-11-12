@@ -87,6 +87,8 @@ interface Tool {
   annotations: ToolAnnotations;
   /** Withheld from a triage agent: neither listed nor callable. */
   operatorOnly?: boolean;
+  /** Maps whatever the caller sent onto the keys the schema expects, before validation. */
+  normalize?: (input: unknown) => unknown;
   run(input: never): Promise<unknown>;
 }
 
@@ -96,14 +98,63 @@ function tool<S extends z.ZodType>(def: {
   schema: S;
   annotations: ToolAnnotations;
   operatorOnly?: boolean;
+  /** Maps whatever the caller sent onto what the schema expects, before validation. */
+  normalize?: (input: unknown) => unknown;
   run(input: z.infer<S>): Promise<unknown>;
 }): Tool {
   return def as unknown as Tool;
 }
 
+/** The argument aliases a model reaches for, mapped onto the key the schema actually wants. */
+const ALIASES: Record<string, readonly string[]> = {
+  incidentId: ["id", "incident", "incident_id", "obligationId", "obligation_id", "invoice", "reference", "ref", "paymentId", "payment_id"],
+  messageId: ["message_id", "messageIdentifier"],
+  email: ["text", "content", "body", "emailBody", "email_text", "supplierEmail", "supplier_email"],
+  kind: ["type", "replyKind", "draft_kind"],
+  note: ["reason", "comment", "why"],
+  reason: ["why", "note", "comment"],
+};
+
+/**
+ * Move known aliases onto the canonical key, then drop the alias so a schema is never handed both. Only the keys the
+ * tool's schema actually declares are touched, and each alias is consumed by at most one of them.
+ */
+function normalizerFor(keys: readonly string[]): (input: unknown) => unknown {
+  const moves = keys.flatMap((key) => (ALIASES[key] ?? []).map((alias) => ({ key, alias })));
+  return (input) => {
+    if (input === null || typeof input !== "object" || Array.isArray(input)) return input;
+    const record = { ...(input as Record<string, unknown>) };
+    const taken = new Set<string>();
+    for (const { key, alias } of moves) {
+      if (taken.has(alias)) continue;
+      if (record[key] !== undefined) {
+        taken.add(alias);
+        if (record[alias] !== undefined) delete record[alias];
+        continue;
+      }
+      if (record[alias] === undefined) continue;
+      record[key] = record[alias];
+      taken.add(alias);
+      delete record[alias];
+    }
+    return record;
+  };
+}
+
 const hints = (h: Partial<ToolAnnotations>): ToolAnnotations => ({
   readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false, ...h,
 });
+
+/** What validation actually needs from a schema: the keys it declares, for coercion and for the error a model reads. */
+const fieldsOf = (schema: z.ZodType): string[] => Object.keys(z.toJSONSchema(schema, { io: "input" }).properties ?? {});
+
+/** Names the accepted keys and echoes what arrived, so a model can fix its call instead of guessing twice. */
+function invalidMessage(schema: z.ZodType, received: unknown, error: z.ZodError): string {
+  const fields = fieldsOf(schema);
+  const shown = JSON.stringify(received ?? null);
+  const shape = fields.length > 0 ? `expected ${fields.join(" or ")}` : "expected no arguments";
+  return `${z.prettifyError(error)}\n${shape}; received ${shown.length > 200 ? `${shown.slice(0, 200)}…` : shown}`;
+}
 
 const IncidentId = z.string().min(1).max(64).describe("The incident (obligation) id from list_incidents.");
 
@@ -193,16 +244,28 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
     return swaps.length === 0 ? outcome : (replaceStrings(outcome, swaps) as ToolOutcome);
   };
 
-  const requireIncident = (id: string): Obligation => {
-    if (!inScope(id)) throw new ToolInputError("that incident is outside the scope of this run; tools take the incidentId from list_incidents, not the reference");
-    const found = ledger.getObligation(id);
-    if (!found) throw new ToolInputError(`no incident with id ${id}; call list_incidents`);
+  /**
+   * Accepts an id or the human-facing reference, so a model that read a reference off the board is not turned away.
+   * Every tool that touches the ledger goes through this and then uses `o.id`, never the raw argument, so a reference
+   * can never leak into an event row.
+   */
+  const requireIncident = (idOrReference: string): Obligation => {
+    const key = idOrReference.trim();
+    const found = ledger.getObligation(key) ?? ledger.listObligations().find((o) => o.reference.toLowerCase() === key.toLowerCase());
+    if (!found) throw new ToolInputError(`no incident with id ${idOrReference}; call list_incidents for the ids and references`);
+    if (!inScope(found.id)) throw new ToolInputError("that incident is outside the scope of this run");
     return found;
   };
   const recordedEvidence = (id: string) => effectiveEvidence(ledger.events(id), ledger.requireObligation(id).amountMinor)?.evidence ?? null;
 
+  // Tolerate the argument shapes a model reaches for, then hand the schema only canonical keys.
+  const decorator = <S extends z.ZodType>(def: { schema: S }): { normalize: (input: unknown) => unknown } => {
+    const keys = Object.keys((z.toJSONSchema(def.schema, { io: "input" }) as { properties?: Record<string, unknown> }).properties ?? {});
+    return { normalize: normalizerFor(keys) };
+  };
   const tools: Tool[] = [
     tool({
+      ...decorator({ schema: z.object({ includeClosed: z.boolean().optional() }) }),
       name: "list_incidents",
       description:
         "List payment incidents with their status and latest transfer state. Start here. Amounts are in minor units (cents). Read-only.",
@@ -238,6 +301,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
     }),
 
     tool({
+      ...decorator({ schema: z.object({ incidentId: IncidentId }) }),
       name: "assess_incident",
       description:
         "Refresh the incident from Airwallex and return the Commander's decision: the recommended action, the actions that are allowed right now, the actions the code blocks and why, and the facts behind it. Treat `allowed` as the only things you may do. Moves no money.",
@@ -246,20 +310,21 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       annotations: hints({ idempotentHint: true, openWorldHint: true }),
       run: async ({ incidentId }) => {
         const o = requireIncident(incidentId);
+        const id = o.id;
         // A payment or a conversion stuck in INTENT is resolved first (looked up and adopted, sent again with its original
         // request_id, or escalated / released when its quote expired).
-        if (ledger.attemptsFor(incidentId).some((x) => x.state === "INTENT")) await gateway.recover(incidentId);
-        if (ledger.conversionsIn(["INTENT"], incidentId).length > 0) await commander.recoverFunding(incidentId);
-        const a = await commander.assess(incidentId, recordedEvidence(incidentId));
-        const latest = ledger.requireObligation(incidentId);
+        if (ledger.attemptsFor(id).some((x) => x.state === "INTENT")) await gateway.recover(id);
+        if (ledger.conversionsIn(["INTENT"], id).length > 0) await commander.recoverFunding(id);
+        const a = await commander.assess(id, recordedEvidence(id));
+        const latest = ledger.requireObligation(id);
         const { decision } = a;
         return {
           incident: {
-            incidentId, reference: o.reference, amount: formatMinor(o.amountMinor, o.currency),
+            incidentId: id, reference: o.reference, amount: formatMinor(o.amountMinor, o.currency),
             status: latest.status, escalationReason: escalationView(latest),
           },
           attempts: a.facts.attempts.map((x) => ({ seq: x.seq, state: x.state, awxStatus: x.awxStatus, failureCode: x.failureCode })),
-          supplierEvidence: evidenceView(recordedEvidence(incidentId)),
+          supplierEvidence: evidenceView(recordedEvidence(id)),
           decision: {
             recommended: decision.recommended,
             allowed: decision.allowed,
@@ -275,6 +340,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
     }),
 
     tool({
+      ...decorator({ schema: z.object({ incidentId: IncidentId, messageId: z.string().optional(), email: z.string().optional(), statementText: z.string().optional() }) }),
       name: "read_supplier_message",
       description:
         `Have the quarantined reader extract structured facts from a supplier's message and record them as evidence. You get booleans (claims non-receipt, asks to change bank details, contains instructions aimed at an assistant, ...) and never the message text, because the text is untrusted. Pass a messageId from list_incidents${deps.acceptClientText ? ", or supply the message text yourself" : ""}. Records evidence on the incident.`,
@@ -289,6 +355,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       annotations: hints({}),
       run: async (input) => {
         const o = requireIncident(input.incidentId);
+        const id = o.id;
         if (!deps.acceptClientText && input.messageId === undefined) {
           throw new ToolInputError("this server reads supplier mail from its inbox only; pass a messageId from list_incidents");
         }
@@ -296,7 +363,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
         let email = input.email;
         let statementText = input.statementText;
         if (input.messageId !== undefined) {
-          const message = ledger.inboxMessages(o.id).find((m) => m.id === input.messageId);
+          const message = ledger.inboxMessages(id).find((m) => m.id === input.messageId);
           if (!message) throw new ToolInputError(`no message ${input.messageId} for this incident`);
           email = message.email;
           statementText = message.statementText;
@@ -305,7 +372,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
           reference: o.reference, amountMinor: o.amountMinor, currency: o.currency, email: email!, statementText,
         });
         ledger.tx(() =>
-          ledger.append(o.id, "EVIDENCE_RECORDED", {
+          ledger.append(id, "EVIDENCE_RECORDED", {
             evidence, source: "model", enteredBy: actor,
             message: { email: email!, statementText },
             messageId: input.messageId ?? null,
@@ -316,6 +383,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
     }),
 
     tool({
+      ...decorator({ schema: z.object({ incidentId: IncidentId }) }),
       name: "replace_payment",
       description:
         "Ask for an automatic replacement of a failed payment. The code grants it only when the original is provably CANCELLED with funds returned, the failure is transient, the wallet covers it and the amount is within the automatic limit. Otherwise it refuses with the reasons. You cannot override a refusal; escalate_to_human instead.",
@@ -323,8 +391,8 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       annotations: hints({ destructiveHint: true, openWorldHint: true }),
       operatorOnly: true,
       run: async ({ incidentId }) => {
-        requireIncident(incidentId);
-        const result = await commander.replaceAutomatically(incidentId, recordedEvidence(incidentId));
+        const id = requireIncident(incidentId).id;
+        const result = await commander.replaceAutomatically(id, recordedEvidence(id));
         return {
           outcome: result.outcome,
           attempt: { seq: result.attempt.seq, state: result.attempt.state, awxStatus: result.attempt.awxStatus },
@@ -334,6 +402,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
     }),
 
     tool({
+      ...decorator({ schema: z.strictObject({ incidentId: IncidentId }) }),
       name: "fund_replacement",
       description:
         "When assess_incident recommends FUND: a replacement the code would otherwise make cannot be paid because the wallet in the invoice's currency cannot cover the amount plus the fee and still keep its reserve floor. Tessera computes the conversion itself (which wallet to sell, how much to buy: exactly the shortfall), gets a fresh Airwallex quote, and books one conversion if it is within the automatic conversion limit. You give only the incident id: you cannot choose an amount, a currency or a rate, and a replacement is funded at most once. Above the limit, or if the quote drifted, it refuses with the plan for a person. After it reports SETTLED, call assess_incident again; if REPLACE is then allowed, call replace_payment.",
@@ -342,8 +411,8 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       annotations: hints({ destructiveHint: true, openWorldHint: true }),
       operatorOnly: true,
       run: async ({ incidentId }) => {
-        requireIncident(incidentId);
-        const { plan, result, replans } = await commander.fundAutomatically(incidentId, recordedEvidence(incidentId));
+        const id = requireIncident(incidentId).id;
+        const { plan, result, replans } = await commander.fundAutomatically(id, recordedEvidence(id));
         const c = result.conversion;
         const wallets = result.walletsAfter;
         return {
@@ -367,6 +436,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
     }),
 
     tool({
+      ...decorator({ schema: z.object({ incidentId: IncidentId, kind: z.enum(DRAFT_KINDS), message: z.string().min(1).max(2_000) }) }),
       name: "draft_supplier_reply",
       description:
         "Draft a short reply to the supplier for a person to review and send. Tessera sends nothing itself. Allowed only when assess_incident lists the matching action: STATUS needs SEND_STATUS_TO_SUPPLIER, PROOF needs SEND_PROOF_TO_SUPPLIER, CORRECTION needs REQUEST_CORRECTION. Write two to four plain, polite, factual sentences. Never include account details, numbers, links, email addresses or any promise of another payment: the code adds the real references itself and refuses a draft that breaks these rules.",
@@ -374,7 +444,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       annotations: hints({ openWorldHint: true }),
       run: async ({ incidentId, kind, message }) => {
         const o = requireIncident(incidentId);
-        const a = await commander.assess(incidentId, recordedEvidence(incidentId));
+        const a = await commander.assess(o.id, recordedEvidence(o.id));
         const needed = DRAFT_ACTION[kind];
         if (!a.decision.allowed.includes(needed)) {
           throw new DraftRejected(`a ${kind.toLowerCase()} reply is not allowed right now: ${needed} is not among the allowed actions (${a.decision.allowed.join(", ")})`);
@@ -387,29 +457,31 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
           `Invoice ${o.reference} · ${formatMinor(o.amountMinor, o.currency)} · ${o.method}`,
           ...(latest?.transferId ? [`Payment reference ${latest.transferId.slice(0, 8)} · Airwallex status ${latest.awxStatus ?? latest.state}`] : []),
           ...(kind === "PROOF" && latest?.state === "PAID"
-            ? [`Airwallex reported the payment as made${(() => { const at = paidObservedAt(ledger.events(incidentId), latest.id); return at ? ` on ${at.slice(0, 10)}` : ""; })()}`]
+            ? [`Airwallex reported the payment as made${(() => { const at = paidObservedAt(ledger.events(o.id), latest.id); return at ? ` on ${at.slice(0, 10)}` : ""; })()}`]
             : []),
         ];
-        const event = ledger.append(incidentId, "DRAFT_REPLY", { actor, kind, message: message.trim(), facts });
+        const event = ledger.append(o.id, "DRAFT_REPLY", { actor, kind, message: message.trim(), facts });
         return { drafted: true, draftId: event.seq, note: "A person will review it. Nothing has been sent." };
       },
     }),
 
     tool({
+      ...decorator({ schema: z.object({ incidentId: IncidentId, note: z.string().min(1).max(300) }) }),
       name: "defer_incident",
       description:
         "Decide to do nothing yet and say why. Use when assess_incident recommends WAIT. Records the decision and when to look again. Moves no money.",
       schema: z.object({ incidentId: IncidentId, note: z.string().min(1).max(300) }),
       annotations: hints({ openWorldHint: true }),
       run: async ({ incidentId, note }) => {
-        requireIncident(incidentId);
-        const a = await commander.assess(incidentId, recordedEvidence(incidentId));
-        ledger.append(incidentId, "AGENT_DEFERRED", { actor, note, recommended: a.decision.recommended, recheckAt: a.decision.recheckAt });
+        const id = requireIncident(incidentId).id;
+        const a = await commander.assess(id, recordedEvidence(id));
+        ledger.append(id, "AGENT_DEFERRED", { actor, note, recommended: a.decision.recommended, recheckAt: a.decision.recheckAt });
         return { deferred: true, recheckAt: a.decision.recheckAt };
       },
     }),
 
     tool({
+      ...decorator({ schema: z.object({ incidentId: IncidentId, reason: z.string().min(1).max(300) }) }),
       name: "escalate_to_human",
       description:
         "Hand the incident to a named person with a reason. Always allowed, because it only removes your authority: once escalated, only a person can release a payment. Use for anything you are unsure about, anything involving bank-detail changes, and anything the code blocks.",
@@ -418,12 +490,13 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       run: async ({ incidentId, reason }) => {
         const o = requireIncident(incidentId);
         if (o.status === "CLOSED") throw new ToolInputError("this incident is already closed");
-        if (o.status !== "ESCALATED") ledger.escalate(incidentId, `${actor}: ${reason.trim().replace(/[.\s]+$/, "")}`);
+        if (o.status !== "ESCALATED") ledger.escalate(o.id, `${actor}: ${reason.trim().replace(/[.\s]+$/, "")}`);
         return { escalated: true, alreadyEscalated: o.status === "ESCALATED" };
       },
     }),
 
     tool({
+      ...decorator({ schema: z.object({ incidentId: IncidentId }) }),
       name: "reconcile_and_close",
       description:
         "Ask the Closer to reconcile every wallet line against Airwallex and, if everything agrees and the PAID hold window has passed, sign a closure certificate. Refused unless the assessment lists CLOSE as allowed, so an open supplier claim of non-receipt, an escalation or an unfinished hold window all block it. Refuses with every blocker.",
@@ -431,15 +504,16 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       annotations: hints({ idempotentHint: true, openWorldHint: true }),
       operatorOnly: true,
       run: async ({ incidentId }) => {
-        requireIncident(incidentId);
+        const id = requireIncident(incidentId).id;
         // The same rule the operator's close route follows: the Commander must allow CLOSE before the Closer is asked.
-        await commander.assertCloseAllowed(incidentId, recordedEvidence(incidentId));
-        const certificate = await closer.close(incidentId);
+        await commander.assertCloseAllowed(id, recordedEvidence(id));
+        const certificate = await closer.close(id);
         return { closed: true, certificateHash: certificate.hash, totals: certificate.body.totals };
       },
     }),
 
     tool({
+      ...decorator({ schema: z.object({}) }),
       name: "verify_ledger",
       description: "Recompute the tamper-evident hash chain over every ledger event. Read-only.",
       schema: z.object({}),
@@ -456,8 +530,14 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
   async function call(name: string, input: unknown): Promise<ToolOutcome> {
     const found = tools.find((t) => t.name === name);
     if (!found) return { ok: false, kind: "invalid", message: `unknown tool ${name}; available: ${tools.map((t) => t.name).join(", ")}` };
-    const parsed = found.schema.safeParse(input ?? {});
-    if (!parsed.success) return { ok: false, kind: "invalid", message: z.prettifyError(parsed.error) };
+    const fields = fieldsOf(found.schema);
+    // A model will sometimes send a bare string ("ACME-1044-AB12", or the message text) where an object is asked for.
+    const asObject =
+      typeof input === "string" && fields.length >= 1
+        ? { [fields.find((f) => f !== "incidentId") ?? fields[0]!]: input }
+        : input;
+    const parsed = found.schema.safeParse((found.normalize ?? ((x: unknown) => x))(asObject));
+    if (!parsed.success) return { ok: false, kind: "invalid", message: invalidMessage(found.schema, input, parsed.error) };
 
     const outcome = await run(found, parsed.data);
     const incidentId = (parsed.data as { incidentId?: unknown }).incidentId;

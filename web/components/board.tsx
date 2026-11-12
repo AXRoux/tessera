@@ -240,7 +240,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
                 {agent.state.status === "running" ? `${Name} is working.` : agent.state.status === "error" ? "The agent run stopped before it finished." : ""}
               </p>
               <RunReport state={agent.state} idFor={idFor} />
-              <AgentTimeline state={agent.state} />
+              <AgentTimeline state={agent.state} idFor={idFor} />
             </Frame>
           </div>
         ) : null}
