@@ -3,6 +3,10 @@ import { Container } from "./section";
 
 const QUESTIONS = [
   {
+    q: "Why not simply let the agent pay?",
+    a: "Because an agent is easy to persuade and money is hard to get back. Business email compromise cost businesses $3.05 billion in reported losses in 2025, according to the FBI's Internet Crime Report, and the \"we changed banks\" email is exactly that fraud. Tessera lets the agent do the reading and the paperwork while plain code holds the keys.",
+  },
+  {
     q: "Can the AI agent move money on its own?",
     a: "No. The agent holds ten typed tools, and none of them creates a transfer, signs an approval or edits an amount. It can ask Tessera to replace a payment, and the code grants that only when the original is provably cancelled and every rule allows it.",
   },

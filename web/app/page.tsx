@@ -1,11 +1,11 @@
 import { HealthSchema, IncidentListSchema, MetricsSchema } from "../../src/server/wire";
 import { Board } from "@/components/board";
+import { Benefits } from "@/components/landing/benefits";
+import { Cases } from "@/components/landing/cases";
 import { Faq } from "@/components/landing/faq";
+import { FinalCta } from "@/components/landing/final-cta";
 import { Hero } from "@/components/landing/hero";
-import { Idea } from "@/components/landing/idea";
-import { Problem } from "@/components/landing/problem";
 import { Proof } from "@/components/landing/proof";
-import { Safety } from "@/components/landing/safety";
 import { Container, SectionHead } from "@/components/landing/section";
 import { Steps } from "@/components/landing/steps";
 import { Logo } from "@/components/logo";
@@ -24,14 +24,13 @@ export default async function Home() {
   return (
     <>
       <Hero health={health.ok ? health.data : null} />
-      <Problem />
-      <Idea />
+      <Benefits />
       <Steps />
 
       <section id="console" className="scroll-mt-24 pt-28 sm:pt-36" aria-labelledby="console-title">
         <Container>
-          <SectionHead id="console-title" title="Now try it yourself">
-            Everything below is live. Open seven incidents, watch the agent work them, try to break it, then take over from it. The walkthrough tells you what to press next.
+          <SectionHead center id="console-title" title="Now try it yourself">
+            This is the real console, running on a simulated bank. Open seven incidents, watch the agent work them, try to break it, then take over from it. The walkthrough always tells you what to press next.
           </SectionHead>
         </Container>
         <div className="mt-14">
@@ -51,9 +50,10 @@ export default async function Home() {
         </div>
       </section>
 
-      <Safety />
+      <Cases />
       <Proof />
       <Faq />
+      <FinalCta health={health.ok ? health.data : null} />
     </>
   );
 }

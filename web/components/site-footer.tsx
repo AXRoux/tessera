@@ -2,9 +2,10 @@ import Link from "next/link";
 
 const PAGE = [
   { href: "/", label: "Home" },
+  { href: "/#benefits", label: "Benefits" },
   { href: "/#how", label: "How it works" },
   { href: "/#console", label: "Live demo" },
-  { href: "/#safety", label: "Safety" },
+  { href: "/#cases", label: "Case studies" },
   { href: "/#proof", label: "Proof" },
   { href: "/#faq", label: "FAQ" },
 ];
