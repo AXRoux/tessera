@@ -107,3 +107,43 @@ auto scaling configuration `tessera-demo-asc` and VPC connector `tessera-demo-no
 
 `.dockerignore` excludes `video/` and every nested `.env`: the root-only `.env` pattern let a local key file into the
 first build of this image, caught by scanning the image before it was pushed.
+
+## Tessera Live: sign-in, bring your own keys (the deployment that is live)
+
+`https://18-224-26-250.sslip.io`. People create an account (Better Auth, email and password) and get a private workspace.
+It opens in **offline rehearsal** (simulated Airwallex, scripted agent). On *Workspace and keys* they can connect their
+own **Airwallex sandbox** keys (the workspace goes live, with a ledger file of its own) and their own **model** key
+(Anthropic or any OpenAI-compatible endpoint). Every approval is signed with the signed-in person's email.
+
+| Piece | Setting | Why |
+|---|---|---|
+| Image | `Dockerfile --target live`, ECR `tessera-live` (immutable, scan on push, keep 3), arm64 | the same app, multi-tenant (`TESSERA_AUTH=1`) |
+| Host | EC2 `tessera-live`, t4g.small, Amazon Linux 2023, Elastic IP `18.224.26.250` | SQLite ledgers need a disk, and Airwallex webhooks a fixed address |
+| Disk | 20 GB gp3, encrypted, kept on termination; DLM policy: daily snapshot at 07:00 UTC, keep 7 | accounts, sealed keys and live ledgers |
+| TLS | Caddy (Let's Encrypt) in front; HTTP redirects to HTTPS; HSTS | `X-Forwarded-For` is overwritten by Caddy, so rate limits see the real client |
+| Network | security group `tessera-live-web`: 80 and 443 only. **No SSH**: SSM Session Manager | |
+| Secrets | Secrets Manager `tessera/live`: `TESSERA_API_TOKEN`, `TESSERA_MASTER_KEY`, `BETTER_AUTH_SECRET` | read at start by the instance role, written root-only for `docker run`, deleted |
+| Role | `tessera-live-ec2`: that one secret, that one repository, SSM core | nothing else in the account |
+| Data | `/var/lib/tessera`, mode 700, files 600 | |
+
+**Keys people bring** are checked with the provider before saving, sealed with AES-256-GCM under a key derived per
+workspace (HKDF from `TESSERA_MASTER_KEY`, authenticated data binding user and field), and only ever shown as their last
+four characters. The host accepts the Airwallex **sandbox** only. Losing `TESSERA_MASTER_KEY` makes every stored key
+unreadable (people reconnect); never rotate it without re-sealing.
+
+**What persists:** accounts, sealed keys, and the ledgers of *live* workspaces. An offline rehearsal keeps its simulated
+Airwallex in memory, so its board starts fresh after a restart or 30 idle minutes.
+
+Ship a new build:
+
+```sh
+export AWS_PROFILE=tylavx AWS_REGION=us-east-2
+TAG=$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)-live; REG=237083715820.dkr.ecr.us-east-2.amazonaws.com
+docker buildx build --platform linux/arm64 --target live --provenance=false --sbom=false --load -t $REG/tessera-live:$TAG .
+aws ecr get-login-password | docker login --username AWS --password-stdin $REG && docker push $REG/tessera-live:$TAG
+aws ssm send-command --instance-ids <id> --document-name AWS-RunShellScript --parameters \
+  "commands=[\"sed -i 's#^IMAGE=.*#IMAGE=$REG/tessera-live:$TAG#' /opt/tessera/config\",\"/opt/tessera/up.sh\"]"
+```
+
+Shell on the host: `aws ssm start-session --target <id>`. Stop paying for compute: `aws ec2 stop-instances` (the Elastic IP
+then costs about $3.60 a month). Cost running: about $15 a month (instance, disk, IP, snapshots).
