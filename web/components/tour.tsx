@@ -167,7 +167,7 @@ export function Tour({ items, metrics, health, onSeed, onRun, seeding, running }
       text: `Seven invoices, each gone wrong in a different way: a payment still in flight, a bank timeout, a possible duplicate, a supplier changing bank details, one already paid, one disputed, and one wallet too short to replace it. Every branch of the playbook lands on the board at once. ${simulated}`,
       action: (
         <Button onClick={onSeed} busy={seeding} disabled={running} variant="light" size="lg" arrow>
-          Load seven incidents
+          Load the incidents
         </Button>
       ),
     },

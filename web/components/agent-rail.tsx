@@ -127,7 +127,7 @@ export function AgentRail({ health, metrics, items, awaiting, onSeed, canSeed, s
             Seven invoices, each broken in a different way: one still in flight, one timed out, one possible duplicate, one bank-detail change, one already paid, one disputed, one short of cash.
           </p>
           <Button variant="light" className="mt-4 w-full" onClick={onSeed} busy={seeding}>
-            Load seven incidents
+            Load the incidents
           </Button>
         </section>
       ) : null}

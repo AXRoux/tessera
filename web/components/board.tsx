@@ -211,7 +211,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
                   <Button onClick={() => agent.start(null)}>{`Let ${name} work them all`}</Button>
                 ) : canSeed ? (
                   <Button onClick={seed} busy={seeding}>
-                    Load seven incidents
+                    Load the incidents
                   </Button>
                 ) : null}
                 <Button variant="secondary" onClick={create} busy={creating}>
