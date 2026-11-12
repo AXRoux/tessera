@@ -24,6 +24,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${vietnam.variable} ${fragment.variable} ${inter.variable} ${plex.variable} ${archivo.variable}`}>
+      <head>
+        {/* Before any bundle: zod checks whether it may compile parsers with `new Function`, and under the live site's CSP
+            (no unsafe-eval) that check, though caught, lands in the console as a violation. Tell it not to try. */}
+        <script dangerouslySetInnerHTML={{ __html: "globalThis.__zod_globalConfig=Object.assign(globalThis.__zod_globalConfig||{},{jitless:true})" }} />
+      </head>
       <body>
         <AgentRunProvider>{children}</AgentRunProvider>
       </body>
