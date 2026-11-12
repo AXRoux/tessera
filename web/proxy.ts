@@ -27,8 +27,9 @@ export function proxy(request: NextRequest): Response | undefined {
       signIn.searchParams.set("next", `${pathname}${search}`);
       return NextResponse.redirect(signIn);
     }
-  } else if (pathname === "/sign-in" || pathname === "/sign-up" || pathname.startsWith("/workspace")) {
-    // One operator, no accounts: there is nothing to sign in to.
+  } else if (pathname === "/sign-up" || pathname.startsWith("/workspace")) {
+    // One operator, no accounts: there is no account to create and no workspace to keep. (/sign-in stays: it is the
+    // operator's door, the screen the landing peels away to.)
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
   return undefined;

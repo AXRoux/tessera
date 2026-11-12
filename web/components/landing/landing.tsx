@@ -2,17 +2,23 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { AuthScreen, type AuthMode } from "../auth/auth-screen";
 import { LinkBtn } from "../kit/metal";
 import { useTheme } from "../kit/theme";
 import { Toggle } from "../kit/widgets";
 import { Logo } from "../logo";
 import { Icon } from "./icons";
+import { PeelPage, usePeel } from "./peel";
 
 /*
  * The landing: one 16:9 poster wall, after the Swiss/brutalist reference. A text poster says what Tessera is; four
  * image posters say how a payout travels (agents act, code decides, a person signs, the ledger proves); the agents it
  * works with run beneath; the wordmark closes the page. Nothing here is a screenshot or a number we cannot stand behind.
+ *
+ * The whole wall is a sticker over the sign-in screen: lift its corner, or press a sign-in button, and it peels away
+ * (components/landing/peel.tsx). The address follows (/sign-in), so Back lays the sticker down again.
  */
 
 export interface LandingProps {
@@ -190,10 +196,79 @@ function Chain() {
   );
 }
 
-/* ── The page ───────────────────────────────────────────────────────────────────────────────────────────────────── */
+/* ── The door underneath ────────────────────────────────────────────────────────────────────────────────────────── */
+
+type Door = "sign-in" | "sign-up";
+
+/** Which screen the address asks for: the landing itself, or what is under it. */
+function doorAt(pathname: string, accounts: boolean): AuthMode | null {
+  if (pathname === "/sign-in") return accounts ? "sign-in" : "operator";
+  if (pathname === "/sign-up" && accounts) return "sign-up";
+  return null;
+}
+
+/** Peel the landing away to a door. The address changes in place (no navigation), and the peel follows the address. */
+const peelTo = (door: Door) => window.history.pushState(null, "", `/${door}`);
+
+/** A sign-in link that peels the page instead of leaving it; a modified click (new tab, new window) still navigates. */
+function peelOnClick(door: Door) {
+  return (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    peelTo(door);
+  };
+}
+
+/** Printed on the page underneath, along the fold, where a lifting corner shows it. */
+function CornerHint() {
+  return (
+    <div className="absolute bottom-[50px] right-[50px] translate-x-1/2 translate-y-1/2 -rotate-45 text-center">
+      <p className="micro text-fg/55">Peel to</p>
+      <p className="cond text-[24px] leading-none text-accent">Sign in</p>
+    </div>
+  );
+}
 
 export function Landing({ accounts, rail }: LandingProps) {
+  const pathname = usePathname();
+  const wanted = doorAt(pathname, accounts);
+  // The last door shown stays underneath while the sheet is laid back down.
+  const [door, setDoor] = useState<AuthMode>(accounts ? "sign-in" : "operator");
+  useEffect(() => {
+    if (wanted) setDoor(wanted);
+  }, [wanted]);
+
+  return (
+    <PeelPage
+      open={wanted !== null}
+      onPeeled={() => peelTo("sign-in")}
+      label="Peel the page away to sign in"
+      hint={<CornerHint />}
+      under={
+        <div className="min-h-dvh xl:h-dvh xl:min-h-[640px]">
+          <AuthScreen mode={wanted ?? door} next={null} onSwitch={(mode) => window.history.replaceState(null, "", `/${mode}`)} onHome={() => window.history.back()} />
+        </div>
+      }
+    >
+      <Wall accounts={accounts} rail={rail} />
+    </PeelPage>
+  );
+}
+
+/* ── The page ───────────────────────────────────────────────────────────────────────────────────────────────────── */
+
+function Wall({ accounts, rail }: LandingProps) {
   const { theme, setTheme } = useTheme();
+  const { beckon } = usePeel();
+  // A sign-in button lifts the corner while it is pointed at: this is the way in, and this is where it opens.
+  const doorLink = (to: Door) => ({
+    href: `/${to}`,
+    onClick: peelOnClick(to),
+    onPointerEnter: () => beckon(true),
+    onPointerLeave: () => beckon(false),
+    onFocus: () => beckon(true),
+    onBlur: () => beckon(false),
+  });
   const wall = useRef<HTMLDivElement>(null);
 
   // Pointer parallax for the poster images, written straight to CSS variables so it never re-renders the page.
@@ -257,11 +332,9 @@ export function Landing({ accounts, rail }: LandingProps) {
               { id: "dark", label: <Icon name="moon" className="size-4" />, title: "Dark" },
             ]}
           />
-          {accounts ? (
-            <LinkBtn tone="secondary" href="/sign-in">
-              Sign in
-            </LinkBtn>
-          ) : null}
+          <LinkBtn tone="secondary" {...doorLink("sign-in")}>
+            Sign in
+          </LinkBtn>
         </div>
       </header>
 
@@ -269,8 +342,11 @@ export function Landing({ accounts, rail }: LandingProps) {
       <main className="relative z-10 grid min-h-0 flex-1 gap-4 px-5 sm:px-8 xl:grid-cols-[minmax(0,0.94fr)_minmax(0,1.6fr)]">
         {/* The text poster */}
         <section className="tile relative flex min-h-0 flex-col overflow-hidden rounded-[28px]! p-6 xl:p-8">
-          <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-[46%] bg-[linear-gradient(90deg,transparent,color-mix(in_oklab,var(--accent)_16%,transparent)_55%,color-mix(in_oklab,var(--accent)_62%,transparent))] blur-2xl" />
-          <div aria-hidden className="grain pointer-events-none absolute inset-0 opacity-25 mix-blend-multiply [[data-theme=dark]_&]:mix-blend-screen" />
+          {/* The glow and grain sit in their own rounded clip: Safari lets a blurred layer escape a rounded overflow. */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 [clip-path:inset(0_round_28px)]">
+            <div className="absolute inset-y-0 right-0 w-[46%] bg-[linear-gradient(90deg,transparent,color-mix(in_oklab,var(--accent)_16%,transparent)_55%,color-mix(in_oklab,var(--accent)_62%,transparent))] blur-2xl" />
+            <div className="grain absolute inset-0 opacity-25 mix-blend-multiply [[data-theme=dark]_&]:mix-blend-screen" />
+          </div>
 
           <div className="micro relative flex items-start justify-between text-fg/60">
             <p>
@@ -323,10 +399,10 @@ export function Landing({ accounts, rail }: LandingProps) {
           <div className="relative mt-6 flex flex-wrap items-center gap-3 short:mt-4">
             {accounts ? (
               <>
-                <LinkBtn size="md" href="/sign-up" icon={<Icon name="wallet" className="size-4" />}>
+                <LinkBtn size="md" {...doorLink("sign-up")} icon={<Icon name="wallet" className="size-4" />}>
                   Get your card
                 </LinkBtn>
-                <LinkBtn size="md" tone="secondary" href="/sign-in">
+                <LinkBtn size="md" tone="secondary" {...doorLink("sign-in")}>
                   Sign in
                 </LinkBtn>
               </>

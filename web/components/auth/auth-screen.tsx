@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isMetalFxSupported, MetalFx, type MaskFn } from "metal-fx";
-import { useEffect, useId, useRef, useState, type FormEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { authClient } from "@/lib/auth-client";
 import { passwordStrength } from "@/lib/password-strength";
 import { Btn, LinkBtn } from "../kit/metal";
@@ -12,7 +12,9 @@ import { Capsule, Tile, Toggle, type ChipTone } from "../kit/widgets";
 import { Icon } from "../landing/icons";
 import { Logo } from "../logo";
 
-type Mode = "sign-in" | "sign-up";
+/** Sign in, sign up, or (one operator, no accounts) the door to that operator's control room. */
+export type AuthMode = "sign-in" | "sign-up" | "operator";
+type Mode = AuthMode;
 
 /** Where to go after signing in: only a path on this site, never an address someone slipped into the link. */
 const safeNext = (next: string | null, fallback: string): string => (next && next.startsWith("/") && !next.startsWith("//") ? next : fallback);
@@ -116,6 +118,12 @@ function Chip() {
   );
 }
 
+/**
+ * One face of the card, shown only while it faces the viewer; the swap lands as the card turns edge-on. Opacity, not
+ * visibility: the metal inside sets its own `visibility: visible` once its first frame lands, which would show through.
+ */
+const face = (showing: boolean) => ({ opacity: showing ? 1 : 0, transition: "opacity 0s linear 90ms" });
+
 /** Four digits that belong to this email, so the card looks like theirs as they type. */
 function digitsFor(text: string): string {
   let hash = 7;
@@ -142,7 +150,7 @@ function Card({
 }) {
   const [tilt, setTilt] = useState({ x: 0, y: 0, gx: 50, gy: 30, on: false });
   const strength = passwordStrength(password);
-  const holder = mode === "sign-up" ? name.trim() || "Your name" : email.trim() || "you@company.com";
+  const holder = mode === "operator" ? "Operator" : mode === "sign-up" ? name.trim() || "Your name" : email.trim() || "you@company.com";
   const since = new Date().toLocaleDateString("en-GB", { month: "2-digit", year: "2-digit" });
 
   const move = (event: PointerEvent<HTMLDivElement>) => {
@@ -160,8 +168,9 @@ function Card({
         className={`relative aspect-[1.586] w-[min(500px,86vw)] [transform-style:preserve-3d] ${swiping ? "transition-transform duration-500 ease-in" : "transition-transform duration-200 ease-out"}`}
         style={{ transform: swiping ? "translateY(-40px) rotateX(18deg) scale(0.94)" : `rotateX(${tilt.x}deg) rotateY(${tilt.y + (flipped ? 180 : 0)}deg)` }}
       >
-        {/* Front */}
-        <div className="chroma-edge absolute inset-0 p-[1.5px] [backface-visibility:hidden]" style={{ borderRadius: CARD_RADIUS + 1.5, boxShadow: "0 40px 70px -35px rgb(0 0 0 / 0.75), 0 8px 18px -8px rgb(0 0 0 / 0.35)" }}>
+        {/* Front. Each face is also hidden outright while it faces away: Safari ignores backface-visibility on a face
+            that holds a WebGL canvas (the metal), and showed the back, mirrored, in place of the front. */}
+        <div className="chroma-edge absolute inset-0 p-[1.5px] [backface-visibility:hidden]" style={{ ...face(!flipped), borderRadius: CARD_RADIUS + 1.5, boxShadow: "0 40px 70px -35px rgb(0 0 0 / 0.75), 0 8px 18px -8px rgb(0 0 0 / 0.35)" }}>
           <div className="relative h-full w-full">
           <LiquidSurface tint="linear-gradient(120deg, rgb(4 5 8 / 0.8) 0%, rgb(4 5 8 / 0.56) 45%, rgb(4 5 8 / 0.34) 100%)">
             <div className="relative flex h-full flex-col justify-between p-7 text-white">
@@ -187,7 +196,7 @@ function Card({
 
               <div className="flex items-end justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="readout text-[19px] tracking-[0.12em] text-white/95">1X00 ···· ···· {digitsFor(email)}</p>
+                  <p className="readout whitespace-nowrap text-[min(19px,4.3vw)] tracking-[0.12em] text-white/95">1X00 ···· ···· {digitsFor(mode === "operator" ? "operator" : email)}</p>
                   <p className="mt-1.5 flex items-baseline gap-3 text-[12.5px]">
                     <span className="max-w-[260px] truncate text-white/85">{holder}</span>
                     <span className="readout text-white/45">{since}</span>
@@ -207,7 +216,7 @@ function Card({
         </div>
 
         {/* Back: what happens to what you type */}
-        <div className="chroma-edge absolute inset-0 p-[1.5px] [backface-visibility:hidden] [transform:rotateY(180deg)]" style={{ borderRadius: CARD_RADIUS + 1.5, boxShadow: "0 40px 70px -35px rgb(0 0 0 / 0.75)" }}>
+        <div className="chroma-edge absolute inset-0 p-[1.5px] [backface-visibility:hidden] [transform:rotateY(180deg)]" style={{ ...face(flipped), borderRadius: CARD_RADIUS + 1.5, boxShadow: "0 40px 70px -35px rgb(0 0 0 / 0.75)" }}>
           <div className="relative h-full w-full">
           <LiquidSurface tint="linear-gradient(200deg, rgb(4 5 8 / 0.8), rgb(4 5 8 / 0.6))">
             <div className="relative flex h-full flex-col text-white">
@@ -260,7 +269,73 @@ function Field({ id, label, hint, children }: { id: string; label: string; hint?
   );
 }
 
-export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) {
+/** A link click handled in place (left button, no modifier keys), or left to navigate when there is no handler. */
+function inPlace(handler: (() => void) | undefined) {
+  if (!handler) return undefined;
+  return (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    handler();
+  };
+}
+
+/** Already signed in on this browser: say so, and offer the way through. */
+function SignedIn({ next }: { next: string | null }) {
+  const session = authClient.useSession();
+  if (!session.data) return null;
+  return (
+    <Tile className="mx-2 mt-3 flex items-center justify-between gap-3 rounded-[18px]! px-4 py-2.5">
+      <span className="min-w-0">
+        <span className="block truncate text-[12.5px] font-semibold">Signed in as {session.data.user.name}</span>
+        <span className="readout block truncate text-[11px] text-fg/50">{session.data.user.email}</span>
+      </span>
+      <LinkBtn href={safeNext(next, "/dashboard")}>Continue</LinkBtn>
+    </Tile>
+  );
+}
+
+/** One operator, no accounts: nothing to type. The card is theirs already; this is the way in. */
+function OperatorDoor() {
+  return (
+    <div className="relative">
+      <div className="tile relative rounded-[28px]! p-2">
+        <p className="well flex h-11 items-center justify-center gap-2 rounded-full! text-[13px] font-medium text-fg/60">
+          <span aria-hidden className="beat size-1.5 rounded-full bg-accent" />
+          One operator · no accounts
+        </p>
+        <div className="px-4 pb-1 pt-5">
+          <h1 className="text-[23px] font-semibold leading-tight tracking-[-0.04em]">Welcome back.</h1>
+          <p className="mt-1 text-[13px] leading-relaxed text-fg/55">
+            This control room belongs to one operator, so there is no password to type. The agent has the legwork; the signatures are yours.
+          </p>
+        </div>
+        <div className="space-y-2.5 px-2 pb-2 pt-5">
+          <LinkBtn size="md" block href="/dashboard" icon={<Icon name="dashboard" className="size-4" />}>
+            Enter the control room
+          </LinkBtn>
+          <LinkBtn size="md" block tone="secondary" href="/dashboard?compose=1">
+            Send a payout
+          </LinkBtn>
+        </div>
+      </div>
+      <p className="mt-3 px-4 text-center text-[11px] leading-relaxed text-fg/45">Accounts, each with its own keys, come with the multi-tenant host.</p>
+    </div>
+  );
+}
+
+export function AuthScreen({
+  mode,
+  next,
+  onSwitch,
+  onHome,
+}: {
+  mode: Mode;
+  next: string | null;
+  /** Switch between signing in and creating an account in place (under the peeled landing) instead of navigating. */
+  onSwitch?: (mode: "sign-in" | "sign-up") => void;
+  /** Go back to the landing in place: put the peeled sheet back down. */
+  onHome?: () => void;
+}) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const nameId = useId();
@@ -277,7 +352,6 @@ export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) 
   const [busy, setBusy] = useState(false);
   const [swiping, setSwiping] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const session = authClient.useSession();
   const signUp = mode === "sign-up";
   const strength = passwordStrength(password);
   const matches = confirm.length > 0 && confirm === password;
@@ -318,7 +392,7 @@ export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) 
   return (
     <main className="flex min-h-dvh flex-col xl:h-full xl:min-h-0">
       <header className="flex shrink-0 items-center justify-between px-6 pt-5">
-        <Link href="/" className="flex items-center gap-2.5 text-[13px] text-fg/60 hover:text-fg">
+        <Link href="/" onClick={inPlace(onHome)} className="flex items-center gap-2.5 text-[13px] text-fg/60 hover:text-fg">
           <span className="tile flex size-9 items-center justify-center rounded-[11px]!">
             <Logo size={20} />
           </span>
@@ -366,7 +440,10 @@ export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) 
             </div>
           </div>
 
-          {/* The wallet the card came from: the form */}
+          {/* The wallet the card came from: the form (or, with one operator and no accounts, the door) */}
+          {mode === "operator" ? (
+            <OperatorDoor />
+          ) : (
           <div className="relative">
             <div className="tile relative rounded-[28px]! p-2">
               <nav aria-label="Account" className="well grid grid-cols-2 gap-1 rounded-full! p-1">
@@ -374,6 +451,7 @@ export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) 
                   <Link
                     key={tab}
                     href={tab === mode ? "#" : otherHref}
+                    onClick={tab === mode ? (event) => event.preventDefault() : inPlace(onSwitch && (() => onSwitch(tab)))}
                     aria-current={tab === mode ? "page" : undefined}
                     className={`flex h-9 items-center justify-center rounded-full text-[13px] font-medium transition-colors ${tab === mode ? "tile rounded-full! text-fg" : "text-fg/50 hover:text-fg/80"}`}
                   >
@@ -389,15 +467,7 @@ export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) 
                 </p>
               </div>
 
-              {session.data && !busy ? (
-                <Tile className="mx-2 mt-3 flex items-center justify-between gap-3 rounded-[18px]! px-4 py-2.5">
-                  <span className="min-w-0">
-                    <span className="block truncate text-[12.5px] font-semibold">Signed in as {session.data.user.name}</span>
-                    <span className="readout block truncate text-[11px] text-fg/50">{session.data.user.email}</span>
-                  </span>
-                  <LinkBtn href={safeNext(next, "/dashboard")}>Continue</LinkBtn>
-                </Tile>
-              ) : null}
+              {busy ? null : <SignedIn next={next} />}
 
               <form onSubmit={submit} className="space-y-3 px-2 pb-2 pt-4" noValidate>
                 {signUp ? (
@@ -502,6 +572,7 @@ export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) 
               {signUp ? "Sandbox keys only. Real money cannot move here." : "Forgot your password? Ask whoever runs this Tessera to reset it."}
             </p>
           </div>
+          )}
         </div>
       </div>
     </main>

@@ -5,5 +5,6 @@ export const metadata: Metadata = { title: "Sign in · Tessera" };
 
 export default async function SignInPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const { next } = await searchParams;
-  return <AuthScreen mode="sign-in" next={next ?? null} />;
+  // One operator, no accounts: the same screen, as the door to that operator's control room.
+  return <AuthScreen mode={process.env.TESSERA_AUTH === "1" ? "sign-in" : "operator"} next={next ?? null} />;
 }

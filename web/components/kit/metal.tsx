@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { MetalFx, redrawInstance, setCursorLightConfig, useMetalBend, type MetalFxPreset } from "metal-fx";
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEventHandler, type MouseEventHandler, type PointerEventHandler, type ReactNode } from "react";
 import { useSurface } from "./theme";
 
 type Tone = "primary" | "secondary" | "ink";
@@ -126,11 +126,40 @@ export function Btn({ tone = "primary", size = "sm", busy = false, block = false
   );
 }
 
-/** The same metal around a link, for actions that navigate. */
-export function LinkBtn({ href, tone = "primary", size = "sm", block = false, icon, className = "", children }: { href: string; tone?: Tone; size?: Size; block?: boolean; icon?: ReactNode; className?: string; children: ReactNode }) {
+/**
+ * The same metal around a link, for actions that navigate. `onClick` may take the navigation over (the landing peels
+ * itself away to sign-in): call `preventDefault()` and the link stays put; without script it is still a plain link.
+ */
+export function LinkBtn({
+  href,
+  tone = "primary",
+  size = "sm",
+  block = false,
+  icon,
+  className = "",
+  children,
+  onClick,
+  onPointerEnter,
+  onPointerLeave,
+  onFocus,
+  onBlur,
+}: {
+  href: string;
+  tone?: Tone;
+  size?: Size;
+  block?: boolean;
+  icon?: ReactNode;
+  className?: string;
+  children: ReactNode;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
+  onPointerEnter?: PointerEventHandler<HTMLAnchorElement>;
+  onPointerLeave?: PointerEventHandler<HTMLAnchorElement>;
+  onFocus?: FocusEventHandler<HTMLAnchorElement>;
+  onBlur?: FocusEventHandler<HTMLAnchorElement>;
+}) {
   return (
     <Metal fill={tone} preset={tone === "secondary" ? "silver" : "chromatic"} strength={tone === "secondary" ? 0.75 : 0.9} block={block}>
-      <Link href={href} className={`${BASE} ${SIZE[size]} ${TONE[tone]} ${block ? "w-full" : ""} ${className}`}>
+      <Link href={href} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave} onFocus={onFocus} onBlur={onBlur} className={`${BASE} ${SIZE[size]} ${TONE[tone]} ${block ? "w-full" : ""} ${className}`}>
         {icon}
         {children}
       </Link>
