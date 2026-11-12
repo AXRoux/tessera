@@ -120,7 +120,7 @@ export function Frame({ children, className = "", tone = "ink" }: { children: Re
 export function PanelHeader({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <div className="flex min-h-14 items-center justify-between gap-4 border-b border-rule px-6 py-3">
-      <span className="text-[15px] font-medium tracking-[-0.01em] text-ink">{title}</span>
+      <span className="truncate text-[15px] font-medium tracking-[-0.01em] text-ink">{title}</span>
       {right}
     </div>
   );

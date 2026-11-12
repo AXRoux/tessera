@@ -218,57 +218,47 @@ export function Tour({ items, metrics, health, onSeed, onRun, seeding, running }
   const currentNumber = tour.steps.findIndex((s) => s.id === tour.current) + 1;
 
   return (
-    <div id="start" className="mt-10 scroll-mt-28">
-      <section aria-label="Guided walkthrough" className="overflow-hidden rounded-[24px] border border-blue/45 bg-surface">
-        <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3 px-6 py-5 sm:px-8">
-          <div className="min-w-[260px] flex-1">
-            <h3 className="text-[18px] font-medium tracking-[-0.02em]">Guided walkthrough</h3>
-            <p className="mt-1 text-[14px] font-light text-muted">Five steps from a worried supplier to a signed certificate. Each one is detected from the board, so a reload picks up where you left off.</p>
-          </div>
-          <div className="flex items-center gap-6">
-            <span aria-live="polite" className="tnum text-[14px] text-sky">
-              {tour.doneCount} of {tour.total} done
+    <div id="start" className="mt-8 scroll-mt-24">
+      <section aria-label="Guided walkthrough" className="card border-blue/40 px-5 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <ol className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-2" aria-label="Walkthrough steps">
+            {tour.steps.map((step, i) => {
+              const current = step.id === tour.current;
+              return (
+                <li key={step.id} aria-current={current ? "step" : undefined} className="flex min-w-0 items-center gap-2">
+                  <Mark done={step.done} current={current} n={i + 1} />
+                  <span className={`truncate text-[13.5px] ${current ? "font-medium text-white" : step.done ? "text-soft" : "text-muted"}`}>{step.title}</span>
+                  {i < tour.steps.length - 1 ? <span aria-hidden className="mx-1 h-px w-5 bg-white/15" /> : null}
+                </li>
+              );
+            })}
+          </ol>
+          <div className="flex items-center gap-4">
+            <span aria-live="polite" className="tnum text-[13px] text-sky">
+              {tour.doneCount}/{tour.total}
             </span>
             <button type="button" onClick={hide} className="cursor-pointer text-[13px] text-muted underline underline-offset-4 hover:text-white">
               Hide
             </button>
           </div>
         </div>
-        <div aria-hidden className="h-[3px] bg-white/10">
-          <div className="h-full rounded-r-full bg-blue transition-[width] duration-700" style={{ width: `${(tour.doneCount / tour.total) * 100}%` }} />
-        </div>
-        <div className="grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-          <ol className="divide-y divide-rule border-b border-rule lg:border-b-0 lg:border-r">
-            {tour.steps.map((step, i) => {
-              const current = step.id === tour.current;
-              return (
-                <li key={step.id} aria-current={current ? "step" : undefined} className={`flex items-center gap-4 px-6 py-4 sm:px-8 ${current ? "bg-wash" : ""}`}>
-                  <Mark done={step.done} current={current} n={i + 1} />
-                  <span className={`flex-1 text-[15px] ${current ? "font-medium text-white" : step.done ? "text-soft" : "font-light text-muted"}`}>{step.title}</span>
-                  <span className={`text-[12px] ${current ? "text-sky" : "text-muted"}`}>{step.done ? "Done" : current ? "Next" : ""}</span>
-                </li>
-              );
-            })}
-          </ol>
-          {currentStep ? (
-            <div className="flex min-h-[300px] flex-col justify-between gap-8 bg-surface-2 p-6 sm:p-8">
-              <div>
-                <span className="glass inline-flex px-3 py-1.5 text-[13px]">
-                  Step {currentNumber} of {tour.total}
-                </span>
-                <h4 className="heading mt-5 text-[clamp(26px,3vw,34px)]">{currentStep.title}</h4>
-                <p title={currentStep.id === "takeover" ? tour.takeover?.reason : undefined} className="mt-4 max-w-xl text-[15px] font-light leading-[1.6] text-soft">
-                  {detail[currentStep.id].text}
-                </p>
-              </div>
-              <div>{detail[currentStep.id].action}</div>
-            </div>
-          ) : null}
-        </div>
-        {agentMissing ? <p className="border-t border-rule px-6 py-4 text-[13px] text-muted">{agentMissing}</p> : null}
-        {metrics === null ? (
-          <p className="border-t border-rule px-6 py-4 text-[13px] text-muted">
-            The board numbers could not be read, so steps 3 and 5 cannot be marked done yet. They are retried every few seconds.
+        {currentStep ? (
+          <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-rule pt-4">
+            <p title={currentStep.id === "takeover" ? tour.takeover?.reason : undefined} className="min-w-[280px] flex-1 text-[13.5px] leading-snug text-soft">
+              <span className="text-sky">
+                Step {currentNumber} of {tour.total}
+                {" · "}
+              </span>
+              {detail[currentStep.id].text}
+            </p>
+            <div className="shrink-0">{detail[currentStep.id].action}</div>
+          </div>
+        ) : (
+          <p className="mt-3 border-t border-rule pt-3 text-[13px] text-muted">You have seen the whole loop. Reload, or hide this strip and drive the board yourself.</p>
+        )}
+        {agentMissing || metrics === null ? (
+          <p className="mt-3 border-t border-rule pt-3 text-[12.5px] text-muted">
+            {agentMissing ?? "The board numbers could not be read, so two steps cannot complete yet. They are retried every few seconds."}
           </p>
         ) : null}
       </section>

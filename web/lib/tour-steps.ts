@@ -33,10 +33,10 @@ export interface TourState {
 }
 
 export const TOUR_TITLES: Record<TourStepId, string> = {
-  seed: "Load seven incidents",
-  agent: "Watch the agent work them",
+  seed: "Load the incidents",
+  agent: "Watch it work",
   adversary: "Try to break it",
-  takeover: "Take over from the agent",
+  takeover: "Take over",
   certify: "Get one certified",
 };
 

@@ -10,13 +10,10 @@ import { ATTEMPT, describeFailure, SQUARE, STATUS } from "@/lib/status";
 import { ACTION_WORDS } from "@/lib/describe-event";
 import { IncidentListSchema, MetricsSchema, SeedResultSchema, type Health, type IncidentSummary, type Metrics } from "../../src/server/wire";
 import { AgentTimeline, agentName, useAgentRun } from "./agent/agent-run";
-import { RunReport } from "./agent/run-report";
+import { AgentRail } from "./agent-rail";
 import { Logo } from "./logo";
-import { NeedsYou } from "./needs-you";
 import { resetTour, Tour } from "./tour";
-import { Container } from "./landing/section";
-import { Button, Frame, Label, PanelHeader, Stat, StatStrip, Tag } from "./ui";
-import { WalletStrip } from "./wallet-strip";
+import { Button, Tag } from "./ui";
 
 const POLL_MS = 4000;
 
@@ -26,30 +23,27 @@ function AttemptSquares({ item }: { item: IncidentSummary }) {
   return (
     <span className="inline-flex items-center gap-1.5" aria-label={`${item.attemptCount} attempt${item.attemptCount === 1 ? "" : "s"}`}>
       {Array.from({ length: earlier }, (_, i) => (
-        <span key={i} className="size-3 rounded-full bg-ink" />
+        <span key={i} className="size-2.5 rounded-full bg-white/70" />
       ))}
-      {item.latest ? <span className={`size-3 rounded-full ${SQUARE[item.latest.state]}`} /> : <span className="size-3 rounded-full border border-white/25" />}
+      {item.latest ? <span className={`size-2.5 rounded-full ${SQUARE[item.latest.state]}`} /> : <span className="size-2.5 rounded-full border border-white/25" />}
     </span>
   );
 }
 
-/** The agent's latest verdict on the incident, in words. A refusal is as loud here as in the agent timeline. */
+/** The agent's latest verdict on the incident, in words. A refusal is as loud here as in the transcript. */
 function VerdictLine({ item }: { item: IncidentSummary }) {
   const action = item.lastAgentAction;
   if (!action) return null;
   const verdict = agentVerdict(action);
   return (
-    <p className="mt-2 max-w-[320px] text-[12px] leading-[1.9] text-muted">
-      <span className={verdict.refused ? "rounded bg-danger/15 px-1.5 py-0.5 font-medium text-danger [box-decoration-break:clone]" : "font-medium text-ink"}>{verdict.label}</span>
-      <span suppressHydrationWarning>
-        {" "}
-        &middot; {actorLabel(action.actor)} &middot; {ago(action.at)}
-      </span>
+    <p className="mt-1.5 text-[12px] leading-snug text-muted">
+      <span className={verdict.refused ? "rounded bg-danger/15 px-1.5 py-0.5 font-medium text-danger [box-decoration-break:clone]" : "font-medium text-soft"}>{verdict.label}</span>{" "}
+      <span suppressHydrationWarning>&middot; {actorLabel(action.actor)} &middot; {ago(action.at)}</span>
     </p>
   );
 }
 
-/** Tessera's latest reaction to a bank-side change: which Airwallex event (or the sweep) made it look, and what changed. */
+/** Tessera's latest reaction to a bank-side change: which Airwallex event made it look, and what changed. */
 function ReactionLine({ item }: { item: IncidentSummary }) {
   const reaction = item.lastReaction;
   if (!reaction || reaction.source === "setup") return null;
@@ -57,15 +51,11 @@ function ReactionLine({ item }: { item: IncidentSummary }) {
   const change = reaction.before !== reaction.after
     ? `${ACTION_WORDS[reaction.before] ?? reaction.before} → ${ACTION_WORDS[reaction.after] ?? reaction.after}`
     : `still ${ACTION_WORDS[reaction.after] ?? reaction.after}`;
-  const agent = reaction.woke === "started" ? " · agent woken" : reaction.woke ? ` · agent ${reaction.woke}` : "";
+  const woke = reaction.woke === "started" ? " · agent woken" : reaction.woke ? ` · agent ${reaction.woke}` : "";
   return (
-    <p className="mt-1 max-w-[320px] text-[12px] leading-[1.9] text-muted">
+    <p className="mt-1 text-[11.5px] leading-snug text-muted">
       <span className="font-mono">{cause}</span>
-      <span suppressHydrationWarning>
-        {" "}
-        &middot; {change}
-        {agent} &middot; {ago(reaction.at)}
-      </span>
+      <span suppressHydrationWarning> &middot; {change}{woke} &middot; {ago(reaction.at)}</span>
     </p>
   );
 }
@@ -76,33 +66,39 @@ function FailureCell({ item }: { item: IncidentSummary }) {
   const failure = describeFailure(item.latest.failureCode);
   return (
     <span className="block leading-snug">
-      <span className="block font-medium">{failure.name}</span>
-      <span className="block text-xs text-muted">
-        {failure.playbook} &middot; <span className="font-mono">{item.latest.failureCode}</span>
-      </span>
+      <span className="block text-[13px]">{failure.name}</span>
+      <span className="block text-[11px] text-muted">{failure.playbook}</span>
     </span>
   );
 }
 
-/** Refused money, per currency. Several currencies are listed side by side; nothing refused reads as zero. */
 function heldBack(metrics: Metrics): string {
   const lines = Object.entries(metrics.refusedAmountMinor).filter(([, minor]) => minor > 0);
   if (lines.length === 0) return money(0, "USD");
   return lines.map(([currency, minor]) => money(minor, currency)).join(" + ");
 }
 
-/** The numbers a judge asks for first, all derived from ledger events by the API. Dashes while they cannot be read. */
-function MetricsStrip({ metrics, awaiting }: { metrics: Metrics | null; awaiting: number }) {
-  const value = <T,>(read: (m: Metrics) => T) => (metrics ? read(metrics) : "\u2014");
+/** One line of numbers instead of a strip that eats a third of the fold. */
+function Kpis({ metrics, awaiting }: { metrics: Metrics | null; awaiting: number }) {
+  const read = (f: (m: Metrics) => string | number): string | number => (metrics ? f(metrics) : "—");
+  const cells: readonly (readonly [string, string | number])[] = [
+    ["Tracked", read((m) => m.incidents)],
+    ["Refused by code", read((m) => m.paymentsRefused)],
+    ["Money held back", read(heldBack)],
+    ["Replaced", read((m) => m.autoReplaced)],
+    ["Certified", read((m) => m.certified)],
+    ["Median certify", read((m) => (m.medianResolutionMs === null ? "—" : duration(m.medianResolutionMs)))],
+    ["Awaiting you", awaiting],
+  ];
   return (
-    <StatStrip columns={6}>
-      <Stat value={value((m) => m.incidents)} label="Invoices tracked" />
-      <Stat value={value((m) => m.paymentsRefused)} label="Payments refused by code" />
-      <Stat value={value(heldBack)} label="Money held back" />
-      <Stat value={value((m) => m.autoReplaced)} label="Replaced automatically" />
-      <Stat value={value((m) => (m.medianResolutionMs === null ? "\u2014" : duration(m.medianResolutionMs)))} label="Median time to certify" />
-      <Stat value={awaiting} label="Awaiting a person" />
-    </StatStrip>
+    <dl className="flex flex-wrap items-center gap-x-7 gap-y-2 text-[13px]">
+      {cells.map(([label, value]) => (
+        <div key={label} className="flex items-baseline gap-2">
+          <dd className="tnum text-[15px] font-medium">{value}</dd>
+          <dt className="text-muted">{label}</dt>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -116,9 +112,9 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seeded, setSeeded] = useState<string | null>(null);
+  const [showTable, setShowTable] = useState(false);
 
   const refresh = useCallback(async () => {
-    // Each read stands alone: a failed one keeps the last good value and the next poll retries.
     const [list, numbers] = await Promise.allSettled([api("obligations", IncidentListSchema), api("metrics", MetricsSchema)]);
     if (list.status === "fulfilled") setItems(list.value.items);
     if (numbers.status === "fulfilled") setMetrics(numbers.value);
@@ -154,7 +150,7 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
     setSeeded(null);
     try {
       const result = await api("demo/seed", SeedResultSchema, { method: "POST" });
-      setSeeded(`Opened ${result.seeded.length} demo incident${result.seeded.length === 1 ? "" : "s"}: ${result.seeded.map((s) => s.reference).join(", ")}.`);
+      setSeeded(`Opened ${result.seeded.length} incidents: ${result.seeded.map((s) => s.reference).join(", ")}.`);
       await refresh();
     } catch (e) {
       setError(e instanceof ApiProblem ? e.problem.message : "The demo incidents could not be created.");
@@ -163,7 +159,6 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
     }
   }
 
-  /** Offline demo only. Clears the shared in-memory state, then starts the walkthrough over. */
   async function reset() {
     setResetting(true);
     setError(null);
@@ -181,185 +176,144 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
     }
   }
 
-  const runCommander = () => agent.start(null);
-  const runAdversary = () => agent.start(null, "adversary");
   const idFor = (reference: string) => items.find((i) => i.reference === reference)?.id;
-
-  // The same derivation as the "Needs you" queue: an incident is waiting for a person when the server gives it an attention reason.
   const awaiting = items.filter((i) => i.attention !== null).length;
   const canSeed = Boolean(health && (health.offline || health.sandbox));
   const name = agentName(health?.agent);
-  const Name = agentName(health?.agent, true);
-  const agentReady = Boolean(health?.agent) && items.length > 0;
-  const runningMode = agent.running ? agent.state.mode : null;
+  const running = agent.running;
 
   return (
-    <>
-      <Container>
-        {health?.offline ? (
-          <p className="flex items-start gap-3 text-[14px] font-light leading-snug text-muted">
-            <span aria-hidden className="mt-[7px] size-1.5 shrink-0 rounded-full bg-sky" />
-            {health.agent?.kind === "model"
-              ? `Offline demo: simulated Airwallex, agent runs by ${health.agent.name}. No money and no bank are involved.`
-              : "Offline demo: simulated Airwallex, scripted agent. The agent here is a deterministic script, not a model."}
-          </p>
-        ) : null}
+    <div className="mx-auto max-w-[1200px] px-6 sm:px-10">
+      {health?.offline ? (
+        <p className="flex items-start gap-3 text-[13px] leading-snug text-muted">
+          <span aria-hidden className="mt-[6px] size-1.5 shrink-0 rounded-full bg-sky" />
+          {health.agent?.kind === "model"
+            ? `Offline demo: simulated Airwallex, agent runs by ${health.agent.name}. No money and no bank are involved.`
+            : "Offline demo: simulated Airwallex, scripted agent. The agent is a deterministic script, not a model."}
+        </p>
+      ) : null}
 
-        <Tour
-          items={items}
-          metrics={metrics}
-          health={health}
-          onSeed={seed}
-          onRun={(mode) => (mode === "adversary" ? runAdversary() : runCommander())}
-          seeding={seeding}
-          running={agent.running}
-        />
+      <Tour items={items} metrics={metrics} health={health} onSeed={seed} onRun={(mode) => agent.start(null, mode)} seeding={seeding} running={running} />
 
-        {agent.state.status !== "idle" ? (
-          <div className="mt-8">
-            <Frame tone="blue">
-              <PanelHeader
-                title={agent.state.mode === "adversary" ? "Adversary agent" : "Commander agent"}
-                right={
-                  <span className="flex items-center gap-5">
-                    {agent.target ? (
-                      <Link href={`/incidents/${agent.target}`} className="text-[13px] text-soft underline decoration-white/30 underline-offset-4 hover:text-white">
-                        One incident
-                      </Link>
-                    ) : null}
-                    {agent.running ? (
-                      <button type="button" onClick={agent.stop} className="cursor-pointer text-[13px] text-soft underline decoration-white/30 underline-offset-4 hover:text-white">
-                        Stop
-                      </button>
-                    ) : null}
-                    <Label className={agent.state.mode === "adversary" ? "text-ink" : "text-sky"}>{agent.state.actor ?? Name}</Label>
-                  </span>
-                }
-              />
-              <p aria-live="polite" className="sr-only">
-                {agent.state.status === "running" ? `${Name} is working.` : agent.state.status === "error" ? "The agent run stopped before it finished." : ""}
+      <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)]">
+        <div className="min-w-0">
+          {agent.state.status === "idle" ? (
+            <section className="card flex flex-col items-center gap-4 px-6 py-16 text-center">
+              <Logo size={40} />
+              <p className="heading text-[26px]">{canSeed ? "The board is quiet" : "Nothing has happened yet"}</p>
+              <p className="max-w-md text-[14px] font-light leading-relaxed text-soft">
+                {canSeed
+                  ? `${name.charAt(0).toUpperCase() + name.slice(1)} works the board through ten typed tools. Start it, and every call and refusal lands here in order.`
+                  : "Send a test invoice to open your first incident. Tessera records the instruction before any money moves."}
               </p>
-              <RunReport state={agent.state} idFor={idFor} />
-              <AgentTimeline state={agent.state} idFor={idFor} />
-            </Frame>
-          </div>
-        ) : null}
-
-        <NeedsYou items={items} />
-      </Container>
-
-      <div className="mt-12">
-        <MetricsStrip metrics={metrics} awaiting={awaiting} />
-      </div>
-      <WalletStrip />
-
-      <section aria-labelledby="incidents" className="mx-auto max-w-[1200px] px-6 pt-14 sm:px-10">
-        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-6">
-          <div>
-            <h3 id="incidents" className="heading text-[clamp(26px,3vw,32px)]">
-              All incidents
-            </h3>
-            {health ? (
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Tag tone={health.agent ? "blue-outline" : "muted"}>
-                  {health.agent?.kind === "model" ? `${health.agent.name} connected` : health.agent?.kind === "scripted" ? "Scripted agent, not a model" : "No agent connected"}
-                </Tag>
-                <Tag tone={health.sandbox ? "blue-outline" : "muted"}>
-                  {health.offline ? "Simulated Airwallex" : health.sandbox ? "Simulator on" : "Simulator off"}
-                </Tag>
+              <div className="mt-2 flex flex-wrap justify-center gap-3">
+                {canSeed && items.length > 0 ? (
+                  <Button onClick={() => agent.start(null)}>{`Let ${name} work them all`}</Button>
+                ) : canSeed ? (
+                  <Button onClick={seed} busy={seeding}>
+                    Load seven incidents
+                  </Button>
+                ) : null}
+                <Button variant="secondary" onClick={create} busy={creating}>
+                  Send a test invoice
+                </Button>
               </div>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Button onClick={create} busy={creating}>
-                Send a test invoice
-              </Button>
-              {canSeed ? (
-                <Button variant="secondary" onClick={seed} busy={seeding}>
-                  Seed demo incidents
-                </Button>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Button variant="secondary" disabled={!agentReady || agent.running} busy={runningMode === "commander"} onClick={runCommander}>
-                {runningMode === "commander" ? `${Name} is working` : `Let ${name} work them all`}
-              </Button>
-              {health?.sandbox ? (
-                <Button variant="secondary" disabled={!agentReady || agent.running} busy={runningMode === "adversary"} onClick={runAdversary}>
-                  {runningMode === "adversary" ? `${Name} is attacking` : "Try to break it"}
-                </Button>
-              ) : null}
-            </div>
-            {health?.canReset ? (
-              confirmingReset ? (
-                <span className="flex flex-wrap items-center gap-3">
-                  <span className="text-[13px] text-muted">Clears every incident for everyone using this demo.</span>
-                  <Button onClick={reset} busy={resetting}>
-                    Confirm reset
-                  </Button>
-                  <Button variant="secondary" onClick={() => setConfirmingReset(false)} disabled={resetting}>
-                    Cancel
-                  </Button>
-                </span>
-              ) : (
-                <Button variant="quiet" onClick={() => setConfirmingReset(true)}>
-                  Reset demo
-                </Button>
-              )
-            ) : null}
-          </div>
+            </section>
+          ) : (
+            <section className="card overflow-hidden">
+              <header className="flex flex-wrap items-center justify-between gap-4 border-b border-rule px-5 py-4">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[15px] font-medium">{agent.state.mode === "adversary" ? "Adversary run" : "Agent run"}</span>
+                    <Tag tone={agent.state.mode === "adversary" ? "ink" : "blue-outline"} pulse={running}>
+                      {running ? "Working" : "Finished"}
+                    </Tag>
+                  </div>
+                  <p className="mt-1 text-[13px] text-muted">
+                    {agent.state.mode === "adversary"
+                      ? "Told to pay twice and talk its way past the rules. Every refusal is the point."
+                      : "What the agent tried, and what the code answered."}
+                  </p>
+                </div>
+                <button type="button" onClick={agent.clear} className="cursor-pointer text-[13px] text-muted underline underline-offset-4 hover:text-white">
+                  Clear
+                </button>
+              </header>
+              <AgentTimeline state={agent.state} idFor={idFor} />
+            </section>
+          )}
         </div>
 
-        {error ? (
-          <p role="alert" className="mt-6 rounded-2xl border border-danger/50 bg-danger/10 px-5 py-4 text-sm">
-            {error}
-          </p>
-        ) : null}
-        {seeded ? (
-          <p role="status" className="mt-6 rounded-2xl border border-blue/50 bg-wash px-5 py-4 text-sm">
-            {seeded}
-          </p>
-        ) : null}
+        <AgentRail health={health} metrics={metrics} items={items} awaiting={awaiting} onSeed={seed} canSeed={canSeed} seeding={seeding} />
+      </div>
 
-        {items.length === 0 ? (
-          <div className="card mt-8 grid place-items-center gap-5 px-6 py-20 text-center">
-            <Logo size={44} />
-            <p className="heading text-[28px]">No incidents yet</p>
-            <p className="max-w-md text-[15px] font-light leading-relaxed text-soft">
-              {canSeed
-                ? "Load the seven demo incidents to see every branch of the playbook at once, or send a single test invoice. Tessera records the payment instruction before any money moves."
-                : "Send a test invoice to open your first incident. Tessera records the payment instruction before any money moves."}
-            </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              {canSeed ? (
-                <Button variant="secondary" onClick={seed} busy={seeding}>
-                  Seed demo incidents
+
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
+        <Kpis metrics={metrics} awaiting={awaiting} />
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button variant="quiet" onClick={() => setShowTable((open) => !open)}>
+            {showTable ? "Hide the table" : `All incidents (${items.length})`}
+          </Button>
+          {canSeed ? (
+            <Button variant="secondary" onClick={seed} busy={seeding}>
+              Seed incidents
+            </Button>
+          ) : null}
+          {health?.canReset ? (
+            confirmingReset ? (
+              <>
+                <Button onClick={reset} busy={resetting}>
+                  Confirm reset
                 </Button>
-              ) : null}
-              <Button onClick={create} busy={creating}>
-                Send a test invoice
+                <Button variant="quiet" onClick={() => setConfirmingReset(false)} disabled={resetting}>
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <Button variant="quiet" onClick={() => setConfirmingReset(true)}>
+                Reset demo
               </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="card mt-8 overflow-x-auto">
-            <table className="w-full min-w-[820px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-rule">
-                  {["Invoice", "Amount", "Status", "Attempts", "Latest failure", "Updated"].map((h) => (
-                    <th key={h} scope="col" className="label h-12 px-6 text-left font-normal first:pl-8">
-                      {h}
-                    </th>
-                  ))}
+            )
+          ) : null}
+        </div>
+      </div>
+
+      {error ? (
+        <p role="alert" className="mt-6 rounded-2xl border border-danger/50 bg-danger/10 px-5 py-4 text-sm">
+          {error}
+        </p>
+      ) : null}
+      {seeded ? (
+        <p role="status" className="mt-6 rounded-2xl border border-blue/50 bg-wash px-5 py-4 text-sm">
+          {seeded}
+        </p>
+      ) : null}
+
+      {showTable ? (
+        <div className="card mt-6 overflow-x-auto">
+          <table className="w-full min-w-[820px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-rule">
+                {["Invoice", "Amount", "Status", "Attempts", "Latest failure", "Updated"].map((h) => (
+                  <th key={h} scope="col" className="label h-12 px-6 text-left font-normal first:pl-8">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-8 py-10 text-center text-[14px] text-muted">
+                    No incidents yet.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => {
+              ) : (
+                items.map((item) => {
                   const status = STATUS[item.status];
                   return (
-                    <tr key={item.id} className="group relative border-b border-rule transition-colors last:border-b-0 hover:bg-white/[0.035]">
-                      <td className="relative h-[76px] px-6 pl-8">
+                    <tr key={item.id} className="group relative border-b border-rule last:border-b-0 hover:bg-white/[0.035]">
+                      <td className="relative px-6 py-4 pl-8">
                         <Link href={`/incidents/${item.id}`} className="font-mono text-[13px] after:absolute after:inset-0">
                           {item.reference}
                         </Link>
@@ -375,20 +329,20 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
                       <td className="px-6">
                         <AttemptSquares item={item} />
                       </td>
-                      <td className="px-6 py-3 text-sm">
+                      <td className="px-6 py-3">
                         <FailureCell item={item} />
                       </td>
-                      <td suppressHydrationWarning className="px-6 text-sm text-muted">
+                      <td suppressHydrationWarning className="px-6 text-[13px] text-muted">
                         {ago(item.updatedAt)}
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </>
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
   );
 }

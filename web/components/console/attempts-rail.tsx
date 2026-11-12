@@ -45,7 +45,7 @@ export function AttemptsRail({ attempts }: { attempts: IncidentView["attempts"] 
                   </Row>
                   <Row label="Started">{ago(a.createdAt)}</Row>
                 </div>
-                {a.lastError ? <p className="hatch mt-3 rounded-lg px-3 py-2 text-xs leading-relaxed">{a.lastError}</p> : null}
+                {a.lastError ? <p className="mt-3 rounded-lg bg-white/[0.04] px-3 py-2 text-xs leading-relaxed text-muted">{a.lastError}</p> : null}
               </article>
               {i < attempts.length - 1 ? (
                 <div aria-hidden className="flex w-12 shrink-0 items-center">

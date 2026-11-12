@@ -7,7 +7,7 @@ import { money } from "@/lib/format";
 import { STATUS } from "@/lib/status";
 import { IncidentViewSchema, type Health, type IncidentView } from "../../../src/server/wire";
 import { AgentPanel } from "../agent/agent-panel";
-import { Label, Stat, StatStrip, Tag } from "../ui";
+import { Tag } from "../ui";
 import { ActionsPanel, type RunAction } from "./actions-panel";
 import { AttemptsRail } from "./attempts-rail";
 import { CertificatePanel } from "./certificate-panel";
@@ -86,48 +86,50 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
 
   return (
     <>
-      <div className="mx-auto max-w-[1200px] px-6 pb-10 pt-8 sm:px-10">
-        <Link href="/#console" className="inline-flex items-center gap-2 text-[14px] font-light text-soft transition-colors hover:text-white">
-          <span aria-hidden>&larr;</span> Back to all incidents
-        </Link>
-        <div className="mt-6 flex flex-wrap items-end justify-between gap-6">
-          <div>
-            <Label>Invoice / {o.method} / {o.currency}</Label>
-            <h1 className="heading mt-4 text-[clamp(30px,4.4vw,52px)] leading-none">{o.reference}</h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Tag tone={status.tone} pulse={status.pulse}>
-              {status.label}
-            </Tag>
-            <Tag tone={view.chain.ok ? "blue-outline" : "ink"}>{view.chain.ok ? "History verified" : "History altered"}</Tag>
+      <div className="mx-auto max-w-[1200px] px-6 pt-8 sm:px-10">
+        <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
+          <div className="min-w-0">
+            <Link href="/#console" className="inline-flex items-center gap-2 text-[13px] text-muted transition-colors hover:text-white">
+              <span aria-hidden>&larr;</span> All incidents
+            </Link>
+            <div className="mt-3 flex flex-wrap items-center gap-4">
+              <h1 className="heading text-[clamp(26px,3.4vw,40px)] leading-none">{o.reference}</h1>
+              <Tag tone={status.tone} pulse={status.pulse}>
+                {status.label}
+              </Tag>
+              <Tag tone={view.chain.ok ? "blue-outline" : "ink"}>{view.chain.ok ? "History verified" : "History altered"}</Tag>
+            </div>
+            <p className="tnum mt-3 flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-muted">
+              <span>{money(o.amountMinor, o.currency)} owed</span>
+              <span>
+                {view.attempts.length} attempt{view.attempts.length === 1 ? "" : "s"} &middot; {money(feesKept, o.currency)} fees
+              </span>
+              <span>{money(delivered, o.currency)} delivered</span>
+              <span>
+                {o.method} &middot; {o.currency}
+              </span>
+            </p>
           </div>
         </div>
       </div>
 
       <HandoffBanner view={view} />
 
-      <StatStrip>
-        <Stat value={money(o.amountMinor, o.currency)} label="Owed to the supplier" />
-        <Stat value={view.attempts.length} label={view.attempts.length === 1 ? "Payment attempt" : "Payment attempts"} />
-        <Stat value={money(feesKept, o.currency)} label="Fees spent so far" />
-        <Stat value={money(delivered, o.currency)} label="Delivered to the supplier" />
-      </StatStrip>
-
-      <div className="mx-auto max-w-[1200px] px-6 pt-10 sm:px-10">
+      <div className="mx-auto max-w-[1200px] px-6 pt-8 sm:px-10">
         {notice ? (
-          <div className="mb-8">
+          <div className="mb-6">
             <NoticeBox notice={notice} />
           </div>
         ) : null}
-        <div className="grid gap-8 lg:grid-cols-12">
-          <div className="space-y-8 lg:col-span-8">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)]">
+          <div className="min-w-0 space-y-6">
             <DecisionPanel view={view} />
-            <AgentPanel incidentId={id} health={health} refresh={() => void refresh().catch(() => undefined)} />
-            <DraftPanel view={view} busy={busy} run={run} />
             <AttemptsRail attempts={view.attempts} />
+            <DraftPanel view={view} busy={busy} run={run} />
             <LedgerLog events={view.events} chain={view.chain} />
           </div>
-          <aside className="space-y-8 lg:col-span-4">
+          <aside className="min-w-0 space-y-6 lg:sticky lg:top-24 lg:self-start">
+            <AgentPanel incidentId={id} health={health} refresh={() => void refresh().catch(() => undefined)} />
             <ActionsPanel view={view} operator={health?.operator ?? "operator"} busy={busy} run={run} />
             <FundingPanel view={view} operator={health?.operator ?? "operator"} busy={busy} run={run} />
             <InboxPanel view={view} reader={reader} busy={busy} run={run} />

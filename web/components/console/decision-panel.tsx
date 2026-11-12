@@ -72,9 +72,20 @@ export function DecisionPanel({ view }: { view: IncidentView }) {
 
   const d = assessment.decision;
   const closed = view.obligation.status === "CLOSED";
+  // The same reason can arrive from both the playbook and a blocked action: say it once.
+  const reasons = [...new Set(d.reasons)];
+  const blocked: { action: Action; reasons: string[] }[] = [];
+  for (const b of d.blocked) {
+    const group = blocked.find((g) => g.action === b.action);
+    if (group) group.reasons.push(b.reason);
+    else blocked.push({ action: b.action, reasons: [b.reason] });
+  }
   return (
     <Frame tone={d.severity === "CRITICAL" ? "ink" : "blue"}>
-      <PanelHeader title="Recommended next step" right={<SeverityMeter severity={d.severity} />} />
+      <div className="flex min-h-14 items-center justify-between gap-4 border-b border-rule px-6 py-3">
+        <span className="text-[15px] font-medium tracking-[-0.01em]">Recommended next step</span>
+        <SeverityMeter severity={d.severity} />
+      </div>
       <div className="px-6 pb-8 pt-8 sm:px-8">
         <h2 className="heading text-[clamp(30px,4.4vw,54px)] leading-[1.05]">
           {closed ? "Certified" : HEADLINE[d.recommended]}
@@ -97,7 +108,7 @@ export function DecisionPanel({ view }: { view: IncidentView }) {
         ) : null}
 
         <ol className="mt-8 space-y-4">
-          {d.reasons.map((reason, i) => (
+          {reasons.map((reason, i) => (
             <li key={i} className="flex gap-4">
               <Index n={i + 1} />
               <p className="pt-1 leading-relaxed">{reason}</p>
@@ -105,14 +116,20 @@ export function DecisionPanel({ view }: { view: IncidentView }) {
           ))}
         </ol>
 
-        {d.blocked.length > 0 ? (
+        {blocked.length > 0 ? (
           <div className="mt-10">
             <Label>Not allowed, and why</Label>
-            <ul className="mt-4 divide-y divide-rule border-y border-rule">
-              {d.blocked.map((b, i) => (
-                <li key={i} className="hatch grid gap-1 px-4 py-3 sm:grid-cols-[220px_1fr] sm:gap-6">
-                  <span className="text-[13px] font-medium">{SHORT[b.action]}</span>
-                  <span className="text-sm leading-relaxed text-muted">{b.reason}</span>
+            <ul className="mt-4 space-y-2">
+              {blocked.map((group) => (
+                <li key={group.action} className="rounded-xl border border-white/[0.08] px-4 py-3">
+                  <span className="text-[13px] font-medium">{SHORT[group.action]}</span>
+                  <ul className="mt-1.5 space-y-1">
+                    {[...new Set(group.reasons)].map((reason) => (
+                      <li key={reason} className="text-[13.5px] leading-relaxed text-muted">
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
                 </li>
               ))}
             </ul>
