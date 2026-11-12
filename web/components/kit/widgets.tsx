@@ -199,7 +199,19 @@ export function Capsule({ value, tone = "solid", width = 168, height = 60, strok
     <div role="img" aria-label={label} className="relative shrink-0" style={{ width, height }}>
       <svg viewBox={`0 0 ${width} ${height}`} className="absolute inset-0 size-full">
         <path d={d} fill="none" stroke="var(--track)" strokeWidth={stroke} strokeLinecap="round" pathLength={100} />
-        {v > 0 ? <path d={d} fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" pathLength={100} strokeDasharray={`${v * 100} 100`} className={STROKE[tone]} /> : null}
+        {/* One dash the length of the whole outline, slid into view: changes draw smoothly around the capsule, all the way. */}
+        <path
+          d={d}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          pathLength={100}
+          strokeDasharray="100 100"
+          strokeDashoffset={100 - v * 100}
+          strokeOpacity={v > 0 ? 1 : 0}
+          className={`${STROKE[tone]} transition-[stroke-dashoffset,stroke-opacity,color] duration-700 ease-out`}
+        />
       </svg>
       <div className="absolute inset-0 flex items-center justify-between px-[16%]">{children}</div>
     </div>

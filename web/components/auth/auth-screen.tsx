@@ -266,7 +266,9 @@ export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) 
   const nameId = useId();
   const emailId = useId();
   const passwordId = useId();
+  const confirmId = useId();
   const [name, setName] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [reveal, setReveal] = useState(false);
@@ -278,13 +280,18 @@ export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) 
   const session = authClient.useSession();
   const signUp = mode === "sign-up";
   const strength = passwordStrength(password);
-  const ready = email.includes("@") && password.length >= (signUp ? 10 : 1) && (!signUp || name.trim().length > 0);
+  const matches = confirm.length > 0 && confirm === password;
+  const mismatch = confirm.length > 0 && !password.startsWith(confirm) && confirm !== password;
+  const ready = email.includes("@") && password.length >= (signUp ? 10 : 1) && (!signUp || (name.trim().length > 0 && matches));
   // A new account always meets its workspace first (rehearsal, keys); a returning one goes where it was headed.
   const destination = signUp ? "/workspace?welcome=1" : safeNext(next, "/dashboard");
   const otherHref = `${signUp ? "/sign-in" : "/sign-up"}${next ? `?next=${encodeURIComponent(next)}` : ""}`;
   const passwordRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => setError(null), [mode]);
+  useEffect(() => {
+    setError(null);
+    setConfirm("");
+  }, [mode]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -443,10 +450,41 @@ export function AuthScreen({ mode, next }: { mode: Mode; next: string | null }) 
                       <Capsule label={`Password strength: ${strength.label}`} value={strength.score / 4} tone={STRENGTH_TONE[strength.score]} width={96} height={22} stroke={4}>
                         <span />
                       </Capsule>
-                      <span className="text-[11px] leading-snug text-fg/45">Length beats symbols.</span>
+                      <span className="text-[11px] leading-snug text-fg/45">{strength.score === 4 ? "As strong as it gets." : "Length beats symbols. Keep going to close the ring."}</span>
                     </div>
                   ) : null}
                 </Field>
+                {signUp ? (
+                  <Field
+                    id={confirmId}
+                    label="Confirm password"
+                    hint={
+                      matches ? (
+                        <span className="flex items-center gap-1 text-[11.5px] text-accent">
+                          <Icon name="check" className="size-3.5" />
+                          Matches
+                        </span>
+                      ) : mismatch ? (
+                        <span className="text-[11.5px] text-bad">Does not match yet</span>
+                      ) : null
+                    }
+                  >
+                    <input
+                      id={confirmId}
+                      type={reveal ? "text" : "password"}
+                      value={confirm}
+                      onChange={(e) => setConfirm(e.target.value)}
+                      onFocus={() => setFlipped(true)}
+                      onBlur={() => setFlipped(false)}
+                      onPaste={(e) => e.preventDefault()}
+                      autoComplete="new-password"
+                      placeholder="Type it once more"
+                      maxLength={128}
+                      aria-invalid={mismatch}
+                      className={`${FIELD} ${mismatch ? "ring-2 ring-bad/40" : matches ? "ring-2 ring-accent/35" : ""}`}
+                    />
+                  </Field>
+                ) : null}
 
                 {error ? (
                   <p role="alert" className="well flex items-start gap-2.5 rounded-[14px]! px-3.5 py-2.5 text-[12.5px] text-bad">
