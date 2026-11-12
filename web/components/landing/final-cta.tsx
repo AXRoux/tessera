@@ -13,11 +13,11 @@ export function FinalCta({ health }: { health: Health | null }) {
             Want to watch an agent be told no?
           </h2>
           <p className="mt-6 max-w-xl text-pretty text-[clamp(16px,1.5vw,18px)] font-light leading-[1.6] text-black/70">
-            Open the live console, load seven incidents that each go wrong in a different way, and see the code refuse to pay twice. It takes about three minutes.
+            Open the control room, load seven incidents that each go wrong in a different way, and see the code refuse to pay twice. It takes about three minutes.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             {health?.sandbox ? (
-              <StartButton />
+              <StartButton label="Start here" />
             ) : (
               <LinkButton href="/#console" size="lg" arrow>
                 See the live board

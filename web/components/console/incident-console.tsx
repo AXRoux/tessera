@@ -89,7 +89,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
       <div className="mx-auto max-w-[1200px] px-6 pt-8 sm:px-10">
         <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
           <div className="min-w-0">
-            <Link href="/#console" className="inline-flex items-center gap-2 text-[13px] text-muted transition-colors hover:text-white">
+            <Link href="/dashboard#incidents" className="inline-flex items-center gap-2 text-[13px] text-muted transition-colors hover:text-white">
               <span aria-hidden>&larr;</span> All incidents
             </Link>
             <div className="mt-3 flex flex-wrap items-center gap-4">

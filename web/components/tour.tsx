@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { Health } from "../../src/server/wire";
-import { agentName } from "./agent/agent-run";
-import { reasonText } from "@/lib/agent-verdict";
-import { agentWorked, deriveTour, tourAgent, type TourInput, type TourStepId } from "@/lib/tour-steps";
-import { Button, LinkButton } from "./ui";
+import { agentWorked, deriveTour, tourAgent, type TourInput } from "@/lib/tour-steps";
+import { GuideStep, guideCopy, LoopComplete, Mark } from "./guide";
+import { LinkButton } from "./ui";
 
 /*
  * What the browser remembers about the walkthrough: whether it was hidden, and whether the operator has ever opened an
@@ -66,11 +65,22 @@ export function showTour(): void {
   write(HIDDEN_KEY, false);
 }
 
-/** The header's call to action: an outlined pill that opens the walkthrough. */
+/** Seen by the control room's guide, which is driven by the same five steps. */
+export function useTourState(items: TourInput["items"], metrics: TourInput["metrics"]) {
+  const openedAttention = useSyncExternalStore(subscribe, () => read(TAKEOVER_KEY), () => false);
+  const agentSeen = useSyncExternalStore(subscribe, () => read(AGENT_KEY), () => false);
+  const worked = agentWorked(items);
+  useEffect(() => {
+    if (worked && !read(AGENT_KEY)) write(AGENT_KEY, true);
+  }, [worked]);
+  return deriveTour({ items, metrics, openedAttention, agentSeen });
+}
+
+/** The header's call to action: an outlined pill that opens the walkthrough in the control room. */
 export function TourLink() {
   return (
     <Link
-      href="/#start"
+      href="/dashboard"
       onClick={showTour}
       className="inline-flex h-11 items-center rounded-full border border-white/40 px-5 text-[14px] transition-colors hover:bg-white/10"
     >
@@ -79,36 +89,14 @@ export function TourLink() {
   );
 }
 
-/** The hero's call to action: jumps to the walkthrough, and shows it again if it was hidden. */
-export function StartButton() {
+/** The hero's call to action: opens the control room, where the walkthrough lives, and shows it again if it was hidden. */
+export function StartButton({ label = "Start here" }: { label?: string }) {
   return (
-    <LinkButton href="/#start" onClick={showTour} size="lg" arrow>
-      Start the walkthrough
+    <LinkButton href="/dashboard" onClick={showTour} size="lg" arrow>
+      {label}
     </LinkButton>
   );
 }
-
-function Mark({ done, current, n }: { done: boolean; current: boolean; n: number }) {
-  if (done) {
-    return (
-      <span aria-hidden className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-blue text-white">
-        <svg viewBox="0 0 12 12" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2.5 6.5 5 9l4.5-5.5" />
-        </svg>
-      </span>
-    );
-  }
-  return (
-    <span
-      aria-hidden
-      className={`tnum inline-flex size-8 shrink-0 items-center justify-center rounded-full text-[13px] font-medium ${current ? "bg-white text-black" : "border border-white/20 text-muted"}`}
-    >
-      {n}
-    </span>
-  );
-}
-
-const clip = (text: string, max = 160): string => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
 
 interface TourProps {
   items: TourInput["items"];
@@ -128,92 +116,34 @@ interface TourProps {
  */
 export function Tour({ items, metrics, health, onSeed, onRun, seeding, running }: TourProps) {
   const hidden = useSyncExternalStore(subscribe, () => read(HIDDEN_KEY), () => true);
-  const openedAttention = useSyncExternalStore(subscribe, () => read(TAKEOVER_KEY), () => false);
-  const agentSeen = useSyncExternalStore(subscribe, () => read(AGENT_KEY), () => false);
-  const worked = agentWorked(items);
-  useEffect(() => {
-    if (worked && !read(AGENT_KEY)) write(AGENT_KEY, true);
-  }, [worked]);
+  const tour = useTourState(items, metrics);
 
   if (!health?.sandbox || hidden) return null;
 
-  const tour = deriveTour({ items, metrics, openedAttention, agentSeen });
-  const { name, Name } = tourAgent(health.agent);
+  const name = tourAgent(health.agent).name;
   const hide = () => write(HIDDEN_KEY, true);
 
   if (tour.complete) {
     return (
       <div id="start" className="mt-10 scroll-mt-28">
-        <p role="status" className="flex flex-wrap items-center justify-between gap-4 rounded-[20px] border border-blue/40 bg-surface px-6 py-5 text-[15px]">
-          <span className="flex items-center gap-3">
-            <Mark done current={false} n={0} />
-            You have seen the whole loop. &ldquo;Start here&rdquo; in the header opens the walkthrough again.
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-[20px] border border-blue/40 bg-surface px-6 py-5">
+          <LoopComplete />
+          <span className="flex items-center gap-4">
+            <Link href="/dashboard" className="text-[13px] text-sky underline underline-offset-4 hover:text-white">
+              Open the control room
+            </Link>
+            <button type="button" onClick={hide} className="cursor-pointer text-[13px] text-muted underline underline-offset-4 hover:text-white">
+              Hide
+            </button>
           </span>
-          <button type="button" onClick={hide} className="cursor-pointer text-[13px] text-muted underline underline-offset-4 hover:text-white">
-            Hide
-          </button>
-        </p>
+        </div>
       </div>
     );
   }
 
   const idle = !health.agent || running;
   const agentMissing = !health.agent ? "No agent is connected to this server, so the agent steps are unavailable." : null;
-  const short = agentName(health.agent);
-  const simulated = health.offline ? "Airwallex is simulated here, so no money and no bank are involved." : "This is the Airwallex sandbox, so no real money moves.";
-
-  const detail: Record<TourStepId, { text: string; action: ReactNode }> = {
-    seed: {
-      text: `Seven invoices, each gone wrong in a different way: a payment still in flight, a bank timeout, a possible duplicate, a supplier changing bank details, one already paid, one disputed, and one wallet too short to replace it. Every branch of the playbook lands on the board at once. ${simulated}`,
-      action: (
-        <Button onClick={onSeed} busy={seeding} disabled={running} variant="light" size="lg" arrow>
-          Load the incidents
-        </Button>
-      ),
-    },
-    agent: {
-      text: `${Name} reads the supplier mail, checks each incident and acts only through ten typed tools. The code decides what is allowed, so the agent can wait, replace, escalate or draft a reply, but it can never move money on its own.`,
-      action: (
-        <Button onClick={() => onRun("commander")} disabled={idle} busy={running} variant="light" size="lg" arrow>
-          Let {short} work them all
-        </Button>
-      ),
-    },
-    adversary: {
-      text: `Now the same agent is told to get a supplier paid twice, change the bank details and talk its way past the rules. Watch the code refuse every move.`,
-      action: (
-        <Button onClick={() => onRun("adversary")} disabled={idle} busy={running} variant="light" size="lg" arrow>
-          Try to break it
-        </Button>
-      ),
-    },
-    takeover: tour.takeover
-      ? {
-          text: clip(reasonText(tour.takeover.reason)),
-          action: (
-            <LinkButton href={`/incidents/${tour.takeover.id}`} variant="light" size="lg" arrow>
-              Open {tour.takeover.reference}
-            </LinkButton>
-          ),
-        }
-      : {
-          text: `Nothing is waiting for you yet. Run ${name} again: anything it cannot settle safely is handed to you.`,
-          action: (
-            <Button onClick={() => onRun("commander")} disabled={idle} busy={running} variant="light" size="lg" arrow>
-              Let {short} work them all
-            </Button>
-          ),
-        },
-    certify: {
-      text: `A payment is certified only after a hold window and a check of every wallet line against Airwallex. ${health.offline ? "The hold window is 6 seconds here and 24 hours in production" : "The hold window is set by the server and is 24 hours in production"}, so run ${name} again once a payment has landed.`,
-      action: (
-        <Button onClick={() => onRun("commander")} disabled={idle} busy={running} variant="light" size="lg" arrow>
-          Let {short} work them all
-        </Button>
-      ),
-    },
-  };
-
+  const detail = guideCopy({ health, takeover: tour.takeover, onSeed, onRun, seeding, running });
   const currentStep = tour.steps.find((s) => s.id === tour.current);
   const currentNumber = tour.steps.findIndex((s) => s.id === tour.current) + 1;
 
@@ -237,6 +167,9 @@ export function Tour({ items, metrics, health, onSeed, onRun, seeding, running }
             <span aria-live="polite" className="tnum text-[13px] text-sky">
               {tour.doneCount}/{tour.total}
             </span>
+            <Link href="/dashboard" className="text-[13px] text-sky underline underline-offset-4 hover:text-white">
+              Control room
+            </Link>
             <button type="button" onClick={hide} className="cursor-pointer text-[13px] text-muted underline underline-offset-4 hover:text-white">
               Hide
             </button>
@@ -253,15 +186,43 @@ export function Tour({ items, metrics, health, onSeed, onRun, seeding, running }
             </p>
             <div className="shrink-0">{detail[currentStep.id].action}</div>
           </div>
-        ) : (
-          <p className="mt-3 border-t border-rule pt-3 text-[13px] text-muted">You have seen the whole loop. Reload, or hide this strip and drive the board yourself.</p>
-        )}
-        {agentMissing || metrics === null ? (
+        ) : null}
+        {agentMissing || idle ? (
           <p className="mt-3 border-t border-rule pt-3 text-[12.5px] text-muted">
-            {agentMissing ?? "The board numbers could not be read, so two steps cannot complete yet. They are retried every few seconds."}
+            {agentMissing ?? "An agent run is in flight, so the other buttons wait for it."}
           </p>
         ) : null}
       </section>
     </div>
+  );
+}
+
+/** The same five steps as a vertical panel: what the control room shows while the loop is unfinished. */
+export function Guide({ items, metrics, health, onSeed, onRun, seeding, running }: TourProps) {
+  const tour = useTourState(items, metrics);
+  const { name } = tourAgent(health?.agent);
+  const detail = guideCopy({ health, takeover: tour.takeover, onSeed, onRun, seeding, running });
+  const idle = !health?.agent || running;
+
+  if (tour.complete) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <LoopComplete />
+        <p className="text-[13px] text-muted">Start over with Send a test invoice, or run {name} again on a fresh incident.</p>
+      </div>
+    );
+  }
+
+  return (
+    <ol className="mt-5">
+      {tour.steps.map((step, i) => (
+        <GuideStep key={step.id} n={i + 1} title={step.title} text={detail[step.id].text} action={detail[step.id].action} done={step.done} current={step.id === tour.current} />
+      ))}
+      {!health?.agent || idle ? (
+        <p className="mt-2 border-t border-white/[0.075] pt-3 text-[12.5px] text-muted">
+          {!health?.agent ? "No agent is connected to this server, so the agent steps are unavailable." : "An agent run is in flight, so the other buttons wait for it."}
+        </p>
+      ) : null}
+    </ol>
   );
 }

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { HealthSchema, IncidentViewSchema } from "../../../../src/server/wire";
+import { HealthSchema, IncidentViewSchema } from "../../../../../src/server/wire";
 import { Frame } from "@/components/ui";
 import { IncidentConsole } from "@/components/console/incident-console";
 import { loadFromApi } from "@/lib/server-api";

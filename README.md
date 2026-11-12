@@ -85,13 +85,19 @@ Whichever you pick, the division of labor holds: **the model proposes and explai
 
 ```sh
 bun run doctor         # optional: one screen that says what works and the exact command to fix what does not
-bun run demo           # API on :4010, console on http://127.0.0.1:3100, and it opens your browser
+bun run demo           # API on :4010, site on http://127.0.0.1:3100, and it opens your browser
 ```
 
-The page opens with a **Start here** checklist, five steps that follow what you actually do and survive a reload: load seven
-incidents, watch the agent work them, try to break it, take over the one it handed you, get one certified. A **Needs you**
-queue lists everything waiting for a person, each row shows what the agent last did there, and after a run **What the agent did**
-gives one line per incident. **Reset demo** clears it and starts over.
+The site opens on the front page; **Start here** (hero, header, or the pill that follows you down) opens the **control room**
+at `/dashboard`: one screen for the whole loop. A five-step guide down the short side, the wallets and their reserve floors,
+one column per incident for what is at stake, a live ledger-activity chart, the agent's transcript, the **Needs you** queue and
+the full incident table, all of it read from the ledger on every poll.
+
+The guide is derived from the board, so it is right after a reload and it survives one: load seven incidents, watch the agent
+work them, try to break it, take over the one it handed you, get one certified. The **Needs you** queue lists everything waiting
+for a person, each row shows what the agent last did there, and after a run **What the agent did** gives one line per incident.
+**Reset demo** clears it and starts over. The same board is embedded further down the front page for a quick look, with a link
+into the control room.
 
 The demo runs on a simulated Airwallex with a deterministic, scripted agent, clearly labelled *not a model* everywhere it
 appears. The paid invoice certifies after a 6-second hold, so press the agent button a second time. **Try to break it** runs a

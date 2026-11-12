@@ -3,7 +3,7 @@ import { Logo } from "./logo";
 import { TourLink } from "./tour";
 
 const NAV = [
-  { href: "/#benefits", label: "Benefits" },
+  { href: "/dashboard", label: "Control room" },
   { href: "/#how", label: "How it works" },
   { href: "/#console", label: "Live demo" },
   { href: "/#cases", label: "Case studies" },

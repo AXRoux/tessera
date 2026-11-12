@@ -1,4 +1,4 @@
-import { HealthSchema, IncidentListSchema, MetricsSchema } from "../../src/server/wire";
+import { HealthSchema, IncidentListSchema, MetricsSchema } from "../../../src/server/wire";
 import { Board } from "@/components/board";
 import { Benefits } from "@/components/landing/benefits";
 import { Cases } from "@/components/landing/cases";
@@ -9,7 +9,7 @@ import { Proof } from "@/components/landing/proof";
 import { Container, SectionHead } from "@/components/landing/section";
 import { Steps } from "@/components/landing/steps";
 import { Logo } from "@/components/logo";
-import { Frame } from "@/components/ui";
+import { Frame, LinkButton } from "@/components/ui";
 import { loadFromApi } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +32,12 @@ export default async function Home() {
           <SectionHead center id="console-title" title="Now try it yourself">
             This is the real console, running on a simulated bank. Open seven incidents, watch the agent work them, try to break it, then take over from it. The walkthrough always tells you what to press next.
           </SectionHead>
+          <div className="mt-8 flex flex-col items-center gap-3">
+            <LinkButton href="/dashboard" variant="secondary">
+              Open the control room
+            </LinkButton>
+            <p className="text-[13px] text-muted">The same board, with the wallets, the charts and the queue around it.</p>
+          </div>
         </Container>
         <div className="mt-14">
           {list.ok ? (

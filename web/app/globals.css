@@ -127,6 +127,60 @@
   background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgb(255 255 255 / 0.045) 6px 7px);
 }
 
+/*
+ * The control room's canvas: near-black navy, lit from two corners, so panels float on light instead of on black.
+ * Used by the dashboard shell only; the marketing pages keep the flat canvas.
+ */
+@utility app-canvas {
+  background:
+    radial-gradient(120% 80% at 4% -18%, rgb(47 125 225 / 0.3) 0%, transparent 58%),
+    radial-gradient(95% 65% at 99% -4%, rgb(79 79 241 / 0.24) 0%, transparent 56%),
+    linear-gradient(180deg, #070c1c 0%, #050815 52%, #04060f 100%);
+}
+
+/* The glass slab every dashboard panel sits on. */
+@utility panel {
+  border: 1px solid rgb(255 255 255 / 0.085);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgb(146 174 255 / 0.075) 0%, rgb(120 150 255 / 0.03) 45%, rgb(255 255 255 / 0.012) 100%);
+  box-shadow:
+    0 30px 70px -50px rgb(0 0 0 / 0.95),
+    inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+
+/* The one blue slab on the page: the control panel. Same idea as glow-card, kept lower so numbers stay readable. */
+@utility glow-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.13);
+  border-radius: 22px;
+  background:
+    radial-gradient(95% 62% at 50% 122%, rgb(47 125 225 / 0.72) 0%, rgb(32 84 200 / 0.28) 46%, transparent 74%),
+    linear-gradient(180deg, #04091a 0%, #05102e 46%, #0a2380 100%);
+}
+
+/* A hairline between rows inside a panel. */
+@utility hairline {
+  border-color: rgb(255 255 255 / 0.075);
+}
+
+/* Quiet scrollbars inside a panel, so a long transcript does not carry a bright rail. */
+@utility thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.16);
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
 /* Large figures that fade out toward the bottom edge of their card. */
 @utility numeral {
   font-weight: 700;
