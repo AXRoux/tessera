@@ -537,3 +537,57 @@
     animation: none;
   }
 }
+
+/* ── The landing: a poster wall, after the Swiss/brutalist reference ─────────────────────────────────────────────── */
+
+/* Condensed display type: Archivo at its narrowest, heavy and uppercase, set tight like a poster headline. */
+@utility cond {
+  font-family: var(--font-archivo), "Arial Narrow", sans-serif;
+  font-weight: 800;
+  font-variation-settings: "wdth" 62;
+  text-transform: uppercase;
+  letter-spacing: -0.008em;
+  line-height: 0.84;
+}
+/* It arrives wide and settles narrow: the width axis is the motion. */
+@keyframes cond-in {
+  from {
+    font-variation-settings: "wdth" 125;
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    font-variation-settings: "wdth" 62;
+    opacity: 1;
+    transform: none;
+  }
+}
+@utility cond-in {
+  animation: cond-in 1.15s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+/* Poster microcopy: small mono capitals. */
+@utility micro {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  line-height: 1.3;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+/* Film grain over everything, the reference's printed texture. */
+@utility grain {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size: 180px 180px;
+}
+/* An image that drifts against the pointer (--px and --py run -1 to 1 on an ancestor). */
+@utility drift-img {
+  transform: translate3d(calc(var(--px, 0) * -14px), calc(var(--py, 0) * -14px), 0) scale(1.1);
+  transition: transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cond-in {
+    animation: none;
+  }
+  .drift-img {
+    transform: scale(1.05);
+  }
+}
