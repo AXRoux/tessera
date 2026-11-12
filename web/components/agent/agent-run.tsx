@@ -178,21 +178,21 @@ function ToolStep({ step }: { step: Extract<Step, { kind: "tool" }> }) {
   return (
     <li className="px-5 py-3.5">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span aria-hidden className={`mt-1.5 size-2 shrink-0 self-start ${result ? (result.ok ? "bg-blue" : "bg-ink") : "beat bg-blue"}`} />
+        <span aria-hidden className={`mt-1.5 size-2 shrink-0 self-start rounded-full ${result ? (result.ok ? "bg-blue" : "bg-danger") : "beat bg-blue"}`} />
         <Label className="text-ink">{toolLabel(step.tool)}</Label>
         {step.incident ? <span className="font-mono text-[13px]">{step.incident}</span> : null}
       </div>
       {step.detail ? <p className="mt-1.5 pl-5 text-[13px] italic leading-relaxed text-muted">&ldquo;{step.detail}&rdquo;</p> : null}
       {result ? (
         result.kind === "refused" ? (
-          <div role="alert" className="mt-2.5 ml-5 bg-ink px-4 py-3 text-paper">
-            <Label className="text-paper">Refused by code</Label>
+          <div role="alert" className="ml-5 mt-2.5 rounded-xl border border-danger/50 bg-danger/10 px-4 py-3">
+            <Label className="font-medium text-danger">Refused by code</Label>
             <p className="mt-1.5 text-sm leading-relaxed">{result.summary}</p>
           </div>
         ) : result.ok ? (
           <p className="mt-1.5 pl-5 text-sm leading-relaxed text-muted">{result.summary}</p>
         ) : (
-          <p className="mt-2.5 ml-5 border border-ink px-4 py-2.5 text-sm leading-relaxed">
+          <p className="ml-5 mt-2.5 rounded-xl border border-white/20 px-4 py-2.5 text-sm leading-relaxed">
             <Label className="mr-2 text-ink">Turned away</Label>
             {result.summary}
           </p>
@@ -242,18 +242,18 @@ export function AgentTimeline({ state }: { state: AgentRunState }) {
           type="button"
           aria-expanded={showAll}
           onClick={() => setShowAll((open) => !open)}
-          className="label w-full cursor-pointer border-t border-rule px-5 py-3.5 text-left text-ink hover:text-blue"
+          className="label w-full cursor-pointer border-t border-rule px-5 py-3.5 text-left text-ink hover:text-sky"
         >
           {showAll ? "Hide routine steps" : `Show ${folded} routine step${folded === 1 ? "" : "s"}`}
         </button>
       ) : null}
       {state.error ? (
-        <p role="alert" className="border-t border-ink bg-ink px-5 py-4 text-sm text-paper">
+        <p role="alert" className="border-t border-danger/50 bg-danger/10 px-5 py-4 text-sm text-danger">
           {state.error}
         </p>
       ) : null}
       {state.done ? (
-        <p className="tnum border-t border-rule px-5 py-3.5 text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
+        <p className="tnum border-t border-rule px-5 py-3.5 text-[13px] text-muted">
           {state.done.calls} tool call{state.done.calls === 1 ? "" : "s"} &middot; {refused} refused by code &middot; {state.done.steps} model turn
           {state.done.steps === 1 ? "" : "s"}
           {state.done.stoppedBecause === "step_limit" ? " · stopped at the step limit" : ""}

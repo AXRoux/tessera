@@ -45,7 +45,7 @@ function SeverityMeter({ severity }: { severity: Decision["severity"] }) {
     <span className="flex items-center gap-3" role="img" aria-label={`Severity: ${label}`}>
       <span className="flex gap-1.5">
         {[1, 2, 3].map((n) => (
-          <span key={n} className={`h-4 w-2.5 ${n <= level ? (severity === "CRITICAL" ? "bg-ink" : "bg-blue") : "border border-rule"}`} />
+          <span key={n} className={`h-4 w-2.5 rounded-sm ${n <= level ? (severity === "CRITICAL" ? "bg-danger" : "bg-blue") : "border border-rule"}`} />
         ))}
       </span>
       <Label className="text-ink">{label}</Label>
@@ -61,7 +61,7 @@ export function DecisionPanel({ view }: { view: IncidentView }) {
       <Frame>
         <PanelHeader title="Recommended next step" />
         <div className="hatch px-6 py-12">
-          <p className="font-display text-2xl tracking-wide">No recommendation right now</p>
+          <p className="heading text-2xl">No recommendation right now</p>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted">
             {assessmentError ?? "The assessment is unavailable."} The ledger below is still the record of truth.
           </p>
@@ -76,7 +76,7 @@ export function DecisionPanel({ view }: { view: IncidentView }) {
     <Frame tone={d.severity === "CRITICAL" ? "ink" : "blue"}>
       <PanelHeader title="Recommended next step" right={<SeverityMeter severity={d.severity} />} />
       <div className="px-6 pb-8 pt-8 sm:px-8">
-        <h2 className="font-display text-[clamp(30px,4.4vw,54px)] leading-[1.05] tracking-wide">
+        <h2 className="heading text-[clamp(30px,4.4vw,54px)] leading-[1.05]">
           {closed ? "Certified" : HEADLINE[d.recommended]}
         </h2>
 
@@ -111,7 +111,7 @@ export function DecisionPanel({ view }: { view: IncidentView }) {
             <ul className="mt-4 divide-y divide-rule border-y border-rule">
               {d.blocked.map((b, i) => (
                 <li key={i} className="hatch grid gap-1 px-4 py-3 sm:grid-cols-[220px_1fr] sm:gap-6">
-                  <span className="font-mono text-[12px] font-medium uppercase tracking-wider">{SHORT[b.action]}</span>
+                  <span className="text-[13px] font-medium">{SHORT[b.action]}</span>
                   <span className="text-sm leading-relaxed text-muted">{b.reason}</span>
                 </li>
               ))}

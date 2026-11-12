@@ -86,14 +86,14 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
 
   return (
     <>
-      <div className="mx-auto max-w-[1440px] px-6 pb-10 pt-8 sm:px-10">
-        <Link href="/" className="label hover:text-blue">
-          &larr; Incidents
+      <div className="mx-auto max-w-[1200px] px-6 pb-10 pt-8 sm:px-10">
+        <Link href="/#console" className="inline-flex items-center gap-2 text-[14px] font-light text-soft transition-colors hover:text-white">
+          <span aria-hidden>&larr;</span> Back to all incidents
         </Link>
         <div className="mt-6 flex flex-wrap items-end justify-between gap-6">
           <div>
             <Label>Invoice / {o.method} / {o.currency}</Label>
-            <h1 className="mt-4 font-display text-[clamp(28px,4vw,52px)] leading-none tracking-wide">{o.reference}</h1>
+            <h1 className="heading mt-4 text-[clamp(30px,4.4vw,52px)] leading-none">{o.reference}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Tag tone={status.tone} pulse={status.pulse}>
@@ -113,7 +113,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
         <Stat value={money(delivered, o.currency)} label="Delivered to the supplier" />
       </StatStrip>
 
-      <div className="mx-auto max-w-[1440px] px-6 pt-10 sm:px-10">
+      <div className="mx-auto max-w-[1200px] px-6 pt-10 sm:px-10">
         {notice ? (
           <div className="mb-8">
             <NoticeBox notice={notice} />

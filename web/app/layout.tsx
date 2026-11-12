@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
-import { Archivo, JetBrains_Mono, Zen_Dots } from "next/font/google";
+import { Be_Vietnam_Pro, Fragment_Mono } from "next/font/google";
 import { AgentRunProvider } from "@/components/agent/agent-run";
+import { FloatingStart } from "@/components/floating-start";
 import { Header } from "@/components/header";
-import { Logo } from "@/components/logo";
+import { SiteFooter } from "@/components/site-footer";
 import { loadFromApi } from "@/lib/server-api";
 import { HealthSchema } from "../../src/server/wire";
 import "./globals.css";
 
-const zen = Zen_Dots({ weight: "400", subsets: ["latin"], variable: "--font-zen", display: "swap" });
-const archivo = Archivo({ subsets: ["latin"], variable: "--font-archivo", display: "swap" });
-const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
+const vietnam = Be_Vietnam_Pro({ weight: ["300", "400", "500", "600", "700"], subsets: ["latin"], variable: "--font-vietnam", display: "swap" });
+const fragment = Fragment_Mono({ weight: "400", subsets: ["latin"], variable: "--font-fragment", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Tessera. Money that moves once, and can prove it.",
@@ -21,20 +21,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // The host/origin check runs for every request in proxy.ts, before anything here renders.
   const health = await loadFromApi("/api/health", HealthSchema);
   const offline = health.ok && health.data.offline;
+  const tour = health.ok && health.data.sandbox;
   return (
-    <html lang="en" className={`${zen.variable} ${archivo.variable} ${mono.variable}`}>
+    <html lang="en" className={`${vietnam.variable} ${fragment.variable}`}>
       <body>
         <AgentRunProvider>
-          <Header offline={offline} tour={health.ok && health.data.sandbox} />
+          <Header offline={offline} tour={tour} />
           <main>{children}</main>
         </AgentRunProvider>
-        <footer className="mx-auto mt-24 flex max-w-[1440px] items-center justify-between border-t border-rule px-6 py-8 sm:px-10">
-          <span className="flex items-center gap-3">
-            <Logo size={20} />
-            <span className="label">{offline ? "Tessera / Offline demo on a simulated Airwallex" : "Tessera / Built on the Airwallex sandbox"}</span>
-          </span>
-          <span className="label hidden sm:inline">No real money moves</span>
-        </footer>
+        <SiteFooter offline={offline} />
+        {tour ? <FloatingStart /> : null}
       </body>
     </html>
   );

@@ -22,9 +22,9 @@ export function AttemptsRail({ attempts }: { attempts: IncidentView["attempts"] 
           const look = ATTEMPT[a.state];
           return (
             <li key={a.id} className="flex items-stretch">
-              <article className="w-[280px] shrink-0 border border-ink p-5">
+              <article className="w-[280px] shrink-0 rounded-2xl border border-white/15 p-5">
                 <div className="flex items-center justify-between">
-                  <span className="font-display text-xl tnum">{String(a.seq).padStart(2, "0")}</span>
+                  <span className="text-xl font-light tracking-[-0.03em] tnum">{String(a.seq).padStart(2, "0")}</span>
                   <Tag tone={look.tone} pulse={look.pulse}>
                     {look.label}
                   </Tag>
@@ -45,12 +45,12 @@ export function AttemptsRail({ attempts }: { attempts: IncidentView["attempts"] 
                   </Row>
                   <Row label="Started">{ago(a.createdAt)}</Row>
                 </div>
-                {a.lastError ? <p className="hatch mt-3 px-3 py-2 text-xs leading-relaxed">{a.lastError}</p> : null}
+                {a.lastError ? <p className="hatch mt-3 rounded-lg px-3 py-2 text-xs leading-relaxed">{a.lastError}</p> : null}
               </article>
               {i < attempts.length - 1 ? (
                 <div aria-hidden className="flex w-12 shrink-0 items-center">
-                  <span className="h-px flex-1 bg-ink" />
-                  <span className="size-2 bg-ink" />
+                  <span className="h-px flex-1 bg-white/30" />
+                  <span className="size-2 rounded-full bg-white/60" />
                 </div>
               ) : null}
             </li>

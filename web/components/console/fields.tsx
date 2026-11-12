@@ -2,7 +2,7 @@ import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTML
 import { Label } from "../ui";
 
 const FIELD =
-  "w-full border border-ink bg-paper px-4 text-sm placeholder:text-muted focus-visible:outline-2 focus-visible:outline-blue disabled:border-rule disabled:text-muted";
+  "w-full rounded-xl border border-white/20 bg-surface-2 px-4 text-sm placeholder:text-muted focus-visible:border-sky focus-visible:outline-2 focus-visible:outline-sky disabled:border-rule disabled:text-muted";
 
 export function Field({ label, htmlFor, hint, children }: { label: string; htmlFor: string; hint?: string; children: ReactNode }) {
   return (
@@ -37,7 +37,7 @@ export function Check({ id, label, checked, onChange }: { id: string; label: str
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="size-5 shrink-0 cursor-pointer appearance-none border border-ink bg-paper checked:border-blue checked:bg-blue checked:bg-[url('data:image/svg+xml;utf8,<svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2020%2020%22><path%20d=%22M4%2010l4%204%208-9%22%20fill=%22none%22%20stroke=%22white%22%20stroke-width=%222.5%22/></svg>')]"
+        className="size-5 shrink-0 cursor-pointer appearance-none rounded-md border border-white/40 bg-surface-2 checked:border-blue checked:bg-blue checked:bg-[url('data:image/svg+xml;utf8,<svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2020%2020%22><path%20d=%22M4%2010l4%204%208-9%22%20fill=%22none%22%20stroke=%22white%22%20stroke-width=%222.5%22/></svg>')]"
       />
       <span>{label}</span>
     </label>
@@ -55,8 +55,8 @@ export function NoticeBox({ notice }: { notice: Notice | null }) {
   if (!notice) return null;
   const refused = notice.tone === "refused";
   return (
-    <div role={refused ? "alert" : "status"} className={`border px-5 py-4 ${refused ? "border-ink bg-ink text-paper" : "border-blue bg-wash"}`}>
-      <Label className={refused ? "text-paper" : "text-blue"}>{notice.title}</Label>
+    <div role={refused ? "alert" : "status"} className={`rounded-2xl border px-5 py-4 ${refused ? "border-danger/50 bg-danger/10 text-ink" : "border-blue/50 bg-wash"}`}>
+      <Label className={refused ? "font-medium text-danger" : "text-sky"}>{notice.title}</Label>
       {notice.lines.length > 0 ? (
         <ul className="mt-3 space-y-2 text-sm leading-relaxed">
           {notice.lines.map((line, i) => (

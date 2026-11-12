@@ -33,18 +33,23 @@ export function WalletStrip() {
 
   if (!wallets) return null;
   return (
-    <div className="border-b border-rule">
-      <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-8 gap-y-2 px-6 py-3 sm:px-10">
-        <Label>Wallets</Label>
+    <div className="mx-auto max-w-[1200px] px-6 pt-4 sm:px-10">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
+        <Label className="mr-1">Wallets</Label>
         {!wallets.readable ? (
           <span className="text-sm text-muted">Airwallex balances could not be read; replacements wait for a person.</span>
         ) : (
           wallets.wallets.map((w) => {
             const below = w.floorMinor > 0 && w.availableMinor < w.floorMinor;
             return (
-              <span key={w.currency} className={`tnum text-sm ${below ? "font-semibold" : ""}`} title={w.fundingSource ? "May fund another wallet's replacement" : "Never sold"}>
+              <span
+                key={w.currency}
+                className={`tnum inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-[13px] ${below ? "border-danger/60 text-danger" : "border-white/[0.12] text-ink"}`}
+                title={w.fundingSource ? "May fund another wallet's replacement" : "Never sold"}
+              >
                 {money(w.availableMinor, w.currency)}
-                {w.floorMinor > 0 ? <span className="text-muted"> / floor {money(w.floorMinor, w.currency)}</span> : null}
+                {w.floorMinor > 0 ? <span className="text-muted">floor {money(w.floorMinor, w.currency)}</span> : null}
+                {below ? <span className="sr-only"> (below its floor)</span> : null}
               </span>
             );
           })

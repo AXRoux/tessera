@@ -30,7 +30,7 @@ export function CertificatePanel({ view }: { view: IncidentView }) {
   const { totals, currency } = cert.body;
   return (
     <Frame tone="blue">
-      <PanelHeader title="Certificate of completion" right={<Label className="text-blue">Signed</Label>} />
+      <PanelHeader title="Certificate of completion" right={<Label className="text-sky">Signed</Label>} />
       <div className="p-5">
         <Label>Fingerprint</Label>
         <p className="mt-2 break-all font-mono text-[12px] leading-relaxed">{cert.hash}</p>
@@ -51,7 +51,7 @@ export function CertificatePanel({ view }: { view: IncidentView }) {
           </div>
         ))}
         <a
-          className="mt-5 inline-flex h-12 w-full items-center justify-center border border-ink text-[12px] font-medium uppercase tracking-[0.18em] hover:bg-ink hover:text-paper"
+          className="mt-5 inline-flex h-12 w-full items-center justify-center rounded-full border border-white/35 text-[14px] transition-colors hover:bg-white/10"
           href={`/api/obligations/${view.obligation.id}/certificate`}
           download={`${view.obligation.reference}-certificate.json`}
         >

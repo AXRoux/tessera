@@ -20,7 +20,7 @@ function Flag({ on, children }: { on: boolean; children: string }) {
 function Recorded({ evidence, reader }: { evidence: NonNullable<IncidentView["evidence"]>; reader: string | null }) {
   const e = evidence.evidence;
   return (
-    <div className="border border-ink p-4">
+    <div className="rounded-2xl border border-white/20 p-4">
       <div className="flex items-center justify-between gap-3">
         <Tag tone={evidence.source === "model" ? "blue" : "outline"}>{evidence.source === "model" ? `Read by ${reader ?? "a model"}` : "Entered by hand"}</Tag>
         <span className="text-right text-xs text-muted">
@@ -36,7 +36,7 @@ function Recorded({ evidence, reader }: { evidence: NonNullable<IncidentView["ev
         <Flag on={e.containsEmbeddedInstructions}>Tries to instruct the assistant</Flag>
       </ul>
       {e.adjustments.length > 0 ? (
-        <div className="hatch mt-3 space-y-1 px-3 py-2">
+        <div className="hatch mt-3 space-y-1 rounded-lg px-3 py-2">
           <Label className="text-ink">Corrected by code</Label>
           {e.adjustments.map((a, i) => (
             <p key={i} className="text-xs leading-relaxed">
@@ -83,7 +83,7 @@ export function EvidencePanel({ view, reader, busy, run }: Props) {
 
         <details className="group border-t border-rule pt-5">
           <summary className="label cursor-pointer list-none text-ink marker:hidden">
-            <span aria-hidden className="mr-3 inline-block size-2 bg-ink group-open:bg-blue" />
+            <span aria-hidden className="mr-3 inline-block size-2 rounded-full bg-ink group-open:bg-blue" />
             Record it by hand
           </summary>
           <div className="mt-5 space-y-4">

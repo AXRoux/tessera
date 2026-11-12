@@ -25,17 +25,17 @@ export function RunReport({ state, idFor }: { state: AgentRunState; idFor: (refe
             return (
               <li key={row.reference} className="flex flex-wrap items-center gap-x-5 gap-y-2 py-3">
                 {id ? (
-                  <Link href={`/incidents/${id}`} className="w-28 shrink-0 font-mono text-[13px] font-medium underline decoration-rule underline-offset-4 hover:text-blue">
+                  <Link href={`/incidents/${id}`} className="w-[148px] shrink-0 whitespace-nowrap font-mono text-[13px] underline decoration-rule underline-offset-4 hover:text-sky">
                     {row.reference}
                   </Link>
                 ) : (
-                  <span className="w-28 shrink-0 font-mono text-[13px] font-medium">{row.reference}</span>
+                  <span className="w-[148px] shrink-0 whitespace-nowrap font-mono text-[13px]">{row.reference}</span>
                 )}
                 <ul className="flex flex-wrap items-center gap-2">
                   {row.chips.map((chip) => (
                     <li
                       key={chip.label}
-                      className={`inline-flex h-6 items-center px-2.5 text-[11px] font-medium uppercase tracking-[0.14em] ${chip.refused ? "bg-ink text-paper" : "border border-blue text-blue"}`}
+                      className={`inline-flex h-7 items-center rounded-full px-3 text-[12px] font-medium ${chip.refused ? "bg-danger/15 text-danger" : "border border-sky/45 text-sky"}`}
                     >
                       {chip.label}
                       {chip.count > 1 ? <span className="tnum ml-1.5">&times;{chip.count}</span> : null}

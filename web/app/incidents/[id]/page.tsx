@@ -16,10 +16,10 @@ export default async function IncidentPage({ params }: { params: Promise<{ id: s
   if (!view.ok) {
     if (view.status === 404) notFound();
     return (
-      <section className="mx-auto max-w-[1440px] px-6 pt-14 sm:px-10">
+      <section className="mx-auto max-w-[1200px] px-6 pt-14 sm:px-10">
         <Frame>
           <div className="hatch px-6 py-16 text-center">
-            <p className="font-display text-2xl tracking-wide">This incident could not be loaded</p>
+            <p className="heading text-2xl">This incident could not be loaded</p>
             <p className="mx-auto mt-4 max-w-lg text-sm text-muted">{view.message}</p>
           </div>
         </Frame>

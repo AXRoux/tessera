@@ -23,10 +23,10 @@ export function HandoffBanner({ view }: { view: IncidentView }) {
   const source = escalatedBy(view.events);
 
   return (
-    <div className="mx-auto max-w-[1440px] px-6 pb-10 sm:px-10">
-      <section aria-labelledby="handoff" className="border-l-4 border-ink bg-wash px-5 py-5">
+    <div className="mx-auto max-w-[1200px] px-6 pb-10 sm:px-10">
+      <section aria-labelledby="handoff" className="card border-l-4 border-l-sky px-6 py-6">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-          <h2 id="handoff" className="font-display text-xl tracking-wide">
+          <h2 id="handoff" className="heading text-[26px]">
             Handed to you
           </h2>
           {source ? (

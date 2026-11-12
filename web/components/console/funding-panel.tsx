@@ -140,7 +140,7 @@ export function FundingPanel({ view, operator, busy, run }: { view: IncidentView
               </Button>
             </div>
           ) : (
-            <div className="space-y-3 border border-ink p-4">
+            <div className="space-y-3 rounded-2xl border border-white/20 p-4">
               <Label className="text-ink">You are approving</Label>
               <ul className="space-y-1.5 text-sm leading-relaxed">
                 <li>

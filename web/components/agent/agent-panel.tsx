@@ -27,11 +27,11 @@ export function AgentPanel({ incidentId, health, refresh }: { incidentId: string
         right={
           <span className="flex items-center gap-4">
             {runningMode ? (
-              <button type="button" onClick={agent.stop} className="label cursor-pointer text-ink hover:text-blue">
+              <button type="button" onClick={agent.stop} className="label cursor-pointer text-ink hover:text-sky">
                 Stop
               </button>
             ) : null}
-            <Label className={adversary ? "text-ink" : "text-blue"}>{(mine ? agent.state.actor : null) ?? Name}</Label>
+            <Label className={adversary ? "text-ink" : "text-sky"}>{(mine ? agent.state.actor : null) ?? Name}</Label>
           </span>
         }
       />
@@ -63,11 +63,11 @@ export function AgentPanel({ incidentId, health, refresh }: { incidentId: string
             <span className="text-xs text-muted">
               An agent run is already in progress{" "}
               {agent.target ? (
-                <Link href={`/incidents/${agent.target}`} className="underline underline-offset-4 hover:text-blue">
+                <Link href={`/incidents/${agent.target}`} className="underline underline-offset-4 hover:text-sky">
                   on another incident
                 </Link>
               ) : (
-                <Link href="/" className="underline underline-offset-4 hover:text-blue">
+                <Link href="/" className="underline underline-offset-4 hover:text-sky">
                   on the board
                 </Link>
               )}

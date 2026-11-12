@@ -37,7 +37,7 @@ export function DraftPanel({ view, busy, run }: { view: IncidentView; busy: stri
     <Frame>
       <PanelHeader title="Drafted reply to the supplier" right={<Tag tone="blue-outline">{KIND[draft.kind]}</Tag>} />
       <div className="space-y-5 p-5">
-        <div className="border border-ink p-5">
+        <div className="rounded-2xl border border-white/20 p-5">
           <p className="whitespace-pre-line text-[15px] leading-relaxed">{draft.message}</p>
           <div className="hatch mt-5 border-t border-rule pt-4">
             <Label>Added by Tessera from the ledger</Label>

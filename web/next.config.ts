@@ -35,6 +35,8 @@ const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   turbopack: { root },
+  // `bun run demo` serves the dev build; the framework's corner badge has no place on a stage.
+  devIndicators: false,
   outputFileTracingRoot: root,
   async headers() {
     // React's dev tooling needs eval, so the strict policy applies to production builds only.
