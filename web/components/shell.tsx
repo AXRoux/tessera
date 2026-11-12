@@ -128,7 +128,16 @@ function Rail({ health, onNavigate }: { health: Health | null; onNavigate?: () =
       { rootMargin: "-15% 0px -70% 0px", threshold: 0 },
     );
     for (const section of sections) observer.observe(section);
-    return () => observer.disconnect();
+    // At the very top of a page the first section is below the fold, so the rail should still read as "here".
+    const onScroll = () => {
+      if (window.scrollY < 80) setActive("overview");
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", onScroll);
+    };
   }, []);
 
   return (

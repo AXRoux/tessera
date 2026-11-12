@@ -5,7 +5,7 @@ import { useState } from "react";
 import { money } from "@/lib/format";
 import { STATUS } from "@/lib/status";
 import { ago } from "@/lib/format";
-import { BAND_STYLE, clockLabel, type Activity, type Exposure } from "@/lib/activity";
+import { BAND_STYLE, clockLabel, tickLabel, type Activity, type Exposure } from "@/lib/activity";
 import { Label } from "../ui";
 
 /**
@@ -56,7 +56,8 @@ export function ValueChart({ exposure }: { exposure: Exposure }) {
 
         <div className="absolute inset-y-0 left-0 right-0 flex items-end gap-2 pl-[86px]">
           {exposure.columns.map((item, index) => {
-            const height = Math.max(3, (item.amountMinor / exposure.maxMinor) * 100);
+            // 92% keeps the tallest column off the top gridline, the way a chart axis is normally read.
+            const height = Math.max(3, (item.amountMinor / exposure.maxMinor) * 92);
             const color = BAND_STYLE[item.band].color;
             const on = active === index;
             return (
@@ -84,7 +85,7 @@ export function ValueChart({ exposure }: { exposure: Exposure }) {
         {column ? (
           <Tooltip
             fraction={(active! + 0.5) / exposure.columns.length}
-            height={Math.max(3, (column.amountMinor / exposure.maxMinor) * 100)}
+            height={Math.max(3, (column.amountMinor / exposure.maxMinor) * 92)}
           >
             <div className="flex items-center justify-between gap-3">
               <span className="font-mono text-[12px] text-soft">{column.reference}</span>
@@ -150,7 +151,8 @@ export function ActivityChart({ activity, tickMs, tall = false }: { activity: Ac
                 aria-label={`${clockLabel(tick.at)}, ${sum} event${sum === 1 ? "" : "s"}`}
                 className="group relative flex h-full min-w-[3px] flex-1 cursor-pointer flex-col justify-end outline-none"
               >
-                <span className="flex w-full flex-col justify-end" style={{ height: `${Math.max(sum === 0 ? 0.6 : 4, (sum / activity.max) * 100)}%` }}>
+                <span className="flex w-full flex-col justify-end" style={{ height: `${Math.max(sum === 0 ? 2.2 : 5, (sum / activity.max) * 92)}%` }}>
+                  {sum === 0 ? <span className="h-full w-full rounded-t-[2px] bg-white/[0.12]" /> : null}
                   {(["agent", "person", "moved", "held", "proof"] as const).map((band) =>
                     tick.counts[band] > 0 ? (
                       <span
@@ -194,7 +196,7 @@ export function ActivityChart({ activity, tickMs, tall = false }: { activity: Ac
 
       <figcaption className="absolute -bottom-1 inset-x-0 flex justify-between text-[10px] text-white/40">
         <span>{clockLabel(activity.ticks[0]!.at)}</span>
-        {tall ? <span>{tickMs >= 3_600_000 ? "one column per hour" : tickMs >= 60_000 ? "one column per minute" : "one column per tick"}</span> : null}
+        {tall ? <span>one column every {tickLabel(tickMs)}</span> : null}
         <span>now</span>
       </figcaption>
     </figure>

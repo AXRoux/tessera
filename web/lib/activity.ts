@@ -190,10 +190,29 @@ export function exposure(items: readonly IncidentSummary[]): Exposure {
   };
 }
 
-/** The clock labels under a chart: local time, or a date once a bucket is too wide for a clock to mean anything. */
+/** The clock labels under a chart: seconds for a burst, a clock for minutes, a date once a bucket is a day wide. */
 export function clockLabel(at: number, tickMs = 60_000): string {
   if (tickMs >= 6 * 3_600_000) return new Date(at).toLocaleDateString([], { month: "short", day: "numeric" });
+  if (tickMs < 60_000) return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** How long the window covers, in words: what the chart's own header needs to say. */
+export function windowLabel({ tickMs, ticks }: Window): string {
+  const total = tickMs * ticks;
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (total < 60_000) return unit(Math.round(total / 1000), "second");
+  if (total < 3_600_000) return unit(Math.round(total / 60_000), "minute");
+  if (total < 48 * 3_600_000) return unit(Math.round(total / 3_600_000), "hour");
+  return unit(Math.round(total / 86_400_000), "day");
+}
+
+/** How wide one column is, in words: "5 seconds", "minute", "6 hours". */
+export function tickLabel(tickMs: number): string {
+  if (tickMs < 60_000) return `${Math.round(tickMs / 1000)} seconds`;
+  if (tickMs < 3_600_000) return tickMs === 60_000 ? "minute" : `${tickMs / 60_000} minutes`;
+  if (tickMs < 86_400_000) return tickMs === 3_600_000 ? "hour" : `${tickMs / 3_600_000} hours`;
+  return "day";
 }
 
 /** The smallest bucket width that still fits the oldest event on the board into `ticks` buckets. */
@@ -204,4 +223,4 @@ export function windowFor(views: readonly IncidentView[], now: number, ticks = 2
   return { now, tickMs, ticks };
 }
 
-const TICK_CHOICES = [60_000, 5 * 60_000, 15 * 60_000, 3_600_000, 6 * 3_600_000, 86_400_000] as const;
+const TICK_CHOICES = [5_000, 15_000, 60_000, 5 * 60_000, 15 * 60_000, 3_600_000, 6 * 3_600_000, 86_400_000] as const;

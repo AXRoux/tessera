@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { activity, bandOf, clockLabel, exposure, heldBackLine, windowFor } from "../web/lib/activity";
+import { activity, bandOf, clockLabel, exposure, heldBackLine, tickLabel, windowFor, windowLabel } from "../web/lib/activity";
 import type { IncidentSummary, IncidentView, Metrics } from "../src/server/wire";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 0, 1, 12, minute, 0)).toISOString();
@@ -75,8 +75,9 @@ describe("activity", () => {
 });
 
 describe("windowFor", () => {
-  it("picks minute buckets for a board that just moved", () => {
-    expect(windowFor([view([{ type: "CLOSED", ts: at(29) }])], NOW).tickMs).toBe(60_000);
+  it("picks second buckets for a board that just moved", () => {
+    expect(windowFor([view([{ type: "CLOSED", ts: new Date(NOW - 40_000).toISOString() }])], NOW).tickMs).toBe(5_000);
+    expect(windowFor([view([{ type: "CLOSED", ts: at(29) }])], NOW).tickMs).toBe(5_000);
   });
 
   it("widens the bucket until the oldest event fits", () => {
@@ -85,7 +86,15 @@ describe("windowFor", () => {
   });
 
   it("uses the narrowest window when there is no history at all", () => {
-    expect(windowFor([], NOW).tickMs).toBe(60_000);
+    expect(windowFor([], NOW).tickMs).toBe(5_000);
+  });
+
+  it("names the window and the column width in words", () => {
+    expect(windowLabel({ now: NOW, tickMs: 5_000, ticks: 24 })).toBe("2 minutes");
+    expect(windowLabel({ now: NOW, tickMs: 3_600_000, ticks: 24 })).toBe("24 hours");
+    expect(tickLabel(5_000)).toBe("5 seconds");
+    expect(tickLabel(60_000)).toBe("minute");
+    expect(tickLabel(6 * 3_600_000)).toBe("6 hours");
   });
 });
 

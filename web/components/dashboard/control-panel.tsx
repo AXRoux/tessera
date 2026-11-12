@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { IncidentSummary, IncidentView, Metrics } from "../../../src/server/wire";
-import { activity, BANDS, clockLabel, exposure, windowFor, type Band } from "@/lib/activity";
+import { activity, BANDS, clockLabel, exposure, tickLabel, windowFor, windowLabel, type Band } from "@/lib/activity";
 import { ago, duration, money } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { Label } from "../ui";
@@ -145,7 +145,7 @@ export function ControlPanel({
       <footer className="mt-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-white/[0.12] pt-4">
         <Legend bands={bands} />
         <p className="text-[11.5px] text-white/55">
-          {tab === "Value" ? "One column per incident, scaled to the largest amount on the board; amounts stay in their own currency." : `One column per ${window.tickMs >= 3_600_000 ? "hour" : "minute"}, stacked by what happened`}
+          {tab === "Value" ? "One column per incident, scaled to the largest amount on the board; amounts stay in their own currency." : `One column every ${tickLabel(window.tickMs)}, stacked by what happened`}
         </p>
       </footer>
       </section>
@@ -155,7 +155,7 @@ export function ControlPanel({
           <div>
             <h2 className="text-[14px] font-medium tracking-[-0.01em]">Ledger activity</h2>
             <p className="mt-0.5 text-[12px] text-muted">
-              Every event the ledger appended in the last {window.ticks} {window.tickMs >= 3_600_000 ? "hours" : "minutes"}, from {clockLabel(history.ticks[0]!.at, window.tickMs)}
+              Every event the ledger appended in the last {windowLabel(window)}, from {clockLabel(history.ticks[0]!.at, window.tickMs)}
             </p>
           </div>
           <span className="tnum text-[12px] text-muted">{history.total} events</span>
