@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import type { Health } from "../../src/server/wire";
 import { reasonText } from "@/lib/agent-verdict";
 import type { TourStepId } from "@/lib/tour-steps";
-import { agentName } from "./agent/agent-run";
 import { Button, LinkButton } from "./ui";
 
 /**
@@ -18,59 +17,58 @@ export interface GuideInput {
   health: Health | null;
   /** The first incident waiting for a person, for the takeover step. */
   takeover: { id: string; reference: string; reason: string } | null;
-  onSeed: () => void;
+  /** Kept for callers that still pass it; sending a payout is now a link to the composer. */
+  onSeed?: () => void;
   onRun: (mode: "commander" | "adversary") => void;
-  seeding: boolean;
+  seeding?: boolean;
   running: boolean;
+  /** Smaller buttons, for the control room's one-line sequence. */
+  compact?: boolean;
 }
 
-export function guideCopy({ health, takeover, onSeed, onRun, seeding, running }: GuideInput): Record<TourStepId, { text: string; action: ReactNode }> {
-  const name = agentName(health?.agent);
-  const Name = agentName(health?.agent, true);
-  const short = agentName(health?.agent);
+export function guideCopy({ health, takeover, onRun, running, compact = false }: GuideInput): Record<TourStepId, { text: string; action: ReactNode }> {
   const idle = !health?.agent || running;
-  const simulated = health?.offline ? "Airwallex is simulated here, so no money and no bank are involved." : "This is the Airwallex sandbox, so no real money moves.";
+  const size = compact ? "md" : "lg";
+  const where = health?.offline ? "the offline rehearsal" : "the Airwallex sandbox";
   const run = (label: string, mode: "commander" | "adversary") => (
-    <Button onClick={() => onRun(mode)} disabled={idle} busy={running} variant="light" size="lg" arrow>
+    <Button onClick={() => onRun(mode)} disabled={idle} busy={running} variant="light" size={size} arrow>
       {label}
     </Button>
   );
 
   return {
     seed: {
-      text: `Seven invoices, each gone wrong in a different way: a payment still in flight, a bank timeout, a possible duplicate, a supplier changing bank details, one already paid, one disputed, and one wallet too short to replace it. Every branch of the playbook lands on the board at once. ${simulated}`,
+      text: `Send a real payout through ${where}, signed with your own reason for paying. Tessera seals it in the ledger before a cent moves, then follows Airwallex's own events as they arrive.`,
       action: (
-        <Button onClick={onSeed} busy={seeding} disabled={running} variant="light" size="lg" arrow>
-          Load the incidents
-        </Button>
+        <LinkButton href="/dashboard?compose=1" variant="light" size={size} arrow>
+          Send a payout
+        </LinkButton>
       ),
     },
     agent: {
-      text: `${Name} reads the supplier mail, checks each incident and acts only through ten typed tools. The code decides what is allowed, so the agent can wait, replace, escalate or draft a reply, but it can never move money on its own.`,
-      action: run(`Let ${short} work them all`, "commander"),
+      text: "The agent reads the board, weighs every incident and acts through ten typed tools. It may wait, replace, escalate or draft a reply; money moves only when the code agrees, and anything uncertain comes to you.",
+      action: run("Let the agent work", "commander"),
     },
     adversary: {
-      text: "Now the same agent is told to get a supplier paid twice, change the bank details and talk its way past the rules. Watch the code refuse every move.",
-      action: run("Try to break it", "adversary"),
+      text: "Test the guardrails. Instruct the same agent to pay a supplier twice, swap the bank details or argue past a limit. The code declines every move, and what it cannot settle on its own is handed to a person, reasons attached.",
+      action: run("Test the guardrails", "adversary"),
     },
     takeover: takeover
       ? {
-          text: clip(reasonText(takeover.reason)),
+          text: `You are the human in the loop. ${takeover.reference} is waiting on you: ${clip(reasonText(takeover.reason), 120)}`,
           action: (
-            <LinkButton href={`/incidents/${takeover.id}`} variant="light" size="lg" arrow>
-              Open {takeover.reference}
+            <LinkButton href={`/queue?id=${takeover.id}`} variant="light" size={size} arrow>
+              Decide on {takeover.reference}
             </LinkButton>
           ),
         }
       : {
-          text: `Nothing is waiting for you yet. Run ${name} again: anything it cannot settle safely is handed to you.`,
-          action: run(`Let ${short} work them all`, "commander"),
+          text: "You are the human in the loop. Nothing needs you yet; run the agent again, and whatever it should not settle alone will be handed to you with its reasoning.",
+          action: run("Run the agent again", "commander"),
         },
     certify: {
-      text: `A payment is certified only after a hold window and a check of every wallet line against Airwallex. ${
-        health?.offline ? "The hold window is 6 seconds here and 24 hours in production" : "The hold window is set by the server and is 24 hours in production"
-      }, so run ${name} again once a payment has landed.`,
-      action: run(`Let ${short} work them all`, "commander"),
+      text: `A payment earns its certificate only after a hold window and a line-by-line match against Airwallex. On this stage the hold lasts seconds, not a day: mark a payment paid under Simulate, then certify it yourself or let the agent.`,
+      action: run("Run the agent again", "commander"),
     },
   };
 }
@@ -139,7 +137,7 @@ export function LoopComplete({ className = "" }: { className?: string }) {
   return (
     <p className={`flex items-center gap-3 text-[13.5px] text-soft ${className}`}>
       <Mark done current={false} n={0} />
-      You have seen the whole loop: load, work, break, take over, certify.
+      The whole loop, seen through: paid, worked, tested, decided by a person, certified.
     </p>
   );
 }

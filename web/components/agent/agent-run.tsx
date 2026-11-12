@@ -182,72 +182,83 @@ const ACTION: Record<string, string> = {
   reconcile_and_close: "Ask to certify",
   verify_ledger: "Check the history",
 };
-const actionLabel = (tool: string): string => ACTION[tool] ?? tool.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
+export const actionLabel = (tool: string): string => ACTION[tool] ?? tool.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
 
 /** The tools whose success means a person now has to do something. */
 const HANDOFF: Record<string, string> = {
-  escalate_to_human: "A person now owns this incident. Nothing moves until they decide.",
-  draft_supplier_reply: "A person reviews the draft and sends it from their own mail.",
+  escalate_to_human: "This one is yours now. Nothing moves until you decide.",
+  draft_supplier_reply: "A reply is drafted. Read it, then send it from your own mail.",
 };
 
 /** The reference a result names, so a handoff can link to the incident it belongs to. */
 const referenceIn = (summary: string): string | null => /\b([A-Z]{2,}-\d{3,}(?:-[A-Z0-9]{2,})?)\b/.exec(summary)?.[1] ?? null;
 
+/** Dense rendering for narrow panels; set by the timeline and read by every row in it. */
+const DenseContext = createContext(false);
+
 /** A vertical spine, a numbered disc per step, and the step itself. The spine is what makes the order readable at a glance. */
-function StepRow({ n, tone, result, children }: { n: number; tone: "ok" | "bad" | "live"; result: "ok" | "bad" | "live" | null; children: ReactNode }) {
+function StepRow({ n, tone, children }: { n: number; tone: "ok" | "bad" | "live"; result?: "ok" | "bad" | "live" | null; children: ReactNode }) {
+  const dense = useContext(DenseContext);
   return (
-    <li className="flex gap-4 sm:gap-5">
-      <div className="flex w-9 shrink-0 flex-col items-center">
+    <li className={`flex ${dense ? "gap-3" : "gap-4 sm:gap-5"}`}>
+      <div className={`flex shrink-0 flex-col items-center ${dense ? "w-7" : "w-9"}`}>
         <span
-          className={`tnum flex size-9 items-center justify-center rounded-full border text-[13px] ${
+          className={`tnum flex items-center justify-center rounded-full border ${dense ? "size-7 text-[11px]" : "size-9 text-[13px]"} ${
             tone === "bad"
-              ? "border-danger/60 bg-danger/15 font-medium text-danger"
+              ? "border-bad/60 bg-bad/15 font-medium text-bad"
               : tone === "live"
-                ? "beat border-blue/60 bg-wash text-white"
-                : "border-white/20 bg-white/[0.04] text-soft"
+                ? "beat border-accent/60 bg-accent/10 text-fg"
+                : "border-fg/20 bg-fg/[0.04] text-fg/80"
           }`}
         >
           {n}
         </span>
-        <span aria-hidden className="mt-2 w-px flex-1 bg-white/10" />
+        <span aria-hidden className="mt-1.5 w-px flex-1 bg-fg/10" />
       </div>
-      <div className={`min-w-0 flex-1 pb-7 ${result === "bad" ? "" : ""}`}>{children}</div>
+      <div className={`min-w-0 flex-1 ${dense ? "pb-4" : "pb-7"}`}>{children}</div>
     </li>
   );
 }
 
 function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n: number; href: string | null }) {
   const { result } = step;
+  const dense = useContext(DenseContext);
   const handoff = result?.ok ? HANDOFF[step.tool] : undefined;
   const reference = handoff ? (step.incident ?? referenceIn(result?.summary ?? "")) : null;
   return (
     <StepRow n={n} tone={result ? (result.ok ? "ok" : result.kind === "refused" ? "bad" : "bad") : "live"} result={result ? (result.ok ? "ok" : "bad") : "live"}>
-      <p className="pt-1.5 text-[15px] font-medium tracking-[-0.01em] text-white">{actionLabel(step.tool)}</p>
-      {step.incident ? <p className="mt-1 font-mono text-[12.5px] text-muted">{step.incident}</p> : null}
-      {step.detail ? <p className="mt-2 border-l-2 border-white/15 pl-3 text-[13px] italic leading-relaxed text-muted">&ldquo;{step.detail}&rdquo;</p> : null}
+      <p className={`font-medium tracking-[-0.01em] text-fg ${dense ? "pt-1 text-[13.5px]" : "pt-1.5 text-[15px]"}`}>{actionLabel(step.tool)}</p>
+      {step.incident ? <p className="mt-1 font-mono text-[12.5px] text-fg/55">{step.incident}</p> : null}
+      {step.detail ? (
+        <p className={`mt-2 border-l-2 border-fg/15 pl-3 italic leading-relaxed text-fg/55 ${dense ? "line-clamp-2 text-[12px]" : "text-[13px]"}`} title={step.detail}>&ldquo;{step.detail}&rdquo;</p>
+      ) : null}
       {result ? (
         result.kind === "refused" ? (
-          <div role="alert" className="mt-3 rounded-xl border border-danger/50 bg-danger/10 px-4 py-3">
-            <Label className="font-medium text-danger">Refused by code</Label>
-            <p className="mt-1.5 text-sm leading-relaxed">{result.summary}</p>
+          <div role="alert" className={`rounded-xl border border-bad/40 bg-bad/10 ${dense ? "mt-1.5 px-3 py-2" : "mt-3 px-4 py-3"}`}>
+            <Label className={`font-medium text-bad ${dense ? "text-[11px]" : ""}`}>Refused by code</Label>
+            <p className={`leading-relaxed ${dense ? "mt-0.5 line-clamp-2 text-[12px] text-fg/75" : "mt-1.5 text-sm"}`} title={result.summary}>
+              {result.summary}
+            </p>
           </div>
         ) : result.ok ? (
-          <p className="mt-3 border-l-2 border-sky/40 pl-3 text-sm leading-relaxed text-soft">{result.summary}</p>
+          <p className={`border-l-2 border-accent/40 pl-3 leading-relaxed text-fg/80 ${dense ? "mt-2 text-[12.5px]" : "mt-3 text-sm"}`}>{result.summary}</p>
         ) : (
-          <div className="mt-3 rounded-xl border border-white/20 px-4 py-3">
-            <Label className="font-medium text-ink">Turned away</Label>
-            <p className="mt-1.5 text-sm leading-relaxed">{result.summary}</p>
+          <div className={`rounded-xl border border-fg/20 ${dense ? "mt-1.5 px-3 py-2" : "mt-3 px-4 py-3"}`}>
+            <Label className={`font-medium text-fg ${dense ? "text-[11px]" : ""}`}>Turned away</Label>
+            <p className={`leading-relaxed ${dense ? "mt-0.5 line-clamp-2 text-[12px] text-fg/75" : "mt-1.5 text-sm"}`} title={result.summary}>
+              {result.summary}
+            </p>
           </div>
         )
       ) : (
-        <p className="mt-3 text-[13px] text-muted">Waiting for the code…</p>
+        <p className="mt-3 text-[13px] text-fg/55">Awaiting the code’s answer…</p>
       )}
       {handoff && result?.ok ? (
-        <div className="ml-0 mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-blue/45 bg-wash px-4 py-3">
-          <span className="text-[13px] font-medium text-sky">Your turn</span>
-          <span className="text-[13px] leading-relaxed text-soft">{handoff}</span>
+        <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-accent/45 bg-accent/10 ${dense ? "mt-2 px-3 py-2" : "mt-3 gap-x-4 gap-y-2 px-4 py-3"}`}>
+          <span className={`font-medium text-accent ${dense ? "text-[12px]" : "text-[13px]"}`}>Your turn</span>
+          <span className={`leading-relaxed text-fg/80 ${dense ? "text-[12px]" : "text-[13px]"}`}>{handoff}</span>
           {reference && href ? (
-            <Link href={href} className="text-[13px] text-soft underline decoration-white/30 underline-offset-4 hover:text-white">
+            <Link href={href} className={`text-fg/80 underline decoration-fg/30 underline-offset-4 hover:text-fg ${dense ? "text-[12px]" : "text-[13px]"}`}>
               Open {reference}
             </Link>
           ) : null}
@@ -259,7 +270,19 @@ function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n:
 
 /** What the agent said, each tool it reached for, and what the code answered. A vertical spine, refusals in red, handoffs in blue. */
 /** `idFor` maps the reference a step names to its incident id, so a handoff can be opened from here. */
-export function AgentTimeline({ state, idFor = () => undefined }: { state: AgentRunState; idFor?: (reference: string) => string | undefined }) {
+export function AgentTimeline({
+  state,
+  idFor = () => undefined,
+  dense = false,
+  className = "max-h-[620px] px-5 py-5 sm:px-6",
+}: {
+  state: AgentRunState;
+  idFor?: (reference: string) => string | undefined;
+  /** Smaller discs and type, for a narrow column. */
+  dense?: boolean;
+  /** The scroll container's sizing; the dashboard lets it fill its panel instead of capping it. */
+  className?: string;
+}) {
   const [showAll, setShowAll] = useState(false);
   if (state.status === "idle") return null;
   const refused = state.done?.refused ?? state.steps.filter((s) => s.kind === "tool" && s.result?.kind === "refused").length;
@@ -278,12 +301,13 @@ export function AgentTimeline({ state, idFor = () => undefined }: { state: Agent
   const folded = state.steps.length - visible.length;
 
   return (
-    <div className="max-h-[620px] overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
+    <DenseContext.Provider value={dense}>
+    <div className={`thin-scroll overflow-y-auto overscroll-contain ${className}`}>
       <ol>
         {visible.map(({ step, i }, position) =>
           step.kind === "text" ? (
             <StepRow key={i} n={position + 1} tone="ok" result={null}>
-              <p className="whitespace-pre-line rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-[14px] leading-relaxed">{plain(step.text)}</p>
+              <p className={`whitespace-pre-line rounded-xl border border-fg/[0.08] bg-fg/[0.03] leading-relaxed ${dense ? "px-3 py-2.5 text-[12.5px]" : "px-4 py-3 text-[14px]"}`}>{plain(step.text)}</p>
             </StepRow>
           ) : (
             <ToolStep key={step.id} step={step} n={position + 1} href={step.incident ? (idFor(step.incident) ? `/incidents/${idFor(step.incident)}` : null) : null} />
@@ -291,9 +315,9 @@ export function AgentTimeline({ state, idFor = () => undefined }: { state: Agent
         )}
         {state.status === "running" ? (
           <StepRow n={visible.length + 1} tone="live" result="live">
-            <p className="pt-1.5 flex items-center gap-3 text-[15px] text-soft">
-              <span aria-hidden className="beat size-2 rounded-full bg-blue" />
-              {state.steps.length === 0 ? "Starting…" : "Working…"}
+            <p className={`flex items-center gap-3 text-fg/80 ${dense ? "pt-1 text-[13px]" : "pt-1.5 text-[15px]"}`}>
+              <span aria-hidden className="beat size-2 rounded-full bg-accent" />
+              {state.steps.length === 0 ? "Reading the board…" : "Thinking…"}
             </p>
           </StepRow>
         ) : null}
@@ -303,18 +327,18 @@ export function AgentTimeline({ state, idFor = () => undefined }: { state: Agent
           type="button"
           aria-expanded={showAll}
           onClick={() => setShowAll((open) => !open)}
-          className="mt-1 w-full cursor-pointer rounded-full border border-white/15 px-4 py-2 text-[13px] text-soft transition-colors hover:bg-white/5"
+          className="mt-1 w-full cursor-pointer rounded-full border border-fg/15 px-4 py-2 text-[13px] text-fg/80 transition-colors hover:bg-fg/5"
         >
           {showAll ? `Show only what mattered` : `Show all ${calls} steps`}
         </button>
       ) : null}
       {state.error ? (
-        <p role="alert" className="mt-4 rounded-xl border border-danger/50 bg-danger/10 px-4 py-3 text-sm text-danger">
+        <p role="alert" className="mt-4 rounded-xl border border-bad/50 bg-bad/10 px-4 py-3 text-sm text-bad">
           {state.error}
         </p>
       ) : null}
       {state.done ? (
-        <p className="tnum mt-4 border-t border-rule pt-4 text-[13px] text-muted">
+        <p className="tnum mt-4 border-t border-fg/10 pt-4 text-[13px] text-fg/55">
           {state.done.calls} tool call{state.done.calls === 1 ? "" : "s"} &middot; {refused} refused by code &middot; {state.done.steps} model turn
           {state.done.steps === 1 ? "" : "s"}
           {state.done.stoppedBecause === "step_limit" ? " · stopped at the step limit" : ""}
@@ -323,5 +347,6 @@ export function AgentTimeline({ state, idFor = () => undefined }: { state: Agent
         </p>
       ) : null}
     </div>
+    </DenseContext.Provider>
   );
 }

@@ -18,7 +18,7 @@ import { Closer } from "../closer/closer";
 import { type ConfiguredModel, modelConfigured, modelFromEnv } from "../commander/model-env";
 import { Commander } from "../commander/commander";
 import type { StructuredModel } from "../commander/evidence";
-import { DEFAULT_POLICY } from "../commander/policy";
+import { DEFAULT_POLICY, LIVE_PACE } from "../commander/policy";
 import { OfflineReader } from "../demo/offline-reader";
 import { ScriptedAgentModel } from "../demo/scripted-agent";
 import { stageWalletOnSandbox } from "../demo/stage-wallet";
@@ -40,6 +40,20 @@ export interface RuntimeOptions {
 const DEFAULT_HOLD_MS = 24 * 3600_000;
 /** Offline, certification has to be demoable: a 6s hold instead of a day. */
 const OFFLINE_HOLD_MS = 6_000;
+
+/**
+ * How fast the policy's clocks run. `real` is the banking world: 48 hours before a LOCAL transfer is overdue, a day
+ * before PAID is final. `live` is the same rules at a pace an audience can watch (LIVE_PACE): minutes, not days. Live is
+ * the default on the sandbox and offline, and refused against real money.
+ */
+export type Pace = "live" | "real";
+
+export function parsePace(setting: string | undefined, fallback: Pace): Pace {
+  const value = setting?.trim().toLowerCase();
+  if (!value) return fallback;
+  if (value === "live" || value === "real") return value;
+  throw new Error(`TESSERA_PACE must be "live" or "real" (got "${setting}")`);
+}
 
 /** Beneficiaries of the offline simulator, under the nicknames `bun run setup` creates in the sandbox. */
 export const OFFLINE_BENEFICIARIES = [
@@ -121,7 +135,11 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   const generatedToken = !env.TESSERA_API_TOKEN && apiToken !== null;
   // The simulated Airwallex lives in memory, so an offline ledger does too: a file would outlive the transfers it names.
   const dbPath = offline ? ":memory:" : (env.TESSERA_DB ?? ".data/tessera.db");
-  const paidHoldMs = parseHoldMs(env.TESSERA_PAID_HOLD_MS, offline ? OFFLINE_HOLD_MS : DEFAULT_HOLD_MS);
+  // Known before the client exists, so the pace can be chosen (and refused) up front.
+  const sandboxHost = offline || (env.AWX_BASE_URL ?? "https://api.sandbox.airwallex.com").includes("sandbox");
+  const pace = parsePace(env.TESSERA_PACE, sandboxHost ? "live" : "real");
+  if (pace === "live" && !sandboxHost) throw new Error("TESSERA_PACE=live is only allowed on the Airwallex sandbox or offline: real money keeps the banking windows");
+  const paidHoldMs = parseHoldMs(env.TESSERA_PAID_HOLD_MS, offline ? OFFLINE_HOLD_MS : pace === "live" ? LIVE_PACE.paidHoldMs : DEFAULT_HOLD_MS);
 
   let api: AirwallexApi;
   let simulator: Simulator | null;
@@ -151,7 +169,7 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   const ledger = new Ledger(dbPath);
   const gateway = new PayoutGateway({ ledger, api, approvalSecret });
   // One policy for all three: what the Commander plans, the funding executor re-checks, and the hold window the Closer enforces.
-  const policy = { ...DEFAULT_POLICY, paidHoldMs };
+  const policy = { ...DEFAULT_POLICY, ...(pace === "live" ? LIVE_PACE : {}), paidHoldMs };
   const funder = new FundingExecutor({ ledger, api, approvalSecret, policy });
   const commander = new Commander({ ledger, gateway, balances: api, funding: { fx: api, executor: funder }, secret: approvalSecret, policy });
   const closer = new Closer({ ledger, api, gateway, secret: approvalSecret, paidHoldMs });
@@ -187,7 +205,7 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   if (agentOnEvent && !agent) warnings.push("TESSERA_AGENT_ON_EVENT=1 but no agent is configured; reactions are recorded, nothing is woken");
 
   return {
-    offline, publicDemo, sandbox, approvalSecret, apiToken, generatedToken, dbPath, paidHoldMs,
+    offline, publicDemo, sandbox, approvalSecret, apiToken, generatedToken, dbPath, paidHoldMs, pace,
     api, simulator, ledger, gateway, commander, closer, model, readerName, agent, warnings, policy, funder,
     webhookSecret, offlineWebhooks, agentOnEvent: agentOnEvent && agent !== null,
   };

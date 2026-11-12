@@ -4,11 +4,12 @@ import { useId, useState } from "react";
 import { Acknowledged, api } from "@/lib/client-api";
 import { titleCase } from "@/lib/format";
 import type { IncidentView } from "../../../src/server/wire";
-import { Button, Frame, Label, PanelHeader } from "../ui";
+
 import { Field, Select } from "./fields";
 import type { RunAction } from "./actions-panel";
+import { Btn } from "../kit/metal";
 
-/** The failures worth demonstrating: one per branch of the playbook. */
+/** The failures worth rehearsing: one per branch of the playbook. */
 const FAILURES = [
   "CHANNEL_TIMEOUT",
   "BENEFICIARY_BANK_RETURNED",
@@ -19,7 +20,7 @@ const FAILURES = [
   "INSUFFICIENT_FUNDS",
 ];
 
-/** Drives Airwallex's simulator so a whole incident can be played without waiting on a bank. Sandbox only. */
+/** Drives Airwallex's simulator so a whole incident can be played out without waiting on a bank. Sandbox only. */
 export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: string | null; run: RunAction }) {
   const selectId = useId();
   const [failure, setFailure] = useState(FAILURES[0]!);
@@ -34,21 +35,28 @@ export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: st
     });
 
   return (
-    <Frame tone="rule">
-      <PanelHeader title="Simulate payment events" right={<Label>Sandbox only</Label>} />
-      <div className="space-y-5 p-5">
-        <p className="text-sm leading-relaxed text-muted">
-          Advances the transfer through Airwallex's simulator so you can work an exception end to end without waiting on a bank.
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <Button variant="secondary" disabled={!movable} busy={busy === "sent"} onClick={() => simulate("sent", { status: "SENT" }, "Marked as sent")}>
+    <div className="space-y-4">
+      <p className="well rounded-[18px]! px-4 py-3 text-[12.5px] leading-relaxed text-fg/65">
+        Play the bank&rsquo;s part. These buttons drive Airwallex&rsquo;s own simulator, so you can carry an exception from first failure to certificate without waiting on anyone. Sandbox only;
+        no real money.
+      </p>
+      {!movable ? (
+        <p className="text-[12px] leading-relaxed text-fg/50">There is no live transfer on this incident to move just now.</p>
+      ) : null}
+      <div>
+        <span className="kicker block">A good outcome</span>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <Btn tone="secondary" disabled={!movable} busy={busy === "sent"} onClick={() => simulate("sent", { status: "SENT" }, "Marked as sent")}>
             Mark sent
-          </Button>
-          <Button variant="secondary" disabled={!movable} busy={busy === "paid"} onClick={() => simulate("paid", { status: "PAID" }, "Marked as paid")}>
+          </Btn>
+          <Btn tone="secondary" disabled={!movable} busy={busy === "paid"} onClick={() => simulate("paid", { status: "PAID" }, "Marked as paid")}>
             Mark paid
-          </Button>
+          </Btn>
         </div>
-        <Field label="Simulate a bank failure" htmlFor={selectId}>
+      </div>
+      <div className="space-y-2">
+        <span className="kicker block">A bad one</span>
+        <Field label="How the bank should fail" htmlFor={selectId}>
           <Select id={selectId} value={failure} onChange={(e) => setFailure(e.target.value)}>
             {FAILURES.map((f) => (
               <option key={f} value={f}>
@@ -57,10 +65,16 @@ export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: st
             ))}
           </Select>
         </Field>
-        <Button variant="secondary" className="w-full" disabled={!movable} busy={busy === "fail"} onClick={() => simulate("fail", { status: "FAILED", failureType: failure }, `Failed: ${titleCase(failure)}`)}>
+        <Btn
+          tone="secondary"
+          block
+          disabled={!movable}
+          busy={busy === "fail"}
+          onClick={() => simulate("fail", { status: "FAILED", failureType: failure }, `Failed: ${titleCase(failure)}`)}
+        >
           Fail the transfer
-        </Button>
+        </Btn>
       </div>
-    </Frame>
+    </div>
   );
 }

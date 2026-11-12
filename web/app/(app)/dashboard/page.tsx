@@ -15,7 +15,8 @@ export const metadata: Metadata = {
  * Everything the control room shows, read once on the server so the first paint is the real board: the incidents, the
  * numbers the ledger derives from them, the wallets, and one ledger per incident for the activity chart.
  */
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ compose?: string }> }) {
+  const { compose } = await searchParams;
   const [health, list, metrics, wallets] = await Promise.all([
     loadFromApi("/api/health", HealthSchema),
     loadFromApi("/api/obligations", IncidentListSchema),
@@ -48,6 +49,7 @@ export default async function DashboardPage() {
       initialMetrics={metrics.ok ? metrics.data : null}
       initialWallets={wallets.ok ? wallets.data : null}
       initialViews={views}
+      compose={compose === "1"}
     />
   );
 }

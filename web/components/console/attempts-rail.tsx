@@ -1,62 +1,63 @@
 import { ago, money, shortHash } from "@/lib/format";
-import { ATTEMPT } from "@/lib/status";
 import type { IncidentView } from "../../../src/server/wire";
-import { Frame, Label, PanelHeader, Tag } from "../ui";
+import { ATTEMPT_CHIP, Chip, Kicker, Tile } from "../kit/widgets";
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-t border-rule py-2.5">
-      <Label>{label}</Label>
-      <span className="text-right text-sm">{children}</span>
+    <div className="min-w-0">
+      <Kicker>{label}</Kicker>
+      <dd className="readout mt-1 truncate text-[12.5px]">{children}</dd>
     </div>
   );
 }
 
-/** Attempts left to right, joined by a line and a square. Only the last one is ever allowed to be open. */
+/** Every attempt to pay, oldest first, on a spine. Only the newest is ever allowed to still be open. */
 export function AttemptsRail({ attempts }: { attempts: IncidentView["attempts"] }) {
+  if (attempts.length === 0) return <p className="well rounded-[18px]! px-4 py-6 text-center text-[13px] text-fg/55">No payment has been attempted yet.</p>;
   return (
-    <Frame tone="rule">
-      <PanelHeader title="Payment attempts" right={<Label>{attempts.length === 1 ? "1 attempt" : `${attempts.length} attempts`}</Label>} />
-      <ol className="flex items-stretch overflow-x-auto p-5">
+    <>
+      <ol>
         {attempts.map((a, i) => {
-          const look = ATTEMPT[a.state];
+          const chip = ATTEMPT_CHIP[a.state];
+          const last = i === attempts.length - 1;
           return (
-            <li key={a.id} className="flex items-stretch">
-              <article className="w-[280px] shrink-0 rounded-2xl border border-white/15 p-5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xl font-light tracking-[-0.03em] tnum">{String(a.seq).padStart(2, "0")}</span>
-                  <Tag tone={look.tone} pulse={look.pulse}>
-                    {look.label}
-                  </Tag>
+            <li key={a.id} className="flex gap-3">
+              <div className="flex w-8 shrink-0 flex-col items-center">
+                <span className={`readout flex size-8 items-center justify-center rounded-[10px] text-[11px] font-medium ${last ? "tile inverse text-fg" : "well text-fg/50"}`}>{String(a.seq).padStart(2, "0")}</span>
+                {!last ? <span aria-hidden className="my-1 w-[2px] flex-1 rounded-full bg-fg/12" /> : null}
+              </div>
+              <Tile as="article" className={`mb-3 flex-1 rounded-[20px]! px-4 py-3.5 ${last ? "ring-1 ring-accent/25" : ""}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="readout text-[20px] font-medium tracking-[-0.03em]">{money(a.amountMinor, a.currency)}</span>
+                  <Chip tone={chip.tone} pulse={chip.pulse}>
+                    {chip.label}
+                  </Chip>
                 </div>
-                <p className="tnum mt-5 text-2xl font-semibold">{money(a.amountMinor, a.currency)}</p>
-                <div className="mt-4">
-                  <Row label="Airwallex says">{a.awxStatus ?? "Nothing yet"}</Row>
-                  <Row label="Method">{a.method}</Row>
-                  <Row label="Fee">{a.feeMinor === null ? "Unknown" : money(a.feeMinor, a.currency)}</Row>
+                <dl className="mt-3 grid grid-cols-3 gap-x-4 gap-y-3">
+                  <Fact label="Airwallex">{a.awxStatus ?? "no word"}</Fact>
+                  <Fact label="Rail">{a.method}</Fact>
+                  <Fact label="Fee">{a.feeMinor === null ? "unknown" : money(a.feeMinor, a.currency)}</Fact>
+                  <Fact label="Request">{shortHash(a.requestId, 8)}</Fact>
+                  <Fact label="Started">
+                    <span suppressHydrationWarning>{ago(a.createdAt)}</span>
+                  </Fact>
                   {a.failureCode ? (
-                    <Row label="Failure">
-                      <span className="font-mono text-[13px] font-medium">{a.failureCode}</span>
-                      <span className="block text-xs text-muted">{a.failureMessage}</span>
-                    </Row>
+                    <Fact label="Failure">
+                      <span className="text-bad" title={a.failureMessage ?? undefined}>
+                        {a.failureCode}
+                      </span>
+                    </Fact>
                   ) : null}
-                  <Row label="Request ID">
-                    <span className="font-mono text-[12px]">{shortHash(a.requestId, 8)}</span>
-                  </Row>
-                  <Row label="Started">{ago(a.createdAt)}</Row>
-                </div>
-                {a.lastError ? <p className="mt-3 rounded-lg bg-white/[0.04] px-3 py-2 text-xs leading-relaxed text-muted">{a.lastError}</p> : null}
-              </article>
-              {i < attempts.length - 1 ? (
-                <div aria-hidden className="flex w-12 shrink-0 items-center">
-                  <span className="h-px flex-1 bg-white/30" />
-                  <span className="size-2 rounded-full bg-white/60" />
-                </div>
-              ) : null}
+                </dl>
+                {a.lastError ? <p className="well mt-3 rounded-[12px]! px-3 py-2 text-[12px] leading-relaxed text-fg/60">{a.lastError}</p> : null}
+              </Tile>
             </li>
           );
         })}
       </ol>
-    </Frame>
+      <p className="mt-1 pl-11 text-[12px] leading-relaxed text-fg/45">
+        Only the newest attempt may still be moving. Each is sealed in the ledger before it is sent, so the same invoice can never be paid twice by accident.
+      </p>
+    </>
   );
 }

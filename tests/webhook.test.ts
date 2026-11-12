@@ -274,7 +274,9 @@ describe("event-driven agent runs", () => {
     const model: AgentModel = {
       async converse(request: ConverseRequest): Promise<ConverseResult> {
         const brief = String(request.messages[0]!.content);
-        const incidentId = /incidentId ([0-9a-f-]{36})/.exec(brief)?.[1] ?? /Work incident (\S+)/.exec(brief)![1]!;
+        // Only the incidentId the brief names: the toolbox also accepts a reference since 786da4b, so falling back to one
+        // would let a brief without the id pass this test (the wake-brief-reference-only mutation survived that way).
+        const incidentId = /incidentId ([0-9a-f-]{36})/.exec(brief)?.[1] ?? "brief-named-no-incident-id";
         const last = request.messages.at(-1)!;
         const result = Array.isArray(last.content) ? last.content.find((b) => b.type === "tool_result") : undefined;
         const turn = request.messages.length;

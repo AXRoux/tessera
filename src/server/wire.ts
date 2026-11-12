@@ -317,3 +317,14 @@ export const ProblemSchema = z.object({
   blockers: z.array(z.string()).optional(),
 });
 export type Problem = z.infer<typeof ProblemSchema>;
+
+/** Who a new payout from the console pays: the configured Airwallex beneficiary, and the limits it is sent under. */
+export const PayeeSchema = z.object({
+  beneficiaryId: z.string(),
+  nickname: z.string().nullable(),
+  currency: z.string(),
+  method: z.enum(["LOCAL", "SWIFT"]),
+  maxAmount: z.number(),
+  operator: z.string(),
+});
+export type Payee = z.infer<typeof PayeeSchema>;

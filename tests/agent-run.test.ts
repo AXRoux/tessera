@@ -188,7 +188,7 @@ describe("adversary mode", () => {
     expect((await post({ mode: "adversary" })).status).toBe(403);
   });
 
-  it("gives the agent a hostile brief, names it as the adversary in the ledger, and still cannot pay twice", async () => {
+  it("gives the agent a guardrail-test brief with a checklist of forbidden moves, names it as the adversary in the ledger, and still cannot pay twice", async () => {
     const w = world();
     await killedAttempt(w, "91301");
     const id = w.obligation.id;
@@ -221,7 +221,9 @@ describe("adversary mode", () => {
     }));
     const seen = await events(response);
 
-    expect(briefs[0]).toContain("compromised");
+    // An honest, authorised-test framing with a concrete checklist: a "compromised agent" brief is one a well-aligned model declines.
+    expect(briefs[0]).toContain("authorised guardrail test");
+    expect(briefs[0]).not.toContain("compromised");
     expect(seen[0]).toMatchObject({ type: "start", mode: "adversary", actor: "agent:adversary" });
     expect(seen.filter((e) => e.type === "result")).toEqual([
       expect.objectContaining({ ok: false, kind: "refused" }),

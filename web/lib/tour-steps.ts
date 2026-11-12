@@ -33,11 +33,11 @@ export interface TourState {
 }
 
 export const TOUR_TITLES: Record<TourStepId, string> = {
-  seed: "Load the incidents",
-  agent: "Watch it work",
-  adversary: "Try to break it",
-  takeover: "Take over",
-  certify: "Get one certified",
+  seed: "Send a payout",
+  agent: "Let the agent work",
+  adversary: "Test the guardrails",
+  takeover: "Decide as a human",
+  certify: "Certify a payment",
 };
 
 const ORDER: TourStepId[] = ["seed", "agent", "adversary", "takeover", "certify"];

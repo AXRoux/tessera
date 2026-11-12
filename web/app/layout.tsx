@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
-import { Be_Vietnam_Pro, Fragment_Mono } from "next/font/google";
+import { Be_Vietnam_Pro, Fragment_Mono, IBM_Plex_Mono, Inter } from "next/font/google";
 import { AgentRunProvider } from "@/components/agent/agent-run";
 import "./globals.css";
 
 const vietnam = Be_Vietnam_Pro({ weight: ["300", "400", "500", "600", "700"], subsets: ["latin"], variable: "--font-vietnam", display: "swap" });
 const fragment = Fragment_Mono({ weight: "400", subsets: ["latin"], variable: "--font-fragment", display: "swap" });
+/** The control room's voice: Inter for words, IBM Plex Mono for every figure, readout and reference. */
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const plex = IBM_Plex_Mono({ weight: ["400", "500"], subsets: ["latin"], variable: "--font-plex-mono", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Tessera. Money that moves once, and can prove it.",
@@ -18,7 +21,7 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${vietnam.variable} ${fragment.variable}`}>
+    <html lang="en" className={`${vietnam.variable} ${fragment.variable} ${inter.variable} ${plex.variable}`}>
       <body>
         <AgentRunProvider>{children}</AgentRunProvider>
       </body>

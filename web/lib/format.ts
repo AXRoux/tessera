@@ -65,3 +65,18 @@ export const titleCase = (value: string): string =>
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+
+const compacts = new Map<string, Intl.NumberFormat>();
+
+/** A large amount, short enough for a widget: "$21.1M", "CN¥10M", "€1K". Small amounts keep their cents. */
+export function compactMoney(minor: number, currency: string): string {
+  const digits = formatterFor(currency).resolvedOptions().maximumFractionDigits ?? 2;
+  const major = minor / 10 ** digits;
+  if (Math.abs(major) < 10_000) return money(minor, currency);
+  let formatter = compacts.get(currency);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-US", { style: "currency", currency, notation: "compact", maximumFractionDigits: 1 });
+    compacts.set(currency, formatter);
+  }
+  return formatter.format(major);
+}

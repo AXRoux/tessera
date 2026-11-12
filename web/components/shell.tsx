@@ -1,180 +1,65 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Health } from "../../src/server/wire";
+import { usePathname, useRouter } from "next/navigation";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { IncidentListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
+import { api } from "@/lib/client-api";
+import { needsYou } from "@/lib/tour-steps";
 import { agentName, useAgentRun } from "./agent/agent-run";
-import { Icon, type IconName } from "./landing/icons";
+import { MetalCircle } from "./kit/metal";
+import { ThemeProvider, useTheme, type Theme } from "./kit/theme";
+import { Chip, Toggle } from "./kit/widgets";
+import { Icon } from "./landing/icons";
 import { Logo } from "./logo";
-import { Label } from "./ui";
 
 /**
- * The shell the operator works inside: a rail on the left, a search field and the two live status pills on top.
+ * The desk the operator works at: a menubar across the top and a workspace that fills exactly one screen.
  *
- * The rail is a scrollspy over the sections the page marks with `data-shell-section`, so it is right on any page under
- * it, not just the dashboard. The search field lives up here while the list it filters lives in the page, and the rail
- * badges are numbers only the page knows, so both travel through one small context.
+ * From `xl` (1280 wide, the smallest 16:9 laptop) every page is locked to the viewport and panels scroll inside
+ * themselves; below it, the same pages fall back to a natural scrolling column. The palette is a cookie, so the first
+ * paint is already light or dark.
  */
 
-const NAV: { id: string; label: string; icon: IconName }[] = [
-  { id: "overview", label: "Overview", icon: "dashboard" },
-  { id: "guide", label: "Getting started", icon: "check" },
-  { id: "agent", label: "Agent", icon: "activity" },
-  { id: "needs-you", label: "Needs you", icon: "mail" },
-  { id: "incidents", label: "Incidents", icon: "file" },
-  { id: "wallets", label: "Wallets", icon: "wallet" },
-];
-
 interface ShellState {
-  /** What the topbar's search holds; the page filters its own lists with it. */
+  /** What the menubar's search holds; the board and the queue filter with it. */
   query: string;
   setQuery: (query: string) => void;
-  /** Reported by the page: what the rail's badges show. */
-  awaiting: number;
-  guide: { done: number; total: number } | null;
-  report: (next: { awaiting: number; guide: { done: number; total: number } | null }) => void;
+  /** Everything waiting on a person, most urgent first, read on the shell's own cadence. */
+  waiting: ReturnType<typeof needsYou<IncidentSummary>>;
 }
 
 const ShellContext = createContext<ShellState | null>(null);
 
 export function useShell(): ShellState {
   const shell = useContext(ShellContext);
-  if (!shell) throw new Error("useShell needs <ShellProvider>");
+  if (!shell) throw new Error("useShell needs <AppShell>");
   return shell;
 }
 
-/** Publishes what only the page knows (the queue depth and guide progress) into the rail. */
-export function useShellReport(next: { awaiting: number; guide: { done: number; total: number } | null }): void {
-  const { report } = useShell();
-  useEffect(() => report(next), [report, next.awaiting, next.guide?.done, next.guide?.total]);
-}
-
-function ShellProvider({ children }: { children: ReactNode }) {
-  const [query, setQuery] = useState("");
-  const [reported, setReported] = useState<{ awaiting: number; guide: { done: number; total: number } | null }>({ awaiting: 0, guide: null });
-  const report = useCallback((next: { awaiting: number; guide: { done: number; total: number } | null }) => setReported(next), []);
-  const value = useMemo<ShellState>(() => ({ query, setQuery, ...reported, report }), [query, reported, report]);
-  return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
-}
-
-/** The one nav row: a disc-shaped icon, the label, and an optional count. Anchor scrolling, so a reload keeps its place. */
-function NavRow({ item, active, badge, onNavigate }: { item: (typeof NAV)[number]; active: boolean; badge: number; onNavigate?: () => void }) {
-  return (
-    <a
-      href={`#${item.id}`}
-      onClick={onNavigate}
-      aria-current={active ? "true" : undefined}
-      className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-colors ${
-        active ? "bg-white/[0.07] text-white" : "text-muted hover:bg-white/[0.04] hover:text-soft"
-      }`}
-    >
-      <Icon name={item.icon} className={`size-[18px] shrink-0 ${active ? "text-sky" : "text-muted group-hover:text-soft"}`} />
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {badge > 0 ? <span className="tnum rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white">{badge}</span> : null}
-    </a>
-  );
-}
-
-/** The getting-started ring: read at a glance from anywhere in the app. */
-function Progress({ done, total }: { done: number; total: number }) {
-  const radius = 15;
-  const circumference = 2 * Math.PI * radius;
-  const complete = done === total;
-  return (
-    <div className="panel p-4">
-      <div className="flex items-center gap-3">
-        <svg viewBox="0 0 36 36" className="size-9 shrink-0 -rotate-90" aria-hidden>
-          <circle cx="18" cy="18" r={radius} fill="none" stroke="rgb(255 255 255 / 0.12)" strokeWidth="3" />
-          <circle
-            cx="18"
-            cy="18"
-            r={radius}
-            fill="none"
-            stroke={complete ? "#7ee0a1" : "#4f4ff1"}
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeDasharray={`${(done / total) * circumference} ${circumference}`}
-          />
-        </svg>
-        <div className="min-w-0">
-          <p className="tnum text-[13px] font-medium">
-            {done}/{total} steps
-          </p>
-          <p className="text-[11.5px] text-muted">{complete ? "The whole loop, seen" : "Getting started"}</p>
-        </div>
-      </div>
-      {!complete ? (
-        <a href="#guide" className="mt-3 inline-flex text-[12.5px] text-sky underline decoration-white/20 underline-offset-4 hover:text-white">
-          Pick up the next step
-        </a>
-      ) : null}
-    </div>
-  );
-}
-
-function Rail({ health, onNavigate }: { health: Health | null; onNavigate?: () => void }) {
-  const { awaiting, guide } = useShell();
-  const [active, setActive] = useState<string>("overview");
-
+function useWaiting(): ShellState["waiting"] {
+  const [items, setItems] = useState<IncidentSummary[]>([]);
   useEffect(() => {
-    const sections = [...document.querySelectorAll<HTMLElement>("[data-shell-section]")];
-    if (sections.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const onScreen = entries.filter((e) => e.isIntersecting).map((e) => e.target.id);
-        if (onScreen.length > 0) setActive(onScreen[0]!);
-      },
-      { rootMargin: "-15% 0px -70% 0px", threshold: 0 },
-    );
-    for (const section of sections) observer.observe(section);
-    // At the very top of a page the first section is below the fold, so the rail should still read as "here".
-    const onScroll = () => {
-      if (window.scrollY < 80) setActive("overview");
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    let alive = true;
+    const load = () =>
+      api("obligations", IncidentListSchema)
+        .then((list) => alive && setItems(list.items))
+        .catch(() => undefined);
+    void load();
+    const timer = setInterval(() => !document.hidden && void load(), 5000);
     return () => {
-      observer.disconnect();
-      window.removeEventListener("scroll", onScroll);
+      alive = false;
+      clearInterval(timer);
     };
   }, []);
-
-  return (
-    <div className="flex h-full flex-col gap-6 px-3 py-5">
-      <Link href="/" className="flex items-center gap-3 px-3" aria-label="Tessera home">
-        <Logo size={30} />
-        <span className="min-w-0">
-          <span className="block text-[17px] font-medium leading-none tracking-[-0.04em]">Tessera</span>
-          <span className="mt-1 block text-[11.5px] text-muted">Control room</span>
-        </span>
-      </Link>
-
-      <nav aria-label="Sections" className="flex flex-col gap-1">
-        {NAV.map((item) => (
-          <NavRow key={item.id} item={item} active={active === item.id} badge={item.id === "needs-you" ? awaiting : 0} onNavigate={onNavigate} />
-        ))}
-      </nav>
-
-      <div className="mt-auto flex flex-col gap-3">
-        {guide ? <Progress done={guide.done} total={guide.total} /> : null}
-        <div className="flex items-center justify-between rounded-xl px-3 py-2 text-[12.5px] text-muted">
-          <span className="flex items-center gap-2">
-            <span aria-hidden className={`size-1.5 rounded-full ${health?.agent ? "bg-sky" : "bg-disabled"}`} />
-            {health?.agent ? `${agentName(health.agent, true)} · ${health.agent.kind === "model" ? "model" : "script"}` : "No agent"}
-          </span>
-          <Link href="/" className="hover:text-white">
-            The site
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
+  return useMemo(() => needsYou(items), [items]);
 }
 
-/** The topbar's search: the rail knows the sections, this knows the lists. Slash focuses it from anywhere. */
+/** The search well. Slash focuses it from anywhere; Enter away from a list takes the query to the board. */
 function SearchField() {
   const { query, setQuery } = useShell();
+  const pathname = usePathname();
+  const router = useRouter();
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -189,31 +74,73 @@ function SearchField() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   return (
-    <div className="relative w-full max-w-[420px]">
-      <Icon name="search" className="pointer-events-none absolute left-4 top-1/2 size-[17px] -translate-y-1/2 text-muted" />
+    <form
+      role="search"
+      className="relative w-full"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pathname !== "/dashboard" && pathname !== "/queue") router.push("/dashboard");
+      }}
+    >
+      <Icon name="search" className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-fg/45" />
       <input
         ref={ref}
         type="search"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search incidents, references, statuses"
+        placeholder="Find an invoice, a status, a rail"
         aria-label="Search incidents"
-        className="hairline h-11 w-full rounded-full border bg-white/[0.035] pl-11 pr-12 text-[14px] text-white outline-none transition-colors placeholder:text-muted focus:border-sky/50 focus:bg-white/[0.05] [&::-webkit-search-cancel-button]:hidden"
+        className="well h-11 w-full rounded-full! pl-11 pr-11 text-[13px] text-fg outline-none placeholder:text-fg/40 focus:ring-2 focus:ring-accent/40 [&::-webkit-search-cancel-button]:hidden"
       />
       {query === "" ? (
-        <kbd className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded-md border border-white/10 px-1.5 py-0.5 text-[10.5px] text-muted">
-          /
-        </kbd>
+        <kbd className="readout pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 rounded-md border border-fg/15 px-1.5 text-[10.5px] text-fg/45">/</kbd>
       ) : (
-        <button
-          type="button"
-          onClick={() => setQuery("")}
-          className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer rounded-md px-1.5 py-0.5 text-[11px] text-muted hover:text-white"
-        >
-          Clear
+        <button type="button" onClick={() => setQuery("")} aria-label="Clear the search" className="absolute right-3.5 top-1/2 -translate-y-1/2 cursor-pointer text-fg/50 hover:text-fg">
+          <Icon name="close" className="size-4" />
         </button>
       )}
-    </div>
+    </form>
+  );
+}
+
+/** Where you are, as a segmented track of links: the room, the queue, and the incident when you are in one. */
+function Nav({ waiting }: { waiting: number }) {
+  const pathname = usePathname();
+  const items: { href: string; label: string; icon: Parameters<typeof Icon>[0]["name"]; on: boolean; count?: number }[] = [
+    { href: "/dashboard", label: "Control room", icon: "dashboard", on: pathname === "/dashboard" },
+    { href: "/queue", label: "Queue", icon: "inbox", on: pathname === "/queue", count: waiting },
+  ];
+  if (pathname.startsWith("/incidents/")) items.push({ href: pathname, label: "Incident", icon: "file", on: true });
+  return (
+    <nav aria-label="Workspace" className="well hidden items-center gap-0.5 rounded-full p-1 md:flex">
+      {items.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          aria-current={item.on ? "page" : undefined}
+          className={`inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-[13px] font-medium transition-colors ${item.on ? "tile rounded-full! text-fg" : "text-fg/55 hover:text-fg"}`}
+        >
+          <Icon name={item.icon} className={`size-4 ${item.on ? "text-accent" : ""}`} />
+          <span className="hidden lg:inline">{item.label}</span>
+          {item.count ? <span className="readout rounded-full bg-warn px-1.5 text-[10.5px] font-medium text-white">{item.count}</span> : null}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+function ThemeSwitch() {
+  const { theme, setTheme } = useTheme();
+  return (
+    <Toggle<Theme>
+      label="Appearance"
+      value={theme}
+      onChange={setTheme}
+      options={[
+        { id: "light", label: <Icon name="sun" className="size-4" />, title: "Light" },
+        { id: "dark", label: <Icon name="moon" className="size-4" />, title: "Dark" },
+      ]}
+    />
   );
 }
 
@@ -224,120 +151,85 @@ function initials(who: string): string {
   return local.slice(0, 2).toUpperCase();
 }
 
-export function AppShell({ health, children }: { health: Health | null; children: ReactNode }) {
-  const [drawer, setDrawer] = useState(false);
-  const pathname = usePathname();
+function Menubar({ health }: { health: Health | null }) {
   const agent = useAgentRun();
-  const name = agentName(health?.agent);
-  const offline = health?.offline ?? false;
-
-  useEffect(() => setDrawer(false), [pathname]);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setDrawer(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
+  const { waiting } = useShell();
+  const model = health?.agent ? agentName(health.agent, true) : null;
   return (
-    <ShellProvider>
-      <div className="app-canvas min-h-dvh">
-        <div className="flex">
-          <aside className="sticky top-0 hidden h-dvh w-[248px] shrink-0 border-r border-white/[0.06] bg-black/25 backdrop-blur-xl lg:block">
-            <Rail health={health} />
-          </aside>
+    <header className="relative z-30 shrink-0 px-4 pt-4 sm:px-6 xl:px-7">
+      <div className="flex h-14 items-center gap-3 xl:gap-4">
+        <Link href="/" className="flex shrink-0 items-center gap-2.5" aria-label="Tessera home">
+          <span className="tile flex size-11 items-center justify-center rounded-[14px]!">
+            <Logo size={24} />
+          </span>
+          <span className="hidden text-[16px] font-semibold tracking-[-0.03em] 2xl:block">Tessera</span>
+        </Link>
 
-          <div className="flex min-w-0 flex-1 flex-col">
-            <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#05070f]/85 backdrop-blur-xl">
-              <div className="flex h-16 items-center gap-4 px-4 sm:px-6 lg:px-8">
-                <button
-                  type="button"
-                  onClick={() => setDrawer(true)}
-                  aria-label="Open the sections"
-                  aria-expanded={drawer}
-                  className="hairline inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border text-soft transition-colors hover:bg-white/5 lg:hidden"
-                >
-                  <Icon name="dashboard" className="size-[18px]" />
-                </button>
-                <Link href="/" className="lg:hidden" aria-label="Tessera home">
-                  <Logo size={26} />
-                </Link>
+        <Nav waiting={waiting.length} />
 
-                <div className="hidden min-w-0 flex-1 sm:block">
-                  <SearchField />
-                </div>
+        <div className="hidden min-w-0 max-w-[380px] flex-1 sm:block">
+          <SearchField />
+        </div>
 
-                <div className="ml-auto flex shrink-0 items-center gap-3">
-                  <span
-                    className="hairline hidden items-center gap-2 rounded-full border bg-white/[0.03] px-3.5 py-1.5 text-[12.5px] text-soft md:inline-flex"
-                    title={offline ? "Simulated Airwallex, in process: no network and no money" : "The Airwallex sandbox: real API, no real money"}
-                  >
-                    <span aria-hidden className="size-1.5 rounded-full bg-sky" />
-                    {offline ? "Offline demo" : "Airwallex sandbox"}
-                  </span>
-                  {health?.agent ? (
-                    <span className="hairline hidden items-center gap-2 rounded-full border bg-white/[0.03] px-3.5 py-1.5 text-[12.5px] text-soft md:inline-flex">
-                      <span aria-hidden className={`size-1.5 rounded-full ${agent.running ? "beat bg-blue" : "bg-[#7ee0a1]"}`} />
-                      {agent.running ? `${name} working` : `${name} ready`}
-                    </span>
-                  ) : null}
-                  <span aria-hidden className="hidden h-7 w-px bg-white/10 md:block" />
-                  <span className="flex items-center gap-2.5">
-                    <span
-                      aria-hidden
-                      className="flex size-9 items-center justify-center rounded-full border border-white/15 bg-gradient-to-br from-[#2f6ff0] to-[#0a2380] text-[12px] font-medium tracking-wide text-white"
-                    >
-                      {initials(health?.operator ?? "operator")}
-                    </span>
-                    <span className="hidden min-w-0 leading-tight sm:block">
-                      <span className="block max-w-[190px] truncate text-[12.5px] text-white">{health?.operator ?? "operator"}</span>
-                      <span className="block text-[11px] text-muted">Operator</span>
-                    </span>
-                  </span>
-                </div>
-              </div>
-
-              {/* Below `sm` there is no room for the field next to the pills, so it gets its own row. */}
-              <div className="flex items-center gap-3 px-4 pb-3 sm:hidden">
-                <SearchField />
-                <span className="hairline inline-flex shrink-0 items-center gap-2 rounded-full border bg-white/[0.03] px-3 py-1.5 text-[12px] text-soft">
-                  <span aria-hidden className="size-1.5 rounded-full bg-sky" />
-                  {offline ? "Offline" : "Sandbox"}
-                </span>
-              </div>
-            </header>
-
-            {drawer ? (
-              <div className="fixed inset-0 z-50 lg:hidden">
-                <button type="button" aria-label="Close the sections" onClick={() => setDrawer(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-                <div className="absolute inset-y-0 left-0 w-[264px] border-r border-white/10 bg-[#06080f] shadow-2xl">
-                  <Rail health={health} onNavigate={() => setDrawer(false)} />
-                </div>
-              </div>
+        <div className="ml-auto flex shrink-0 items-center gap-2.5">
+          <span className="hidden 2xl:inline-flex" title={health?.offline ? "Airwallex simulated in-process: no network, no money" : "The Airwallex sandbox: the real API, no real money"}>
+            <Chip tone="accent">{health?.offline ? "Offline rehearsal" : "Airwallex sandbox"}</Chip>
+          </span>
+          {health?.agent ? (
+            <span className="hidden xl:inline-flex" title={model ? `Connected model: ${model}` : undefined}>
+              <Chip tone={agent.running ? "accent" : "solid"} pulse={agent.running}>
+                {agent.running ? "Agent working" : "Agent standing by"}
+              </Chip>
+            </span>
+          ) : null}
+          <ThemeSwitch />
+          <span className="relative">
+            <MetalCircle label={waiting.length > 0 ? `${waiting.length} waiting on you` : "The queue is clear"} href="/queue" tone={waiting.length > 0 ? "primary" : "secondary"}>
+              <Icon name="bell" className="size-[18px]" />
+            </MetalCircle>
+            {waiting.length > 0 ? (
+              <span className="readout pointer-events-none absolute -right-1 -top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-canvas bg-warn px-1 text-[10.5px] font-semibold text-white">
+                {waiting.length}
+              </span>
             ) : null}
-
-            <main className="min-w-0 flex-1">{children}</main>
-          </div>
+          </span>
+          <span className="flex items-center gap-2.5">
+            <span aria-hidden className="tile inverse flex size-11 items-center justify-center rounded-full! text-[12px] font-semibold text-fg">
+              {initials(health?.operator ?? "operator")}
+            </span>
+            <span className="hidden min-w-0 leading-tight lg:block">
+              <span className="block max-w-[160px] truncate text-[12.5px] font-medium">{health?.operator ?? "operator"}</span>
+              <span className="block text-[11px] text-fg/50">Operator</span>
+            </span>
+          </span>
         </div>
       </div>
-    </ShellProvider>
-  );
-}
-
-/** The page's column: wide enough for a chart and a rail, with air either side. */
-export function Stage({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`mx-auto w-full max-w-[1480px] px-4 pb-24 pt-7 sm:px-6 lg:px-8 ${className}`}>{children}</div>;
-}
-
-/** The page's own heading: what this is, and the controls that belong to the whole page. */
-export function PageHead({ title, note, children }: { title: string; note: ReactNode; children?: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
-      <div className="min-w-0">
-        <Label className="text-sky">Control room</Label>
-        <h1 className="heading mt-2 text-[clamp(26px,3vw,34px)]">{title}</h1>
-        <p className="mt-2 max-w-2xl text-[14px] font-light leading-relaxed text-soft">{note}</p>
+      <div className="mt-3 sm:hidden">
+        <SearchField />
       </div>
-      {children ? <div className="flex flex-wrap items-center gap-2.5">{children}</div> : null}
-    </div>
+    </header>
   );
+}
+
+export function AppShell({ health, theme, children }: { health: Health | null; theme: Theme; children: ReactNode }) {
+  const [query, setQuery] = useState("");
+  const waiting = useWaiting();
+  const value = useMemo<ShellState>(() => ({ query, setQuery, waiting }), [query, waiting]);
+  return (
+    <ShellContext.Provider value={value}>
+      <ThemeProvider initial={theme}>
+        {(current) => (
+          <div data-theme={current} className="desk flex min-h-dvh flex-col font-ui antialiased xl:h-dvh xl:min-h-[640px]">
+            <Menubar health={health} />
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col xl:overflow-hidden">{children}</main>
+          </div>
+        )}
+      </ThemeProvider>
+    </ShellContext.Provider>
+  );
+}
+
+/** The workspace every page fills: one screen tall from `xl`, a natural scroll below it. */
+export function Workspace({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4 pt-4 sm:px-6 xl:px-7 xl:pb-5 ${className}`}>{children}</div>;
 }

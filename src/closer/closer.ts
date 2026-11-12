@@ -322,8 +322,9 @@ export class Closer {
     }
     const heldMs = this.now().getTime() - Date.parse(paidAt);
     if (heldMs < this.paidHoldMs) {
-      const remaining = Math.ceil((this.paidHoldMs - heldMs) / 60_000);
-      blockers.push(`PAID is not final: hold window has ${remaining} min left (banks can still return a paid transfer)`);
+      const left = this.paidHoldMs - heldMs;
+      const remaining = left < 120_000 ? `${Math.ceil(left / 1000)}s` : `${Math.ceil(left / 60_000)} min`;
+      blockers.push(`PAID is not final: hold window has ${remaining} left (banks can still return a paid transfer)`);
     }
   }
 

@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { Acknowledged, api } from "@/lib/client-api";
+import { actorLabel } from "@/lib/agent-verdict";
 import { ago } from "@/lib/format";
 import type { IncidentView } from "../../../src/server/wire";
-import { Button, Frame, Label, PanelHeader, Tag } from "../ui";
+
 import type { RunAction } from "./actions-panel";
+import { Btn } from "../kit/metal";
 
 const KIND = { STATUS: "Status update", PROOF: "Proof of payment", CORRECTION: "Request for corrected details" } as const;
 
@@ -24,7 +26,7 @@ export function DraftPanel({ view, busy, run }: { view: IncidentView; busy: stri
       await api(`obligations/${id}/drafts/resolve`, Acknowledged, { method: "POST", body: { draftSeq: draft.seq, resolution } });
       return resolution === "SENT"
         ? { tone: "ok", title: "Recorded as sent", lines: ["The ledger now shows that you sent this reply."] }
-        : { tone: "ok", title: "Draft discarded", lines: [] };
+        : { tone: "ok", title: "Draft set aside", lines: [] };
     });
 
   async function copy() {
@@ -34,36 +36,40 @@ export function DraftPanel({ view, busy, run }: { view: IncidentView; busy: stri
   }
 
   return (
-    <Frame>
-      <PanelHeader title="Drafted reply to the supplier" right={<Tag tone="blue-outline">{KIND[draft.kind]}</Tag>} />
-      <div className="space-y-5 p-5">
-        <div className="rounded-2xl border border-white/20 p-5">
-          <p className="whitespace-pre-line text-[15px] leading-relaxed">{draft.message}</p>
-          <div className="hatch mt-5 border-t border-rule pt-4">
-            <Label>Added by Tessera from the ledger</Label>
-            <ul className="mt-2 space-y-1 font-mono text-[12.5px] text-muted">
-              {draft.facts.map((fact) => (
-                <li key={fact}>{fact}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-        <p className="text-sm leading-relaxed text-muted">
-          Drafted by <span className="font-mono text-[13px] text-ink">{draft.actor}</span> {ago(draft.at)}. Tessera sends nothing: copy it, send it from your own
-          mail, then say so here. The code refused any draft with account details, links, or a promise of another payment.
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="secondary" onClick={() => void copy()}>
-            {copied ? "Copied" : "Copy to clipboard"}
-          </Button>
-          <Button busy={busy === "draft-SENT"} disabled={busy !== null && busy !== "draft-SENT"} onClick={() => resolve("SENT")}>
-            I sent it
-          </Button>
-          <Button variant="quiet" busy={busy === "draft-DISCARDED"} disabled={busy !== null && busy !== "draft-DISCARDED"} onClick={() => resolve("DISCARDED")}>
-            Discard
-          </Button>
-        </div>
+    <div className="tile rounded-[22px]! p-4 ring-1 ring-accent/30">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-2 text-[13.5px] font-semibold"><span aria-hidden className="size-2 rounded-full bg-accent" />A reply, drafted for you</span>
+        <span className="well rounded-full! px-2.5 py-1 text-[11px] font-medium text-accent">{KIND[draft.kind]}</span>
       </div>
-    </Frame>
+      <p className="well mt-3 whitespace-pre-line rounded-[16px]! px-4 py-3 text-[13px] leading-relaxed">{draft.message}</p>
+      <div className="mt-2.5">
+        <p className="text-[11px] text-fg/45">Added by Tessera from the ledger, not by the agent</p>
+        <ul className="mt-1 space-y-0.5 readout text-[11.5px] text-fg/65">
+          {draft.facts.map((fact) => (
+            <li key={fact}>{fact}</li>
+          ))}
+        </ul>
+      </div>
+      <p suppressHydrationWarning className="mt-3 text-[12px] leading-relaxed text-fg/55">
+        Written by {actorLabel(draft.actor)} {ago(draft.at)}. Tessera sends nothing on its own: copy it, send it from your mail, then mark it here. Drafts carrying account details,
+        links or a promise of another payment are refused by code.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Btn tone="secondary" onClick={() => void copy()}>
+          {copied ? "Copied" : "Copy"}
+        </Btn>
+        <Btn busy={busy === "draft-SENT"} disabled={busy !== null && busy !== "draft-SENT"} onClick={() => resolve("SENT")}>
+          I sent it
+        </Btn>
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => resolve("DISCARDED")}
+          className="ml-auto cursor-pointer text-[12px] text-fg/55 underline underline-offset-4 hover:text-fg disabled:opacity-50"
+        >
+          Set it aside
+        </button>
+      </div>
+    </div>
   );
 }

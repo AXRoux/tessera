@@ -694,7 +694,8 @@ bun run webhook:ping -- --url https://<printed>/api/webhooks/airwallex   # optio
 | `TESSERA_MODEL_LABEL` | Display name for the model in the console and the default agent name. Default `Claude` for anthropic, otherwise the model id's last path segment (`nousresearch/hermes-4-405b` → `hermes-4-405b`). |
 | `TESSERA_OPERATOR` | Identity stamped on every human approval, server-side. |
 | `TESSERA_PAID_HOLD_MS` | How long a transfer must stay `PAID` before it can be certified, in whole milliseconds. Production policy is 24 h (`86400000`); offline default 6 s. |
-| `TESSERA_SWEEP_MS` | Background recover-and-sync interval in the API. Default 60000; 0 disables it. |
+| `TESSERA_PACE` | `live` or `real`. Live runs the same policy at a pace an audience can watch: overdue after 5 min (LOCAL) / 10 min (SWIFT), FAILED chased after 2 min, PAID final after 30 s. Default `live` on the sandbox and offline; `real` (48 h / 120 h / 30 min / 24 h) is the default and the only choice against production Airwallex. |
+| `TESSERA_SWEEP_MS` | Background recover-and-sync interval in the API. Default 15000 at live pace, 60000 at real pace; 0 disables it. |
 | `TESSERA_AGENT_NAME` | Name written on every agent action, for console runs and MCP clients. Default `agent:claude` (anthropic), `agent:<label>` for an OpenAI-compatible model (e.g. `agent:hermes-4-405b`), `agent:mcp` over MCP. The scripted agent is always `agent:scripted`. |
 | `TESSERA_AGENT_AUTHORITY` | MCP: `operator` (default) or `triage` (never offered `replace_payment`, `fund_replacement` or `reconcile_and_close`). |
 | `TESSERA_OFFLINE` | `1`: simulated Airwallex, in-memory ledger, generated secrets if unset. |

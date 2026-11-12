@@ -44,7 +44,7 @@ export function ArrowDot({ className = "" }: { className?: string }) {
 }
 
 type Variant = "primary" | "secondary" | "light" | "quiet";
-type Size = "md" | "lg";
+type Size = "sm" | "md" | "lg";
 
 const VARIANT: Record<Variant, string> = {
   primary: "bg-blue text-white hover:bg-[#6464ff] disabled:bg-blue/35 disabled:text-white/60",
@@ -56,6 +56,7 @@ const VARIANT: Record<Variant, string> = {
 };
 
 const SIZE: Record<Size, string> = {
+  sm: "h-9 px-4 text-[13px] gap-2",
   md: "h-11 px-5 text-[14px]",
   lg: "h-16 px-6 text-[16px]",
 };

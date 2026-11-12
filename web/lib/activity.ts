@@ -7,16 +7,16 @@
 import type { IncidentSummary, IncidentView, Metrics } from "../../src/server/wire";
 import { money } from "./format";
 
-/** The five things an operator watches for, and the colour each one is drawn in. */
+/** The five things an operator watches for, and the colour each one is drawn in (palette variables, so both themes read). */
 export const BANDS = ["moved", "held", "person", "proof", "agent"] as const;
 export type Band = (typeof BANDS)[number];
 
 export const BAND_STYLE: Record<Band, { label: string; color: string }> = {
-  moved: { label: "Money moved", color: "#5b8cff" },
-  held: { label: "Stopped or failed", color: "#ff7a87" },
-  person: { label: "Handed to a person", color: "#ffffff" },
-  proof: { label: "Certified", color: "#7ee0a1" },
-  agent: { label: "Agent and bank events", color: "#aab5ff" },
+  moved: { label: "Money in motion", color: "var(--accent)" },
+  held: { label: "Stopped or failed", color: "var(--bad)" },
+  person: { label: "With a person", color: "var(--warn)" },
+  proof: { label: "Certified", color: "var(--fg)" },
+  agent: { label: "Agent and bank signals", color: "color-mix(in oklab, var(--fg) 38%, transparent)" },
 };
 
 /**

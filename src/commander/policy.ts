@@ -7,8 +7,8 @@ import type { SupplierEvidence } from "./evidence";
 
 /** Thresholds live here, in code. The model never sees or sets them. */
 export interface CommanderPolicy {
-  /** How long a transfer may be processing before silence stops being normal. */
-  settlementSlaHours: Record<Method, number>;
+  /** How long a transfer may be processing before silence stops being normal, per rail (milliseconds). */
+  settlementSlaMs: Record<Method, number>;
   /** Largest replacement the Commander may approve on its own, per currency (minor units). Absent = never automatic. */
   autoReplaceLimitMinor: Record<string, number>;
   /** PAID is not final; how long it must stay PAID before the incident may close. */
@@ -35,7 +35,7 @@ export interface CommanderPolicy {
 }
 
 export const DEFAULT_POLICY: CommanderPolicy = {
-  settlementSlaHours: { LOCAL: 48, SWIFT: 120 },
+  settlementSlaMs: { LOCAL: 48 * 3600_000, SWIFT: 120 * 3600_000 },
   autoReplaceLimitMinor: { USD: 500_000, EUR: 500_000, GBP: 500_000 },
   paidHoldMs: 24 * 3600_000,
   maxAutoReplacements: 2,
@@ -47,6 +47,27 @@ export const DEFAULT_POLICY: CommanderPolicy = {
   maxQuoteAgeMs: 5 * 60_000,
   maxRateDriftBps: 50,
 };
+
+/**
+ * The same policy at a pace a live audience can watch: a transfer is overdue after minutes rather than days, a FAILED
+ * transfer is chased after two minutes, and PAID is final after thirty seconds. Only ever applied to the Airwallex
+ * sandbox or the offline demo (see TESSERA_PACE in the runtime); real money keeps the banking windows above.
+ */
+export const LIVE_PACE: Pick<CommanderPolicy, "settlementSlaMs" | "failedSlaMs" | "paidHoldMs"> = {
+  settlementSlaMs: { LOCAL: 5 * 60_000, SWIFT: 10 * 60_000 },
+  failedSlaMs: 2 * 60_000,
+  paidHoldMs: 30_000,
+};
+
+/** A length of time as a sentence says it: "40 seconds", "5 minutes", "877 hours". */
+export function span(ms: number): string {
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 120) return unit(seconds, "second");
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 120) return unit(minutes, "minute");
+  return unit(Math.floor(minutes / 60), "hour");
+}
 
 /** The conversion already recorded for the replacement of the latest attempt, if any (the newest one for it). */
 export interface FundingFacts {
@@ -150,7 +171,6 @@ export interface Decision {
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { ROUTINE: 0, ATTENTION: 1, CRITICAL: 2 };
-const HOUR_MS = 3600_000;
 const DEFAULT_MIN_CONVERSION_MINOR = 100;
 
 /**
@@ -317,7 +337,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
           fromState = "ESCALATE";
           candidates.push("ESCALATE", "WAIT");
           raise("ATTENTION");
-          reasons.push(`Airwallex marked the transfer as failed over ${Math.floor(policy.failedSlaMs / 60_000)} minutes ago and has not cancelled it. A person should chase the cancellation; the lock still holds.`);
+          reasons.push(`Airwallex marked the transfer as failed over ${span(policy.failedSlaMs)} ago and has not cancelled it. A person should chase the cancellation; the lock still holds.`);
           break;
         }
         fromState = "WAIT";
@@ -326,13 +346,13 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         reasons.push("Airwallex has marked the transfer as failed. The money returns to the wallet only once it is cancelled, so the lock holds until then.");
         break;
       }
-      const slaMs = policy.settlementSlaHours[latest.method] * HOUR_MS;
+      const slaMs = policy.settlementSlaMs[latest.method];
       const ageMs = now.getTime() - Date.parse(latest.createdAt);
       if (ageMs <= slaMs) {
         fromState = "WAIT";
         candidates.push("WAIT", "SEND_STATUS_TO_SUPPLIER");
         recheckAt = new Date(Date.parse(latest.createdAt) + slaMs).toISOString();
-        reasons.push(`Processing for ${Math.floor(ageMs / HOUR_MS)}h of an expected ${policy.settlementSlaHours[latest.method]}h (${latest.method}). Waiting is the right call.`);
+        reasons.push(`Processing for ${span(ageMs)} of an expected ${span(slaMs)} on ${latest.method}. Waiting is the right call.`);
         if (evidence?.claimsNonReceipt) {
           raise("ATTENTION");
           reasons.push("The supplier reports non-receipt, but the transfer is still inside its normal settlement window.");
@@ -341,7 +361,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         fromState = "ESCALATE";
         candidates.push("ESCALATE", "WAIT");
         raise("ATTENTION");
-        reasons.push(`Processing for ${Math.floor(ageMs / HOUR_MS)}h, beyond the expected ${policy.settlementSlaHours[latest.method]}h. Non-delivery cannot be proven from here, so ask Airwallex to trace the payment.`);
+        reasons.push(`Processing for ${span(ageMs)}, beyond the expected ${span(slaMs)}. Non-delivery cannot be proven from here, so ask Airwallex to trace the payment.`);
       }
       break;
     }

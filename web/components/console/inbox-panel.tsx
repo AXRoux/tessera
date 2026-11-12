@@ -4,9 +4,11 @@ import { useId, useRef, useState } from "react";
 import { Acknowledged, api } from "@/lib/client-api";
 import { ago } from "@/lib/format";
 import { InboxCreatedSchema, type IncidentView } from "../../../src/server/wire";
-import { Button, Frame, Label, PanelHeader, Tag } from "../ui";
-import { Field, TextArea, TextInput } from "./fields";
+
+import { Field, Fold, TextArea, TextInput } from "./fields";
 import type { RunAction } from "./actions-panel";
+import { Btn } from "../kit/metal";
+import { Chip } from "../kit/widgets";
 
 /** The API refuses a message longer than this. */
 const MAX_CHARS = 20_000;
@@ -46,60 +48,64 @@ export function InboxPanel({ view, reader, busy, run }: { view: IncidentView; re
   }
 
   return (
-    <Frame>
-      <PanelHeader title="Supplier inbox" right={<Label>{view.inbox.length === 1 ? "1 message" : `${view.inbox.length} messages`}</Label>} />
-      <div className="space-y-6 p-5">
-        {view.inbox.length === 0 ? (
-          <p className="hatch px-4 py-5 text-sm leading-relaxed text-muted">No messages from the supplier yet. Paste one below or upload a .eml file.</p>
-        ) : (
-          <ul className="divide-y divide-rule border-y border-rule">
-            {view.inbox.map((message) => (
-              <li key={message.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{message.from}</span>
-                  <span className="block text-xs text-muted">{ago(message.receivedAt)}</span>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="kicker">Inbox</span>
+        <span className="tnum text-[11.5px] text-fg/45">{view.inbox.length === 1 ? "1 message" : `${view.inbox.length} messages`}</span>
+      </div>
+      {view.inbox.length === 0 ? (
+        <p className="well rounded-[18px]! px-4 py-4 text-[12.5px] leading-relaxed text-fg/55">
+          The supplier has not written in yet. Paste their message below, or drop in the .eml exactly as it arrived.
+        </p>
+      ) : (
+        <ul className="tile divide-y divide-fg/[0.06] rounded-[20px]!">
+          {view.inbox.map((message) => (
+            <li key={message.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+              <span className="min-w-0">
+                <span className="block truncate text-[13px]">{message.from}</span>
+                <span suppressHydrationWarning className="block text-[11.5px] text-fg/45">
+                  arrived {ago(message.receivedAt)}
                 </span>
-                <span className="flex items-center gap-3">
-                  {message.read ? <Tag tone="blue-outline">Read</Tag> : <Tag tone="muted">Unread</Tag>}
-                  <Button
-                    variant="quiet"
-                    disabled={reader === null}
-                    busy={busy === `read-${message.id}`}
-                    onClick={() =>
-                      run(`read-${message.id}`, async () => {
-                        await api(`obligations/${id}/evidence/read`, Acknowledged, { method: "POST", body: { messageId: message.id } });
-                        return {
-                          tone: "ok",
-                          title: `Read by ${reader}`,
-                          lines: ["The recommendation was recalculated. Code checked each claim against the text first."],
-                        };
-                      })
-                    }
-                  >
-                    {reader && !reader.includes("offline") ? `Read with ${reader}` : reader ? "Read (offline reader)" : "Read"}
-                  </Button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {reader === null ? (
-          <p className="text-xs leading-relaxed text-muted">No reader is connected to this server. Record what the supplier said by hand instead.</p>
-        ) : null}
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                {message.read ? <Chip tone="accent">Read</Chip> : <Chip tone="neutral">Unread</Chip>}
+                <Btn
+                  tone="secondary"
+                  disabled={reader === null}
+                  busy={busy === `read-${message.id}`}
+                  onClick={() =>
+                    run(`read-${message.id}`, async () => {
+                      await api(`obligations/${id}/evidence/read`, Acknowledged, { method: "POST", body: { messageId: message.id } });
+                      return {
+                        tone: "ok",
+                        title: `Read by ${reader}`,
+                        lines: ["The recommendation has been weighed again. Code checked every claim against the text before it counted."],
+                      };
+                    })
+                  }
+                >
+                  {reader && !reader.includes("offline") ? `Read with ${reader}` : "Read it"}
+                </Btn>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {reader === null ? <p className="text-[12px] leading-relaxed text-fg/50">No reader is connected to this server. Record what the supplier said by hand instead.</p> : null}
 
-        <div className="space-y-4 border-t border-rule pt-5">
-          <Label className="text-ink">Add a message</Label>
-          <Field label="Paste the message, or a whole .eml" htmlFor={emailId} hint={eml ? "Looks like a raw email: the sender and subject are taken from its headers." : undefined}>
+      <Fold title="Add a message" sub="Paste it, or upload the .eml as it arrived">
+        <div className="space-y-3">
+          <Field label="The message" htmlFor={emailId} hint={eml ? "This looks like a raw email: the sender and subject come from its headers." : undefined}>
             <TextArea
               id={emailId}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder={`Hi, ${view.obligation.reference} has not arrived and the deadline has passed...`}
-              rows={5}
+              placeholder={`Hello — ${view.obligation.reference} still hasn't reached us and the deadline has passed…`}
+              rows={4}
               maxLength={MAX_CHARS}
             />
           </Field>
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <input
               ref={fileInput}
               type="file"
@@ -112,11 +118,11 @@ export function InboxPanel({ view, reader, busy, run }: { view: IncidentView; re
                 e.target.value = "";
               }}
             />
-            <Button variant="quiet" onClick={() => fileInput.current?.click()}>
+            <button type="button" onClick={() => fileInput.current?.click()} className="cursor-pointer text-[12.5px] text-accent underline decoration-fg/20 underline-offset-4 hover:text-fg">
               Upload a .eml or .txt
-            </Button>
+            </button>
             {fileError ? (
-              <span role="alert" className="text-xs">
+              <span role="alert" className="text-[12px] text-bad">
                 {fileError}
               </span>
             ) : null}
@@ -126,12 +132,12 @@ export function InboxPanel({ view, reader, busy, run }: { view: IncidentView; re
               <TextInput id={fromId} value={from} onChange={(e) => setFrom(e.target.value)} placeholder="accounts@supplier.example" maxLength={320} />
             </Field>
           ) : null}
-          <Field label="Their bank statement (optional)" htmlFor={statementId}>
-            <TextArea id={statementId} value={statement} onChange={(e) => setStatement(e.target.value)} placeholder="04 Oct  AIRWALLEX PAYOUT  CR  25.00 USD" rows={3} maxLength={MAX_CHARS} />
+          <Field label="Their bank statement, if they sent one" htmlFor={statementId}>
+            <TextArea id={statementId} value={statement} onChange={(e) => setStatement(e.target.value)} placeholder="04 Oct  AIRWALLEX PAYOUT  CR  25.00 USD" rows={2} maxLength={MAX_CHARS} />
           </Field>
-          <Button
-            variant="secondary"
-            className="w-full"
+          <Btn
+            tone="secondary"
+            block
             disabled={!canAdd}
             busy={busy === "inbox"}
             onClick={() =>
@@ -143,14 +149,14 @@ export function InboxPanel({ view, reader, busy, run }: { view: IncidentView; re
                 setEmail("");
                 setStatement("");
                 setFrom("");
-                return { tone: "ok", title: "Message added to the inbox", lines: ["Nothing has read it yet. Read it from the list above when you are ready."] };
+                return { tone: "ok", title: "Added to the inbox", lines: ["Nothing has read it yet. Read it from the inbox when you are ready."] };
               })
             }
           >
             Add to the inbox
-          </Button>
+          </Btn>
         </div>
-      </div>
-    </Frame>
+      </Fold>
+    </div>
   );
 }

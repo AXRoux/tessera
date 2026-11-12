@@ -35,6 +35,19 @@ describe("offline runtime", () => {
     expect(buildRuntime({ TESSERA_OFFLINE: "1" }).paidHoldMs).toBe(6_000);
   });
 
+  it("runs at live pace offline: minutes, not days", () => {
+    const runtime = buildRuntime({ TESSERA_OFFLINE: "1" });
+    expect(runtime.pace).toBe("live");
+    expect(runtime.policy.settlementSlaMs.LOCAL).toBe(5 * 60_000);
+    expect(buildRuntime({ TESSERA_OFFLINE: "1", TESSERA_PACE: "real" }).policy.settlementSlaMs.LOCAL).toBe(48 * 3600_000);
+  });
+
+  it("refuses live pace against real money", () => {
+    expect(() =>
+      buildRuntime({ TESSERA_PACE: "live", AWX_BASE_URL: "https://api.airwallex.com", TESSERA_APPROVAL_SECRET: "x".repeat(32) }),
+    ).toThrow(/only allowed on the Airwallex sandbox/);
+  });
+
   it("refuses a public demo that is not offline", () => {
     expect(() => buildRuntime({ TESSERA_PUBLIC_DEMO: "1", TESSERA_APPROVAL_SECRET: "x".repeat(32) })).toThrow(/only allowed with TESSERA_OFFLINE/);
   });

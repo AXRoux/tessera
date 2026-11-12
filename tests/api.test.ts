@@ -19,6 +19,7 @@ import {
   IncidentViewSchema,
   InboxCreatedSchema,
   MetricsSchema,
+  PayeeSchema,
   ProblemSchema,
   SeedResultSchema,
 } from "../src/server/wire";
@@ -150,6 +151,28 @@ describe("incidents", () => {
     expect(list.get("items")).toContainEqual(
       expect.objectContaining({ id, status: "PAYING", attemptCount: 1, latest: expect.objectContaining({ state: "LIVE" }) }),
     );
+  });
+
+  it("signs a new payout with the operator's own written reason, and refuses one too short to mean anything", async () => {
+    const a = apiWorld();
+
+    const created = await a.call("POST", "/api/obligations", { amount: 40, reference: "NW-1043", note: "Northwind invoice 1043, approved by finance" });
+    expect(created.status).toBe(201);
+    const intent = a.ledger.events(String(created.get("id"))).find((e) => e.type === "ATTEMPT_INTENT");
+    expect(intent?.payload).toEqual(expect.objectContaining({ approver: "ops@acme.example", note: "Northwind invoice 1043, approved by finance" }));
+
+    const terse = await a.call("POST", "/api/obligations", { amount: 40, note: "ok" });
+    expect(terse.status).toBe(400);
+    expect(a.api.all).toHaveLength(1);
+  });
+
+  it("names the payee a new payout goes to, as Airwallex has it", async () => {
+    const named = apiWorld({ deps: { payees: async () => [{ id: "ben-A", nickname: "spike-us-supplier" }] } });
+    const payee = (await named.call("GET", "/api/payee")).parse(PayeeSchema);
+    expect(payee).toEqual({ beneficiaryId: "ben-A", nickname: "spike-us-supplier", currency: "USD", method: "LOCAL", maxAmount: 1000, operator: "ops@acme.example" });
+
+    const unnamed = apiWorld({ deps: { payees: async () => Promise.reject(new Error("airwallex down")) } });
+    expect((await unnamed.call("GET", "/api/payee")).parse(PayeeSchema).nickname).toBeNull();
   });
 
   it("never gives two invoices the same reference, because the Closer finds stray payments by reference", async () => {

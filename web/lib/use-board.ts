@@ -27,7 +27,8 @@ export interface Board {
   refresh: () => Promise<void>;
   seed: () => Promise<void>;
   reset: () => Promise<void>;
-  create: () => Promise<void>;
+  /** Sends a real payout through Airwallex, signed with the operator's own note. Resolves to an error sentence, or null on success. */
+  create: (payout: { amount: number; reference?: string; note: string }) => Promise<string | null>;
   setConfirmingReset: (on: boolean) => void;
 }
 
@@ -66,20 +67,24 @@ export function useBoard(initial: { items: IncidentSummary[]; metrics: Metrics |
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const create = useCallback(async () => {
-    setCreating(true);
-    setError(null);
-    try {
-      const created = await api("obligations", Acknowledged, { method: "POST", body: { amount: 25 } });
-      const id = typeof created.id === "string" ? created.id : null;
-      if (id) router.push(`/incidents/${id}`);
-      else await refresh();
-    } catch (e) {
-      setError(message(e, "The test invoice could not be created."));
-    } finally {
-      setCreating(false);
-    }
-  }, [refresh, router]);
+  const create = useCallback(
+    async (payout: { amount: number; reference?: string; note: string }): Promise<string | null> => {
+      setCreating(true);
+      setError(null);
+      try {
+        const created = await api("obligations", Acknowledged, { method: "POST", body: payout });
+        const id = typeof created.id === "string" ? created.id : null;
+        if (id) router.push(`/incidents/${id}`);
+        else await refresh();
+        return null;
+      } catch (e) {
+        return message(e, "The payout could not be sent.");
+      } finally {
+        setCreating(false);
+      }
+    },
+    [refresh, router],
+  );
 
   const seed = useCallback(async () => {
     setSeeding(true);
@@ -87,7 +92,7 @@ export function useBoard(initial: { items: IncidentSummary[]; metrics: Metrics |
     setSeeded(null);
     try {
       const result = await api("demo/seed", SeedResultSchema, { method: "POST" });
-      setSeeded(`Opened ${result.seeded.length} incidents: ${result.seeded.map((s) => s.reference).join(", ")}.`);
+      setSeeded(`${result.seeded.length} invoices are on the board, each broken in its own way: ${result.seeded.map((s) => s.reference).join(", ")}.`);
       await refresh();
     } catch (e) {
       setError(message(e, "The demo incidents could not be created."));

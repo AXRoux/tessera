@@ -203,7 +203,7 @@ describe("signals that override everything", () => {
   });
 
   it("uses the configured policy, not hidden constants", () => {
-    const strict = { ...DEFAULT_POLICY, settlementSlaHours: { LOCAL: 1, SWIFT: 1 } };
+    const strict = { ...DEFAULT_POLICY, settlementSlaMs: { LOCAL: 3600_000, SWIFT: 3600_000 } };
 
     const d = decide(facts([attempt({ createdAt: hoursAgo(10) })]), strict);
 

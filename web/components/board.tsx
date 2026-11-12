@@ -7,7 +7,7 @@ import { AgentRail } from "./agent-rail";
 import { IncidentTable } from "./incidents-table";
 import { Logo } from "./logo";
 import { Tour } from "./tour";
-import { Button } from "./ui";
+import { Button, LinkButton } from "./ui";
 import { duration, money } from "@/lib/format";
 import { useBoard } from "@/lib/use-board";
 
@@ -73,19 +73,13 @@ export function Board({ initial, initialMetrics, health }: { initial: IncidentSu
               <p className="max-w-md text-[14px] font-light leading-relaxed text-soft">
                 {board.canSeed
                   ? `${name.charAt(0).toUpperCase() + name.slice(1)} works the board through ten typed tools. Start it, and every call and refusal lands here in order.`
-                  : "Send a test invoice to open your first incident. Tessera records the instruction before any money moves."}
+                  : "Send a payout to open your first incident. Tessera records the instruction before any money moves."}
               </p>
               <div className="mt-2 flex flex-wrap justify-center gap-3">
-                {board.canSeed && board.items.length > 0 ? (
-                  <Button onClick={() => agent.start(null)}>{`Let ${name} work them all`}</Button>
-                ) : board.canSeed ? (
-                  <Button onClick={board.seed} busy={board.seeding}>
-                    Load the incidents
-                  </Button>
-                ) : null}
-                <Button variant="secondary" onClick={board.create} busy={board.creating}>
-                  Send a test invoice
-                </Button>
+                {board.items.length > 0 ? <Button onClick={() => agent.start(null)}>Let the agent work the board</Button> : null}
+                <LinkButton href="/dashboard?compose=1" variant="secondary">
+                  Send a real payout
+                </LinkButton>
               </div>
             </section>
           ) : (

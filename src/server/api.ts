@@ -38,7 +38,7 @@ import { computeMetrics } from "./metrics";
 import { attentionOf, lastAgentAction, lastReaction } from "./attention";
 import { AgentGate, runLimits, scopedTask } from "./agent-runs";
 import type { Reactor } from "./reactions";
-import type { AgentStreamEvent, FundingQuote, FundingResultWire, Health, IncidentSummary, IncidentView, SeedResult, Wallets } from "./wire";
+import type { AgentStreamEvent, FundingQuote, FundingResultWire, Health, IncidentSummary, IncidentView, Payee, SeedResult, Wallets } from "./wire";
 
 /** Sandbox or offline only: moves a transfer through Airwallex's simulator (or the fake's). Kept behind one interface so it can be removed. */
 export interface Simulator {
@@ -85,6 +85,8 @@ export interface ApiDeps {
   paidHoldMs: number;
   /** Largest obligation this sandbox API will create, in major units. */
   maxAmount?: number;
+  /** The Airwallex beneficiaries on the account, for naming the payee a new payout goes to. Absent: the payee is shown by id. */
+  payees?: () => Promise<{ id: string; nickname?: string }[]>;
   agent?: AgentDeps | null;
   /** Airwallex is the in-process simulator: no money, no network. */
   offline?: boolean;
@@ -108,15 +110,17 @@ const MAX_BODY_BYTES = 64 * 1024;
 export const MAX_REQUEST_BODY_BYTES = 256 * 1024;
 const EVENT_WINDOW = 80;
 
-const CreateBody = z.object({
-  amount: z.number().positive().default(25),
-  reference: z.string().min(1).max(40).optional(),
-});
 const WrittenNote = z
   .string()
   .trim()
   .min(WRITTEN_NOTE_MIN_CHARS, `write a note of at least ${WRITTEN_NOTE_MIN_CHARS} characters explaining the action`)
   .max(500);
+const CreateBody = z.object({
+  amount: z.number().positive().default(25),
+  reference: z.string().min(1).max(40).optional(),
+  /** The person's own reason for paying, signed onto the first approval. Absent: the scheduled-run note. */
+  note: WrittenNote.optional(),
+});
 const NoteBody = z.object({ note: WrittenNote });
 const ApproveBody = z.object({
   note: z.string().trim().min(WRITTEN_NOTE_MIN_CHARS, `write a note of at least ${WRITTEN_NOTE_MIN_CHARS} characters explaining the approval`).max(500),
@@ -443,6 +447,13 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         };
         return json(wallets);
       }
+      if (request.method === "GET" && path === "/api/payee") {
+        // Who a new payout pays, named as Airwallex has it. A failed lookup still answers with the id: the payout works without a name.
+        const listed = await (deps.payees?.() ?? Promise.resolve([])).catch(() => []);
+        const nickname = listed.find((b) => b.id === deps.beneficiaryId)?.nickname ?? null;
+        const payee: Payee = { beneficiaryId: deps.beneficiaryId, nickname, currency: "USD", method: "LOCAL", maxAmount: deps.maxAmount ?? 1_000, operator: deps.operator };
+        return json(payee);
+      }
       if (request.method === "GET" && path === "/api/obligations") {
         return json({ items: ledger.listObligations().map(summary).toReversed() });
       }
@@ -463,7 +474,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
           reason: "professional_business_services",
         });
         const { evidenceHash } = await commander.assess(obligation.id);
-        const approval = await commander.humanApproval({ obligationId: obligation.id, approver: deps.operator, note: "scheduled invoice run", evidenceHash });
+        const approval = await commander.humanApproval({ obligationId: obligation.id, approver: deps.operator, note: input.note ?? "scheduled invoice run", evidenceHash });
         await gateway.submit(approval);
         return json({ id: obligation.id }, 201);
       }

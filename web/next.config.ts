@@ -32,7 +32,9 @@ const securityHeaders = [
 ];
 
 const config: NextConfig = {
-  reactStrictMode: true,
+  // Off on purpose: StrictMode's dev-only double mount makes metal-fx release its one shared WebGL context and the
+  // liquid-metal rings freeze. `bun run demo` serves the dev build, so on stage this matters; production is unaffected.
+  reactStrictMode: false,
   poweredByHeader: false,
   turbopack: { root },
   // `bun run demo` serves the dev build; the framework's corner badge has no place on a stage.

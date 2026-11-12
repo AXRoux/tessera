@@ -1,4 +1,5 @@
-import { money } from "./format";
+import { actorLabel, reasonText } from "./agent-verdict";
+import { money, titleCase } from "./format";
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value)) : {};
@@ -50,16 +51,84 @@ const WAKE_WORDS: Record<string, string> = {
   suppressed: "No agent was woken, because the incident is closed or with a person.",
 };
 
+/** What each tool call did, said of the agent in the past tense; and what it would have done, for a refusal. */
+const TOOL_DONE: Record<string, string> = {
+  list_incidents: "read the board",
+  assess_incident: "asked the code what is safe here",
+  read_supplier_message: "read the supplier's message",
+  replace_payment: "replaced the payment",
+  fund_replacement: "funded the replacement",
+  draft_supplier_reply: "drafted a reply for a person to send",
+  defer_incident: "chose to wait",
+  escalate_to_human: "handed the incident to a person",
+  reconcile_and_close: "reconciled and certified the payment",
+  verify_ledger: "checked that the history is intact",
+};
+const TOOL_TRIED: Record<string, string> = {
+  replace_payment: "replace the payment",
+  fund_replacement: "fund the replacement",
+  reconcile_and_close: "certify the payment",
+  escalate_to_human: "hand the incident over",
+  draft_supplier_reply: "draft a reply",
+  defer_incident: "defer",
+  read_supplier_message: "read the supplier's message",
+  assess_incident: "assess the incident",
+};
+
+/** A short title per event type, for the history's left column. Unknown types are title-cased rather than hidden. */
+const TITLES: Record<string, string> = {
+  OBLIGATION_CREATED: "Invoice recorded",
+  ATTEMPT_INTENT: "Intent sealed",
+  ATTEMPT_RESOLVED: "Lock released",
+  ATTEMPT_ABANDONED: "Never sent",
+  TRANSFER_STATUS: "Airwallex",
+  LATE_FAILURE: "Late return",
+  CREATE_AMBIGUOUS: "Unclear answer",
+  TRANSFER_MISMATCH: "Mismatch",
+  STATUS_AFTER_DEAD: "Late status",
+  UNKNOWN_STATUS: "Unknown status",
+  ESCALATED: "Handed over",
+  ESCALATION_RESOLVED: "Taken back",
+  EVIDENCE_RECORDED: "Evidence",
+  AGENT_TOOL_CALL: "Agent",
+  DRAFT_REPLY: "Draft written",
+  DRAFT_RESOLVED: "Draft settled",
+  AGENT_DEFERRED: "Agent waited",
+  CLOSED: "Certified",
+  INTENT_STALE: "Stale intent",
+  CERTIFICATE_REVOKED: "Revoked",
+  INBOX_RECEIVED: "Mail arrived",
+  PAYMENT_REFUSED: "Refused",
+  WEBHOOK_RECEIVED: "Webhook",
+  INCIDENT_REACTION: "Reassessed",
+  AGENT_WAKE: "Agent woken",
+  AGENT_WAKE_FINISHED: "Agent done",
+  FUNDING_INTENT: "Conversion sealed",
+  FUNDING_STATUS: "Conversion",
+  FUNDING_AMBIGUOUS: "Unclear answer",
+  FUNDING_ABANDONED: "Never booked",
+  FUNDING_MISMATCH: "Mismatch",
+  FUNDING_AFTER_ABANDON: "Late conversion",
+  FUNDING_BALANCES: "Balances",
+  FUNDING_QUOTED: "Quote",
+  FUNDING_REPLANNED: "Replanned",
+  CHAIN_REBASELINED: "Rebaselined",
+};
+
+export function eventTitle(type: string): string {
+  return TITLES[type] ?? titleCase(type);
+}
+
 /** One plain sentence per ledger event type. Unknown types fall back to their name, so nothing is ever hidden. */
 export function describeEvent(type: string, payload: unknown): string {
   const p = record(payload);
   switch (type) {
     case "OBLIGATION_CREATED":
-      return "Invoice recorded.";
+      return "The invoice entered the ledger. From here, every move it makes is written down.";
     case "ATTEMPT_INTENT": {
       const note = text(p.note);
       const kind = APPROVER_KIND[text(p.mode) ?? ""] ?? "unknown";
-      return `Attempt ${String(p.seq)} was recorded before any money moved. Approved by ${text(p.approver) ?? "unknown"} (${kind})${note ? `: "${note}"` : "."}`;
+      return `Attempt ${String(p.seq)} was sealed in the ledger before a cent moved, approved by ${text(p.approver) ?? "unknown"} (${kind})${note ? `: “${note}”` : "."}`;
     }
     case "TRANSFER_STATUS": {
       const from = text(p.from);
@@ -80,7 +149,7 @@ export function describeEvent(type: string, payload: unknown): string {
     case "UNKNOWN_STATUS":
       return `Airwallex reported a status Tessera does not recognize (${text(p.status) ?? "unknown"}). The payment stays locked until a person looks.`;
     case "ESCALATED":
-      return `Handed to a person: ${bare(text(p.reason)) ?? "no reason recorded"}.`;
+      return `Handed to a person: ${bare(reasonText(text(p.reason) ?? "")) || "no reason recorded"}.`;
     case "EVIDENCE_RECORDED": {
       const evidence = record(p.evidence);
       const by = text(p.enteredBy) ?? "an operator";
@@ -88,12 +157,12 @@ export function describeEvent(type: string, payload: unknown): string {
       return `Supplier evidence ${who}: ${text(evidence.summary) ?? "no summary"}`;
     }
     case "AGENT_TOOL_CALL": {
-      const who = text(p.actor) ?? "an agent";
-      const tool = (text(p.tool) ?? "a tool").replaceAll("_", " ");
+      const who = actorLabel(text(p.actor) ?? "agent");
+      const raw = text(p.tool) ?? "a tool";
       const outcome = text(p.outcome);
-      if (outcome === "ok") return `${who} used "${tool}".`;
+      if (outcome === "ok") return `${who} ${TOOL_DONE[raw] ?? `used “${raw.replaceAll("_", " ")}”`}.`;
       const detail = bare(withoutIds(text(p.detail)));
-      return `${who} tried "${tool}" and was ${outcome === "refused" ? "refused" : "turned away"}${detail ? `: ${detail}.` : "."}`;
+      return `${who} tried to ${TOOL_TRIED[raw] ?? raw.replaceAll("_", " ")}, and the code ${outcome === "refused" ? "refused" : "turned it away"}${detail ? `: ${detail}.` : "."}`;
     }
     case "DRAFT_REPLY":
       return `${text(p.actor) ?? "An agent"} drafted a ${(text(p.kind) ?? "reply").toLowerCase()} reply for the supplier. Nothing was sent; a person decides.`;
@@ -104,7 +173,7 @@ export function describeEvent(type: string, payload: unknown): string {
     case "AGENT_DEFERRED":
       return `${text(p.actor) ?? "An agent"} chose to wait: ${bare(text(p.note)) ?? "no reason recorded"}.`;
     case "CLOSED":
-      return "Reconciled against Airwallex and certified.";
+      return "Every line matched against Airwallex. Certified, and sealed.";
     case "ESCALATION_RESOLVED":
       return `${text(p.by) ?? "A person"} took the incident back from escalation: "${bare(text(p.note)) ?? "no note"}".`;
     case "ATTEMPT_RESOLVED":

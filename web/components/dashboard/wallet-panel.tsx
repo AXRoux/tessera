@@ -1,16 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import type { Health, Wallets } from "../../../src/server/wire";
-import { money } from "@/lib/format";
-import { Icon } from "../landing/icons";
+import type { Health, IncidentSummary, Wallets } from "../../../src/server/wire";
+import { compactMoney, money } from "@/lib/format";
+import { Btn } from "../kit/metal";
+import { Kicker, SegBar, Tile, Tray, TrayHead } from "../kit/widgets";
 import { Logo } from "../logo";
-import { Label, Tag } from "../ui";
 
-/** The contactless mark: three arcs, drawn rather than set in a font. */
 function Contactless() {
   return (
-    <svg aria-hidden viewBox="0 0 18 18" className="size-[18px] text-white/70" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+    <svg aria-hidden viewBox="0 0 18 18" className="size-[18px] text-fg/60" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
       <path d="M5.2 5.4a5 5 0 0 1 0 7.2" />
       <path d="M8.4 3.4a8 8 0 0 1 0 11.2" />
       <path d="M11.6 1.6a11 11 0 0 1 0 14.8" />
@@ -18,129 +16,102 @@ function Contactless() {
   );
 }
 
-function Chip() {
-  return (
-    <span aria-hidden className="flex h-[22px] w-[30px] items-center justify-center rounded-[5px] border border-white/25 bg-white/10">
-      <span className="h-[10px] w-[18px] rounded-[2px] border border-white/30" />
-    </span>
-  );
+/** The account's working currency: USD when held, else the largest wallet. */
+function headline(wallets: Wallets["wallets"]) {
+  return wallets.find((w) => w.currency === "USD") ?? [...wallets].sort((a, b) => b.availableMinor - a.availableMinor)[0] ?? null;
 }
 
 /**
- * The account, as a card, over the wallets it is holding. Balances and floors are read from Airwallex every poll; a
- * wallet below its floor is the one thing here that turns red, because it is what stops a replacement.
+ * Step one, as a rail of widgets: the account card, the working balance split into what can be spent, what the floor
+ * keeps and what is on the board, and every other wallet as its own small tile. A wallet below its floor turns red,
+ * because that is what stops a replacement.
  */
-export function WalletPanel({
-  wallets,
-  health,
-  onCreate,
-  creating,
-}: {
-  wallets: Wallets | null;
-  health: Health | null;
-  onCreate: () => void;
-  creating: boolean;
-}) {
-  const [open, setOpen] = useState(true);
+export function WalletPanel({ wallets, health, items, onCompose }: { wallets: Wallets | null; health: Health | null; items: IncidentSummary[]; onCompose: () => void }) {
   const held = wallets?.wallets ?? [];
-  const floors = held.filter((wallet) => wallet.floorMinor > 0);
-  const below = held.filter((wallet) => wallet.floorMinor > 0 && wallet.availableMinor < wallet.floorMinor);
+  const main = headline(held);
+  const rest = held.filter((wallet) => wallet !== main);
+  const floors = held.filter((wallet) => wallet.floorMinor > 0).length;
+  const onBoard = main ? items.filter((i) => i.currency === main.currency && i.status !== "CLOSED").reduce((sum, i) => sum + i.amountMinor, 0) : 0;
 
   return (
-    <section id="wallets" data-shell-section className="panel flex min-w-0 flex-col p-5">
-      <header className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-[15px] font-medium tracking-[-0.01em]">Your account</h2>
-          <p className="mt-0.5 text-[12.5px] text-muted">Operator, wallets and reserve floors</p>
-        </div>
-        <button
-          type="button"
-          onClick={onCreate}
-          disabled={creating}
-          className="hairline inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-white/[0.04] px-3.5 py-2 text-[12.5px] text-soft transition-colors hover:bg-white/[0.08] disabled:opacity-60"
-        >
-          <span aria-hidden className="text-[14px] leading-none">
-            +
-          </span>
-          {creating ? "Sending…" : "Send a test invoice"}
-        </button>
-      </header>
+    <Tray label="Your treasury" className="h-full gap-3 p-3">
+      <TrayHead n={1} className="px-2 pt-1" title="Treasury" note="Read live from Airwallex" right={<Btn tone="secondary" onClick={onCompose} title="Send a real payout through Airwallex">+ Payout</Btn>} />
 
-      <div className="glow-card mt-4 p-5">
+      {/* The card: brushed pearl in light mode, obsidian in dark. */}
+      <Tile className="relative shrink-0 overflow-hidden rounded-[26px]! p-5 short:p-4">
+        <span aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_30%,color-mix(in_oklab,var(--fg)_6%,transparent)_48%,transparent_62%)]" />
         <div className="relative flex items-start justify-between">
-          <span className="flex items-center gap-2.5">
-            <Logo size={24} />
-            <span className="text-[13px] font-medium uppercase tracking-[0.22em] text-white/90">Tessera</span>
+          <span className="flex items-center gap-2">
+            <Logo size={22} />
+            <span className="text-[14px] font-bold italic tracking-[0.04em]">TESSERA</span>
           </span>
           <Contactless />
         </div>
-
-        <p className="tnum relative mt-7 font-mono text-[15px] text-white">{health?.operator ?? "operator"}</p>
-        <p className="relative mt-1.5 text-[12px] text-white/70">{health?.offline ? "Simulated Airwallex · no money moves" : "Airwallex sandbox · no real money"}</p>
-
-        <div className="relative mt-7 flex items-end justify-between gap-4">
-          <span className="flex items-center gap-3">
-            <Chip />
-            <span className="min-w-0">
-              <Label className="block text-[10px] uppercase tracking-[0.16em] text-white/55">Holding</Label>
-              <span className="block text-[12.5px] text-white/90">{held.length === 0 ? "—" : held.map((wallet) => wallet.currency).join(" · ")}</span>
-            </span>
+        <p className="readout relative mt-6 truncate text-[14.5px] tracking-[0.04em] short:mt-4">{health?.operator ?? "operator"}</p>
+        <div className="relative mt-4 flex items-end justify-between gap-3 short:mt-3">
+          <span className="min-w-0">
+            <Kicker>Account</Kicker>
+            <span className="mt-0.5 block truncate text-[13px] font-medium">{health?.offline ? "Offline rehearsal" : "Airwallex sandbox"}</span>
           </span>
           <span className="shrink-0 text-right">
-            <Label className="block text-[10px] uppercase tracking-[0.16em] text-white/55">Reserve floors</Label>
-            <span className="block text-[12.5px] text-white/90">{floors.length === 0 ? "None set" : `${floors.length} wallet${floors.length === 1 ? "" : "s"}`}</span>
+            <Kicker>Floors</Kicker>
+            <span className="readout mt-0.5 block text-[13px] font-medium">{String(floors).padStart(2, "0")}</span>
           </span>
         </div>
-      </div>
+      </Tile>
 
-      <button
-        type="button"
-        onClick={() => setOpen((was) => !was)}
-        aria-expanded={open}
-        className="mt-5 flex cursor-pointer items-center justify-between gap-3 text-left"
-      >
-        <span>
-          <span className="block text-[13.5px] text-soft">{wallets === null ? "Wallets" : `${held.length} wallet${held.length === 1 ? "" : "s"}`}</span>
-          <span className="block text-[12px] text-muted">Read live from Airwallex, with the floor the policy keeps in each</span>
-        </span>
-        <Icon name="chevron" className={`size-4 shrink-0 text-muted transition-transform ${open ? "" : "-rotate-90"}`} />
-      </button>
-
-      {open ? (
-        <div className="mt-3">
-          {wallets === null || !wallets.readable ? (
-            <p className="hatch rounded-2xl border border-white/10 px-4 py-3.5 text-[12.5px] text-muted">
-              {wallets === null ? "Balances are being read." : "Airwallex balances could not be read; replacements wait for a person."}
-            </p>
-          ) : (
-            <ul className="divide-y divide-white/[0.07]">
-              {held.map((wallet) => {
-                const short = wallet.floorMinor > 0 && wallet.availableMinor < wallet.floorMinor;
-                return (
-                  <li key={wallet.currency} className="flex items-center justify-between gap-3 py-3">
-                    <span className="min-w-0">
-                      <span className="tnum block text-[14.5px] font-medium">{money(wallet.availableMinor, wallet.currency)}</span>
-                      <span className="block text-[11.5px] text-muted">
-                        {wallet.floorMinor > 0 ? `floor ${money(wallet.floorMinor, wallet.currency)}` : "no floor"}
-                        {wallet.fundingSource ? " · may fund a replacement" : ""}
-                      </span>
-                    </span>
-                    {short ? <Tag tone="ink">Below floor</Tag> : <span className="font-mono text-[12px] text-muted">{wallet.currency}</span>}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {below.length > 0 ? (
-            <p className="mt-3 text-[12px] leading-relaxed text-danger">
-              {below.map((wallet) => wallet.currency).join(", ")} below the floor: a replacement there needs a conversion first.
-            </p>
-          ) : null}
-          {wallets?.fundingSources.length ? (
-            <p className="mt-3 text-[11.5px] text-muted">Conversions may sell from: {wallets.fundingSources.join(", ")}.</p>
-          ) : null}
-        </div>
+      {main ? (
+        <Tile className="shrink-0 px-5 py-4 short:py-3">
+          <Kicker>{main.currency} available</Kicker>
+          <p className="readout mt-1.5 truncate text-[24px] font-medium leading-none tracking-[-0.03em] short:text-[20px]" title={money(main.availableMinor, main.currency)}>
+            {money(main.availableMinor, main.currency)}
+          </p>
+          <SegBar
+            className="mt-3"
+            parts={[
+              { label: "Free to spend", value: Math.max(0, main.availableMinor - main.floorMinor - onBoard), tone: "fg" },
+              { label: "Kept by the floor", value: main.floorMinor, tone: "mid" },
+              { label: "On the board", value: onBoard, tone: "accent" },
+            ]}
+          />
+          <p className="mt-2 flex justify-between text-[11px] text-fg/45">
+            <span>floor {compactMoney(main.floorMinor, main.currency)}</span>
+            <span className="text-accent">{compactMoney(onBoard, main.currency)} in play</span>
+          </p>
+        </Tile>
       ) : null}
-    </section>
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between px-2 pb-2">
+          <Kicker>Other wallets</Kicker>
+          <span className="readout text-[11px] text-fg/40">{String(rest.length).padStart(2, "0")}</span>
+        </div>
+        {wallets === null || !wallets.readable ? (
+          <p className="well rounded-[18px]! px-4 py-3 text-[12px] leading-relaxed text-fg/55">
+            {wallets === null ? "Reading balances from Airwallex…" : "Balances could not be read just now, so any replacement waits for a person."}
+          </p>
+        ) : (
+          <ul className="thin-scroll grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto p-0.5">
+            {rest.map((wallet) => {
+              const short = wallet.floorMinor > 0 && wallet.availableMinor < wallet.floorMinor;
+              return (
+                <Tile as="li" key={wallet.currency} className="rounded-[18px]! px-3.5 py-3">
+                  <span className="flex items-center justify-between">
+                    <span className="readout text-[11px] font-medium text-fg/55">{wallet.currency}</span>
+                    <span className={`size-1.5 rounded-full ${short ? "bg-bad" : wallet.fundingSource ? "bg-accent" : "bg-fg/25"}`} title={short ? "Below its floor" : wallet.fundingSource ? "Can fund a replacement" : "Held"} />
+                  </span>
+                  <span className="readout mt-1.5 block truncate text-[15px] font-medium tracking-[-0.02em]" title={money(wallet.availableMinor, wallet.currency)}>
+                    {compactMoney(wallet.availableMinor, wallet.currency)}
+                  </span>
+                  <span className={`mt-0.5 block truncate text-[10.5px] ${short ? "text-bad" : "text-fg/45"}`}>
+                    {short ? "below its floor" : wallet.floorMinor > 0 ? `keeps ${compactMoney(wallet.floorMinor, wallet.currency)}` : "no floor"}
+                  </span>
+                </Tile>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </Tray>
   );
 }

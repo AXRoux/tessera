@@ -28,7 +28,8 @@ const token = first.apiToken;
 const operator = process.env.TESSERA_OPERATOR ?? "operator";
 const port = Number(process.env.TESSERA_API_PORT ?? 4010);
 const sweepSetting = process.env.TESSERA_SWEEP_MS?.trim();
-const sweepMs = sweepSetting ? Number(sweepSetting) : 60_000;
+// At live pace a transfer can tip overdue within minutes, so the sweep looks every 15 seconds rather than every minute.
+const sweepMs = sweepSetting ? Number(sweepSetting) : first.pace === "live" ? 15_000 : 60_000;
 if (!Number.isSafeInteger(sweepMs) || sweepMs < 0) throw new Error(`TESSERA_SWEEP_MS must be a whole number of milliseconds >= 0 (got "${sweepSetting}")`);
 const idleSetting = process.env.TESSERA_DEMO_IDLE_RESET_MS?.trim();
 const idleResetMs = idleSetting ? Number(idleSetting) : 0;
@@ -76,6 +77,7 @@ async function build(): Promise<Instance> {
   return {
     handle: createApi({
       ledger, gateway, commander, closer, model, readerName, simulator, token, operator, beneficiaryId, eurBeneficiaryId, paidHoldMs, agent, offline,
+      payees: () => api.listBeneficiaries(),
       webhooks: { listening: webhook !== undefined, agentOnEvent: wakes !== null }, agentGate, reactor,
       reset: offline ? () => demo.reset() : undefined,
     }),
@@ -144,7 +146,7 @@ if (idleResetMs > 0) {
 const agentLabel = agent ? (agent.kind === "scripted" ? "scripted, not a model" : `${agent.name} (${process.env.TESSERA_MODEL})`) : "off";
 const readerLabel = model ? (agent?.kind === "scripted" ? "offline keyword reader, not a model" : (readerName ?? "model")) : "off";
 console.log(`tessera api  http://${server.hostname}:${server.port}${offline ? "  ·  OFFLINE: simulated Airwallex, no money moves" : ""}`);
-console.log(`  ledger ${dbPath}  |  recovered ${recoveredAtStart} unresolved attempt(s)  |  hold ${paidHoldMs}ms`);
+console.log(`  ledger ${dbPath}  |  recovered ${recoveredAtStart} unresolved attempt(s)  |  hold ${paidHoldMs}ms  |  pace ${first.pace}${first.pace === "live" ? " (overdue after 5 min LOCAL / 10 min SWIFT)" : ""}`);
 console.log(`  agent ${agentLabel}  |  reader ${readerLabel}  |  simulator ${simulator ? "on" : "off"}  |  webhooks ${webhookSecret ? (offline ? "simulated" : "on") : "off"}  |  agent on event ${agentOnEvent ? "on" : "off"}  |  sweep ${sweepMs > 0 ? `${sweepMs}ms` : "off"}${offline ? `  |  reset on${idleResetMs > 0 ? ` (idle ${idleResetMs}ms)` : ""}` : ""}`);
 if (listener) {
   console.log(`  webhook listener  http://${listener.hostname}:${listener.port}/api/webhooks/airwallex  (POST only; tunnel THIS port, never ${port})${sourceAllowlist ? `  |  sources: ${sourceAllowlist.size} allowed IPs` : ""}`);
