@@ -6,9 +6,12 @@ import { isMetalFxSupported, MetalFx, type MaskFn } from "metal-fx";
 import { useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { authClient } from "@/lib/auth-client";
 import { passwordStrength } from "@/lib/password-strength";
+import { safeNext } from "@/lib/safe-next";
+import { initialsOf } from "@/lib/initials";
+import { useSignedIn, type SignedIn } from "@/lib/use-account";
 import { Btn, LinkBtn } from "../kit/metal";
 import { useTheme } from "../kit/theme";
-import { Capsule, Tile, Toggle, type ChipTone } from "../kit/widgets";
+import { Capsule, Toggle, type ChipTone } from "../kit/widgets";
 import { Icon } from "../landing/icons";
 import { Logo } from "../logo";
 
@@ -16,8 +19,6 @@ import { Logo } from "../logo";
 export type AuthMode = "sign-in" | "sign-up" | "operator";
 type Mode = AuthMode;
 
-/** Where to go after signing in: only a path on this site, never an address someone slipped into the link. */
-const safeNext = (next: string | null, fallback: string): string => (next && next.startsWith("/") && !next.startsWith("//") ? next : fallback);
 
 /** What Better Auth says, in words a person can act on. */
 function sentence(error: { code?: string; message?: string; status?: number } | null | undefined): string {
@@ -139,6 +140,7 @@ function Card({
   flipped,
   agent,
   swiping,
+  account,
 }: {
   mode: Mode;
   name: string;
@@ -147,10 +149,13 @@ function Card({
   flipped: boolean;
   agent: Agent;
   swiping: boolean;
+  /** Already signed in: the card is theirs, by name. */
+  account: SignedIn | null;
 }) {
   const [tilt, setTilt] = useState({ x: 0, y: 0, gx: 50, gy: 30, on: false });
   const strength = passwordStrength(password);
-  const holder = mode === "operator" ? "Operator" : mode === "sign-up" ? name.trim() || "Your name" : email.trim() || "you@company.com";
+  const signingUp = mode === "sign-up" && !account;
+  const holder = account ? account.name || account.email : mode === "operator" ? "Operator" : signingUp ? name.trim() || "Your name" : email.trim() || "you@company.com";
   const since = new Date().toLocaleDateString("en-GB", { month: "2-digit", year: "2-digit" });
 
   const move = (event: PointerEvent<HTMLDivElement>) => {
@@ -188,15 +193,15 @@ function Card({
               </div>
 
               <div>
-                <span className="text-[12px] text-white/55">{mode === "sign-up" ? "New workspace" : "Control room"}</span>
+                <span className="text-[12px] text-white/55">{signingUp ? "New workspace" : "Control room"}</span>
                 <p className="mt-0.5 truncate text-[30px] font-semibold leading-none tracking-[-0.03em]">
-                  {mode === "sign-up" ? (name.trim() ? `${name.trim().split(" ")[0]}’s workspace` : "Your workspace") : "Welcome back"}
+                  {signingUp ? (name.trim() ? `${name.trim().split(" ")[0]}’s workspace` : "Your workspace") : "Welcome back"}
                 </p>
               </div>
 
               <div className="flex items-end justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="readout whitespace-nowrap text-[min(19px,4.3vw)] tracking-[0.12em] text-white/95">1X00 ···· ···· {digitsFor(mode === "operator" ? "operator" : email)}</p>
+                  <p className="readout whitespace-nowrap text-[min(19px,4.3vw)] tracking-[0.12em] text-white/95">1X00 ···· ···· {digitsFor(account ? account.email : mode === "operator" ? "operator" : email)}</p>
                   <p className="mt-1.5 flex items-baseline gap-3 text-[12.5px]">
                     <span className="max-w-[260px] truncate text-white/85">{holder}</span>
                     <span className="readout text-white/45">{since}</span>
@@ -279,18 +284,51 @@ function inPlace(handler: (() => void) | undefined) {
   };
 }
 
-/** Already signed in on this browser: say so, and offer the way through. */
-function SignedIn({ next }: { next: string | null }) {
-  const session = authClient.useSession();
-  if (!session.data) return null;
+/** Already signed in on this browser: no form to fill in again, just the way back in (or out). */
+function SessionDoor({ account, next }: { account: SignedIn; next: string | null }) {
+  const [leaving, setLeaving] = useState(false);
+  const first = account.name.trim().split(/\s+/)[0] || account.email;
+  async function signOut() {
+    setLeaving(true);
+    // The session store hears it at once and everything that shows who is signed in follows (this screen turns back
+    // into the sign-in form, the landing above it into "Sign in"). No server refresh: under the peeled landing the
+    // address is the landing's own, and refreshing it would swap the page out from under the sheet.
+    await authClient.signOut().catch(() => undefined);
+    setLeaving(false);
+  }
   return (
-    <Tile className="mx-2 mt-3 flex items-center justify-between gap-3 rounded-[18px]! px-4 py-2.5">
-      <span className="min-w-0">
-        <span className="block truncate text-[12.5px] font-semibold">Signed in as {session.data.user.name}</span>
-        <span className="readout block truncate text-[11px] text-fg/50">{session.data.user.email}</span>
-      </span>
-      <LinkBtn href={safeNext(next, "/dashboard")}>Continue</LinkBtn>
-    </Tile>
+    <div className="relative">
+      <div className="tile relative rounded-[28px]! p-2">
+        <p className="well flex h-11 items-center justify-center gap-2 rounded-full! text-[13px] font-medium text-fg/60">
+          <span aria-hidden className="beat size-1.5 rounded-full bg-accent" />
+          Signed in on this browser
+        </p>
+        <div className="flex items-center gap-3.5 px-4 pt-5">
+          <span aria-hidden className="tile inverse flex size-12 shrink-0 items-center justify-center rounded-full! text-[14px] font-semibold text-fg">
+            {initialsOf(account.name || account.email)}
+          </span>
+          <div className="min-w-0">
+            <h1 className="truncate text-[23px] font-semibold leading-tight tracking-[-0.04em]">Welcome back, {first}.</h1>
+            <p className="readout truncate text-[12px] text-fg/55">{account.email}</p>
+          </div>
+        </div>
+        <p className="px-4 pt-3 text-[13px] leading-relaxed text-fg/55">Your control room is as you left it. No password needed until you sign out.</p>
+        <div className="space-y-2.5 px-2 pb-2 pt-5">
+          <LinkBtn size="md" block href={safeNext(next, "/dashboard")} icon={<Icon name="dashboard" className="size-4" />}>
+            Enter the control room
+          </LinkBtn>
+          <LinkBtn size="md" block tone="secondary" href="/workspace">
+            Workspace and keys
+          </LinkBtn>
+        </div>
+      </div>
+      <p className="mt-3 px-4 text-center text-[11px] leading-relaxed text-fg/45">
+        Not {first}?{" "}
+        <button type="button" onClick={signOut} disabled={leaving} className="cursor-pointer text-fg/70 underline underline-offset-2 hover:text-fg disabled:opacity-50">
+          {leaving ? "Signing out…" : "Sign out"}
+        </button>
+      </p>
+    </div>
   );
 }
 
@@ -323,19 +361,24 @@ function OperatorDoor() {
   );
 }
 
-export function AuthScreen({
-  mode,
-  next,
-  onSwitch,
-  onHome,
-}: {
+export interface AuthScreenProps {
   mode: Mode;
   next: string | null;
+  /** Who is already signed in on this browser, if anyone: they get the way back in, not the form. */
+  account?: SignedIn | null;
   /** Switch between signing in and creating an account in place (under the peeled landing) instead of navigating. */
   onSwitch?: (mode: "sign-in" | "sign-up") => void;
   /** Go back to the landing in place: put the peeled sheet back down. */
   onHome?: () => void;
-}) {
+}
+
+/** The sign-in screen on the multi-tenant host, knowing who is signed in and keeping up as that changes. */
+export function AccountAuthScreen({ initial, ...props }: Omit<AuthScreenProps, "account"> & { initial: SignedIn | null }) {
+  const account = useSignedIn(initial);
+  return <AuthScreen {...props} account={account} />;
+}
+
+export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: AuthScreenProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const nameId = useId();
@@ -353,6 +396,8 @@ export function AuthScreen({
   const [swiping, setSwiping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const signUp = mode === "sign-up";
+  // Signed in already, and not in the middle of signing in (the store learns of a new session before the card swipes).
+  const known = account && !busy ? account : null;
   const strength = passwordStrength(password);
   const matches = confirm.length > 0 && confirm === password;
   const mismatch = confirm.length > 0 && !password.startsWith(confirm) && confirm !== password;
@@ -381,10 +426,11 @@ export function AuthScreen({
       setBusy(false);
       return;
     }
-    // The card is "swiped": a beat of motion, then the control room.
+    // The card is "swiped": a beat of motion, then the control room. Replace, not push: Back from the control room
+    // must not land on a sign-in form for someone who is signed in.
     setSwiping(true);
     setTimeout(() => {
-      router.push(destination);
+      router.replace(destination);
       router.refresh();
     }, 420);
   }
@@ -413,7 +459,7 @@ export function AuthScreen({
         <div className="grid items-center gap-12 lg:grid-cols-[auto_400px]">
           {/* The card and the agents that can hold it */}
           <div className="flex flex-col items-center gap-7">
-            <Card mode={mode} name={name} email={email} password={password} flipped={flipped} agent={agent} swiping={swiping} />
+            <Card mode={mode} name={name} email={email} password={password} flipped={flipped} agent={agent} swiping={swiping} account={known} />
             <div className="flex flex-col items-center gap-3">
               <span className="text-[12px] text-fg/50">Works with the agent you already use. Pick one.</span>
               <ul className="flex items-center gap-2.5" aria-label="Agents">
@@ -443,6 +489,8 @@ export function AuthScreen({
           {/* The wallet the card came from: the form (or, with one operator and no accounts, the door) */}
           {mode === "operator" ? (
             <OperatorDoor />
+          ) : known ? (
+            <SessionDoor account={known} next={next} />
           ) : (
           <div className="relative">
             <div className="tile relative rounded-[28px]! p-2">
@@ -467,7 +515,6 @@ export function AuthScreen({
                 </p>
               </div>
 
-              {busy ? null : <SignedIn next={next} />}
 
               <form onSubmit={submit} className="space-y-3 px-2 pb-2 pt-4" noValidate>
                 {signUp ? (

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Landing } from "@/components/landing/landing";
+import { signedIn } from "@/lib/account";
 import { loadFromApi } from "@/lib/server-api";
 import { HealthSchema } from "../../../src/server/wire";
 
@@ -13,8 +14,9 @@ export const metadata: Metadata = {
 
 export default async function Home() {
   const accounts = process.env.TESSERA_AUTH === "1";
-  // Signed-out on the multi-tenant host there is no workspace to ask: each person brings their own sandbox.
-  const health = accounts ? null : await loadFromApi("/api/health", HealthSchema);
+  // Multi-tenant: whoever is signed in on this browser (the page greets them instead of asking them to sign in again).
+  // Signed out there is no workspace to ask about: each person brings their own sandbox.
+  const [account, health] = await Promise.all([signedIn(), accounts ? Promise.resolve(null) : loadFromApi("/api/health", HealthSchema)]);
   const rail = accounts ? "byok" : health?.ok && health.data.offline ? "offline" : "sandbox";
-  return <Landing accounts={accounts} rail={rail} />;
+  return <Landing accounts={accounts} rail={rail} account={account} />;
 }

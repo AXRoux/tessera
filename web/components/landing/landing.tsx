@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { initialsOf } from "@/lib/initials";
+import { useSignedIn, type SignedIn } from "@/lib/use-account";
 import { AuthScreen, type AuthMode } from "../auth/auth-screen";
 import { LinkBtn } from "../kit/metal";
 import { useTheme } from "../kit/theme";
@@ -26,6 +28,8 @@ export interface LandingProps {
   accounts: boolean;
   /** Where Airwallex is: the sandbox, the offline simulator, or (signed-out, multi-tenant) each person's own sandbox. */
   rail: "sandbox" | "offline" | "byok";
+  /** Who the server saw signed in on this browser (multi-tenant mode), so the first paint already greets them. */
+  account: SignedIn | null;
 }
 
 const AGENTS = [
@@ -220,16 +224,29 @@ function peelOnClick(door: Door) {
 }
 
 /** Printed on the page underneath, along the fold, where a lifting corner shows it. */
-function CornerHint() {
+function CornerHint({ word }: { word: string }) {
   return (
     <div className="absolute bottom-[50px] right-[50px] translate-x-1/2 translate-y-1/2 -rotate-45 text-center">
       <p className="micro text-fg/55">Peel to</p>
-      <p className="cond text-[24px] leading-none text-accent">Sign in</p>
+      <p className="cond text-[24px] leading-none text-accent">{word}</p>
     </div>
   );
 }
 
-export function Landing({ accounts, rail }: LandingProps) {
+/**
+ * The landing. On the multi-tenant host it follows the session live: whoever is signed in on this browser is greeted
+ * by name and goes straight to their control room, and signing in or out anywhere on the page shows at once.
+ */
+export function Landing(props: LandingProps) {
+  return props.accounts ? <SessionLanding {...props} /> : <LandingView {...props} user={null} />;
+}
+
+function SessionLanding(props: LandingProps) {
+  const user = useSignedIn(props.account);
+  return <LandingView {...props} user={user} />;
+}
+
+function LandingView({ accounts, rail, user }: LandingProps & { user: SignedIn | null }) {
   const pathname = usePathname();
   const wanted = doorAt(pathname, accounts);
   // The last door shown stays underneath while the sheet is laid back down.
@@ -242,22 +259,28 @@ export function Landing({ accounts, rail }: LandingProps) {
     <PeelPage
       open={wanted !== null}
       onPeeled={() => peelTo("sign-in")}
-      label="Peel the page away to sign in"
-      hint={<CornerHint />}
+      label={user ? "Peel the page away to your control room" : "Peel the page away to sign in"}
+      hint={<CornerHint word={user ? "Enter" : "Sign in"} />}
       under={
         <div className="min-h-dvh xl:h-dvh xl:min-h-[640px]">
-          <AuthScreen mode={wanted ?? door} next={null} onSwitch={(mode) => window.history.replaceState(null, "", `/${mode}`)} onHome={() => window.history.back()} />
+          <AuthScreen
+            mode={wanted ?? door}
+            next={null}
+            account={user}
+            onSwitch={(mode) => window.history.replaceState(null, "", `/${mode}`)}
+            onHome={() => window.history.back()}
+          />
         </div>
       }
     >
-      <Wall accounts={accounts} rail={rail} />
+      <Wall accounts={accounts} rail={rail} user={user} />
     </PeelPage>
   );
 }
 
 /* ── The page ───────────────────────────────────────────────────────────────────────────────────────────────────── */
 
-function Wall({ accounts, rail }: LandingProps) {
+function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: SignedIn | null }) {
   const { theme, setTheme } = useTheme();
   const { beckon } = usePeel();
   // A sign-in button lifts the corner while it is pointed at: this is the way in, and this is where it opens.
@@ -332,9 +355,25 @@ function Wall({ accounts, rail }: LandingProps) {
               { id: "dark", label: <Icon name="moon" className="size-4" />, title: "Dark" },
             ]}
           />
-          <LinkBtn tone="secondary" {...doorLink("sign-in")}>
-            Sign in
-          </LinkBtn>
+          {user ? (
+            // Signed in: their name, not a request to sign in again. It peels to their card and the way back in.
+            <LinkBtn
+              tone="secondary"
+              {...doorLink("sign-in")}
+              className="pl-1.5!"
+              icon={
+                <span aria-hidden className="tile inverse flex size-6 items-center justify-center rounded-full! text-[10px] font-semibold text-fg">
+                  {initialsOf(user.name || user.email)}
+                </span>
+              }
+            >
+              <span className="max-w-[140px] truncate">{user.name.trim().split(/\s+/)[0] || user.email}</span>
+            </LinkBtn>
+          ) : (
+            <LinkBtn tone="secondary" {...doorLink("sign-in")}>
+              Sign in
+            </LinkBtn>
+          )}
         </div>
       </header>
 
@@ -397,7 +436,7 @@ function Wall({ accounts, rail }: LandingProps) {
           </div>
 
           <div className="relative mt-6 flex flex-wrap items-center gap-3 short:mt-4">
-            {accounts ? (
+            {accounts && !user ? (
               <>
                 <LinkBtn size="md" {...doorLink("sign-up")} icon={<Icon name="wallet" className="size-4" />}>
                   Get your card
@@ -513,8 +552,13 @@ function Wall({ accounts, rail }: LandingProps) {
           Tessera.
         </div>
         <div className="micro hidden shrink-0 pb-6 text-right text-fg/55 lg:block">
-          <p>Money that moves once,</p>
-          <p>and can prove it.</p>
+          <a href="https://www.null-ptr.team" target="_blank" rel="noopener noreferrer" className="group block transition-colors hover:text-fg">
+            <span className="block">Created by Vance Poitier,</span>
+            <span className="block">
+              Captain of <span className="text-accent underline decoration-accent/40 underline-offset-[3px] group-hover:decoration-accent">NULL* Team</span>
+              <span aria-hidden className="ml-1 inline-block transition-transform group-hover:-translate-y-px group-hover:translate-x-px">↗</span>
+            </span>
+          </a>
           <p className="mt-3">{rail === "offline" ? "Simulated Airwallex" : "Airwallex sandbox"} · no real money</p>
           <Barcode text="TESSERA-2026" className="mt-3 ml-auto h-6 w-36 text-fg/60" />
         </div>

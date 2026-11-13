@@ -474,6 +474,16 @@ export function PeelPage({ children, under, hint, open, onPeeled, label }: PeelP
     let near = false;
     const onPointerMove = (event: PointerEvent) => {
       if (event.pointerType === "touch") return;
+      // Over a link or button on the page (the credit in the footer sits near the corner), the corner stays down: a
+      // control that peels away as you reach for it cannot be clicked.
+      const target = event.target instanceof Element ? event.target : null;
+      const control = target?.closest("a, button, input, select, textarea, [role=button]");
+      if (control && sheet.contains(control)) {
+        pointer = null;
+        if (mode === "rest" && near) schedule();
+        near = false;
+        return;
+      }
       pointer = vec(event.clientX, event.clientY);
       const distance = length(sub(pointer, corner()));
       if (distance < tease().zone * 1.3) setPrimed(true);

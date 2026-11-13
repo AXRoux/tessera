@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { initialsOf } from "@/lib/initials";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IncidentListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
 import { api } from "@/lib/client-api";
@@ -146,12 +147,7 @@ function ThemeSwitch() {
   );
 }
 
-function initials(who: string): string {
-  const local = who.split("@")[0] ?? who;
-  const parts = local.split(/[._-]+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
-  return local.slice(0, 2).toUpperCase();
-}
+const initials = initialsOf;
 
 export interface Account {
   name: string;
