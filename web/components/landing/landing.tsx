@@ -365,13 +365,13 @@ function Wall({ accounts, rail }: LandingProps) {
 
           <h1 className="cond relative mt-6 text-[clamp(54px,min(5.5vw,9.2vh),112px)] text-fg xl:mt-auto">
             <span className="cond-in block" style={{ animationDelay: "0ms" }}>
-              Agents move
+              AI agents
             </span>
             <span className="cond-in block" style={{ animationDelay: "90ms" }}>
-              your money.
+              you can trust
             </span>
             <span className="cond-in block text-accent" style={{ animationDelay: "180ms" }}>
-              Exactly once.
+              with payouts
             </span>
           </h1>
 
