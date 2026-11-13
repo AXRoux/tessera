@@ -343,6 +343,7 @@
   --well: #040405;
   --well-shadow: inset 0 2px 4px rgb(0 0 0 / 0.85), inset 0 -1px 0 rgb(255 255 255 / 0.06);
   --track: rgb(255 255 255 / 0.16);
+  --pop-shadow: 0 30px 60px -18px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.05);
 }
 
 [data-theme="light"],
@@ -363,6 +364,7 @@
   --well: #e7eaef;
   --well-shadow: inset 0 2px 4px rgb(13 15 20 / 0.13), inset 0 -1px 0 rgb(255 255 255 / 0.9);
   --track: rgb(13 15 20 / 0.14);
+  --pop-shadow: 0 30px 60px -22px rgb(30 40 70 / 0.38), 0 6px 16px -6px rgb(30 40 70 / 0.14);
 }
 
 [data-theme="dark"],
@@ -383,6 +385,7 @@
   --well: #040405;
   --well-shadow: inset 0 2px 4px rgb(0 0 0 / 0.85), inset 0 -1px 0 rgb(255 255 255 / 0.06);
   --track: rgb(255 255 255 / 0.16);
+  --pop-shadow: 0 30px 60px -18px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.05);
 }
 
 /* An inverted tile carries its own ink: set it on the element so its own text and borders follow the swap. */
@@ -421,6 +424,38 @@
   background: var(--well);
   box-shadow: var(--well-shadow);
   border-radius: 14px;
+}
+
+/* A list that opens over everything (a select's options): a raised tile with a longer shadow, so it reads as lifted off the tray. */
+@utility listbox {
+  background: linear-gradient(180deg, var(--tile-top) 0%, var(--tile-bottom) 100%);
+  border: 1px solid var(--tile-border);
+  border-radius: 18px;
+  box-shadow: var(--tile-shadow), var(--pop-shadow);
+}
+
+@keyframes listbox-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--listbox-from, -6px)) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@utility listbox-in {
+  animation: listbox-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@utility listbox-in-up {
+  --listbox-from: 6px;
+  animation: listbox-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .listbox-in,
+  .listbox-in-up {
+    animation: none;
+  }
 }
 
 /* Small caps label, the widgets' quiet register. */

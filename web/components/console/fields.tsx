@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 
 /** Inputs are wells: recessed into the tile, so a field reads as a place to put something. */
 const FIELD =
@@ -22,10 +22,6 @@ export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${FIELD} h-10 ${props.className ?? ""}`} />;
-}
-
-export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`${FIELD} h-10 cursor-pointer ${props.className ?? ""}`} />;
 }
 
 /** A round check: a recessed dot that fills blue. */

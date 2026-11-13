@@ -5,7 +5,8 @@ import { Acknowledged, api } from "@/lib/client-api";
 import { titleCase } from "@/lib/format";
 import type { IncidentView } from "../../../src/server/wire";
 
-import { Field, Select } from "./fields";
+import { Select } from "../kit/select";
+import { Field } from "./fields";
 import type { RunAction } from "./actions-panel";
 import { Btn } from "../kit/metal";
 
@@ -57,13 +58,7 @@ export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: st
       <div className="space-y-2">
         <span className="kicker block">A bad one</span>
         <Field label="How the bank should fail" htmlFor={selectId}>
-          <Select id={selectId} value={failure} onChange={(e) => setFailure(e.target.value)}>
-            {FAILURES.map((f) => (
-              <option key={f} value={f}>
-                {titleCase(f)}
-              </option>
-            ))}
-          </Select>
+          <Select id={selectId} value={failure} onChange={setFailure} options={FAILURES.map((f) => ({ value: f, label: titleCase(f) }))} />
         </Field>
         <Btn
           tone="secondary"

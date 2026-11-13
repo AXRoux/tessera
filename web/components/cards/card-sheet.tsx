@@ -5,15 +5,17 @@ import type { CardView } from "../../../src/server/wire";
 import { Acknowledged, api, ApiProblem } from "@/lib/client-api";
 import { cardsChanged } from "@/lib/use-cards";
 import { money } from "@/lib/format";
-import { Field, Select, TextArea, TextInput } from "../console/fields";
+import { mccName } from "@/lib/mcc";
+import { Field, TextArea, TextInput } from "../console/fields";
 import { Icon } from "../landing/icons";
 import { Btn } from "../kit/metal";
+import { Select } from "../kit/select";
 import { Chip, Kicker, Tile, Tray, TrayHead } from "../kit/widgets";
 import { VisaCard } from "./visa-card";
 
 const NOTE_MIN = 10;
 /** A merchant category no card category allows: what a charge the card was not signed for looks like. */
-const OFF_LIST = { code: "7995", label: "7995 · gambling (not allowed)" };
+const OFF_LIST = "7995";
 
 const CheckoutAnswer = Acknowledged;
 
@@ -157,31 +159,33 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
             ) : null}
 
             {card.state === "ACTIVE" && canCharge ? (
-              <Tile className="grid gap-3 rounded-[20px]! px-4 py-3.5">
-                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
+              <Tile className="grid gap-4 rounded-[20px]! p-4">
+                <div className="grid gap-3.5">
+                  <Field label="Merchant category" htmlFor={mccId}>
+                    <Select
+                      id={mccId}
+                      value={mcc}
+                      onChange={setMcc}
+                      minListWidth={300}
+                      options={[
+                        ...card.mccs.map((code) => ({ value: code, lead: code, label: mccName(code), hint: "Allowed on this card" })),
+                        { value: OFF_LIST, lead: OFF_LIST, label: mccName(OFF_LIST), hint: "Not on this card: should be declined", tone: "bad" as const },
+                      ]}
+                    />
+                  </Field>
                   <Field label={`Amount (${card.currency})`} htmlFor={amountId}>
                     <TextInput id={amountId} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))} />
                   </Field>
-                  <Field label="Merchant category" htmlFor={mccId}>
-                    <Select id={mccId} value={mcc} onChange={(e) => setMcc(e.target.value)}>
-                      {card.mccs.map((code) => (
-                        <option key={code} value={code}>
-                          {code} · {card.categoryLabel.toLowerCase()}
-                        </option>
-                      ))}
-                      <option value={OFF_LIST.code}>{OFF_LIST.label}</option>
-                    </Select>
-                  </Field>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Btn tone="secondary" disabled={!amountOk} busy={busy === "charge"} onClick={() => void act("charge", "charge", { amount: value, merchantCategoryCode: mcc }, () => "The merchant charged the card. Its answer is in the history below.")}>
-                    Test a merchant charge
-                  </Btn>
-                  <Btn disabled={!amountOk} busy={busy === "checkout"} icon={<Icon name="shield" className="size-4" />} onClick={() => void act("checkout", "checkout", { amount: value }, checkoutLine)}>
+                <div className="grid gap-2">
+                  <Btn block disabled={!amountOk} busy={busy === "checkout"} icon={<Icon name="shield" className="size-4" />} onClick={() => void act("checkout", "checkout", { amount: value }, checkoutLine)}>
                     Agent pays via Visa TAP
                   </Btn>
+                  <Btn block tone="secondary" disabled={!amountOk} busy={busy === "charge"} onClick={() => void act("charge", "charge", { amount: value, merchantCategoryCode: mcc }, () => "The merchant charged the card. Its answer is in the history below.")}>
+                    Test a merchant charge
+                  </Btn>
                 </div>
-                <p className="text-[11.5px] leading-snug text-fg/50">
+                <p className="text-[11.5px] leading-relaxed text-fg/50">
                   The agent signs the checkout with its Trusted Agent Protocol key; the merchant verifies it before charging. Airwallex applies the card's cap, category and single use either way.
                 </p>
               </Tile>
