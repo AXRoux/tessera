@@ -93,7 +93,7 @@ export function ControlRoom({
   return (
     <Workspace>
       <div className="grid shrink-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.85fr)] lg:items-stretch">
-        <Masthead items={board.items} metrics={board.metrics} running={board.running} health={health} />
+        <Masthead items={board.items} metrics={board.metrics} running={board.running} />
         <Sequence items={board.items} metrics={board.metrics} health={health} onCompose={openComposer} onRun={board.run} running={board.running} extras={extras} />
       </div>
 

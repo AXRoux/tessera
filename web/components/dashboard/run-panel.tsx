@@ -9,6 +9,24 @@ import { Icon } from "../landing/icons";
 import { Btn } from "../kit/metal";
 import { Chip, clock, Kicker, Readout, RingSquare, Ticker, Tile, Tray, TrayHead, useTick } from "../kit/widgets";
 
+/** How short the one-screen layout is: the `short` (under 960 tall) and `shorter` (under 780) variants, from 1280 wide. */
+function useScreenHeight(): "tall" | "short" | "shorter" {
+  const [height, setHeight] = useState<"tall" | "short" | "shorter">("tall");
+  useEffect(() => {
+    const short = window.matchMedia("(min-width: 1280px) and (max-height: 960px)");
+    const shorter = window.matchMedia("(min-width: 1280px) and (max-height: 780px)");
+    const sync = () => setHeight(shorter.matches ? "shorter" : short.matches ? "short" : "tall");
+    sync();
+    short.addEventListener("change", sync);
+    shorter.addEventListener("change", sync);
+    return () => {
+      short.removeEventListener("change", sync);
+      shorter.removeEventListener("change", sync);
+    };
+  }, []);
+  return height;
+}
+
 /** How long the current (or last) run has taken: started when it starts, frozen when it ends. */
 function useRunClock(running: boolean): number | null {
   const started = useRef<number | null>(null);
@@ -43,6 +61,10 @@ export function RunPanel({ items, health }: { items: IncidentSummary[]; health: 
   const headline = agent.state.status === "done" || agent.state.status === "error" ? summarizeRun(agent.state.steps, agent.state.mode).headline : null;
   const active = agent.state.status !== "idle";
   const adversary = agent.state.mode === "adversary" && active;
+  // On a short screen the idle widget tightens (and on the shortest, the two buttons share a row), so the empty run
+  // log below always has room for its two lines.
+  const screen = useScreenHeight();
+  const compactRing = screen !== "tall";
   const ticker = live
     ? lastTool
       ? `${actionLabel(lastTool.tool).toLowerCase()}${lastTool.incident ? ` · ${lastTool.incident}` : ""}…`
@@ -60,13 +82,13 @@ export function RunPanel({ items, health }: { items: IncidentSummary[]; health: 
       />
 
       <Tile className={`flex shrink-0 items-center gap-4 ${active ? "p-3" : "p-4 short:p-3"}`}>
-        <RingSquare value={active ? 1 : 0} spinning={live} tone={adversary ? "bad" : "accent"} size={active ? 64 : 84}>
-          <AgentMark size={active ? 34 : 44} className="rounded-[12px]" />
+        <RingSquare value={active ? 1 : 0} spinning={live} tone={adversary ? "bad" : "accent"} size={active ? 64 : compactRing ? 56 : 84}>
+          <AgentMark size={active ? 34 : compactRing ? 30 : 44} className="rounded-[12px]" />
         </RingSquare>
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div className="flex items-center justify-between gap-2">
             <Kicker>{live ? (adversary ? "Guardrail test" : "Run time") : active ? (adversary ? "Last guardrail test" : "Last run") : "Idle"}</Kicker>
-            <Readout size={active ? "sm" : "md"} value={elapsed === null ? "00:00" : clock(elapsed)} />
+            <Readout size={active || compactRing ? "sm" : "md"} value={elapsed === null ? "00:00" : clock(elapsed)} />
           </div>
           <Ticker>{ticker}</Ticker>
           {active ? (
@@ -101,6 +123,17 @@ export function RunPanel({ items, health }: { items: IncidentSummary[]; health: 
             </Btn>
           ) : null}
         </div>
+      ) : screen === "shorter" ? (
+        <div className={`grid shrink-0 gap-2 ${health?.sandbox ? "grid-cols-2" : "grid-cols-1"}`}>
+          <Btn block disabled={!available} onClick={() => agent.start(null)} icon={<AgentMark size={18} />} title="Let the agent work the board">
+            Run agent
+          </Btn>
+          {health?.sandbox ? (
+            <Btn tone="secondary" block disabled={!available} onClick={() => agent.start(null, "adversary")} icon={<Icon name="shield" className="size-4" />} title="Test the guardrails">
+              Guardrails
+            </Btn>
+          ) : null}
+        </div>
       ) : (
         <div className="flex shrink-0 flex-col gap-2">
           <Btn block disabled={!available} onClick={() => agent.start(null)} icon={<AgentMark size={20} />}>
@@ -115,9 +148,10 @@ export function RunPanel({ items, health }: { items: IncidentSummary[]; health: 
       )}
 
       {!active ? (
-        <div className="well flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-[22px]! px-6 text-center shorter:hidden">
-          <p className="text-[13.5px] font-medium">Quiet, for now</p>
-          <p className="max-w-[280px] text-[12px] leading-relaxed text-fg/50">Every tool the agent reaches for, every refusal and every handoff to you will appear here, in order.</p>
+        // Two short lines, sized to their content: never cut off, whatever room the column has left.
+        <div className="well flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 rounded-[22px]! px-5 py-2.5 text-center">
+          <p className="text-[13.5px] font-medium leading-tight">Quiet, for now</p>
+          <p className="max-w-full truncate text-[12px] leading-tight text-fg/50">Every call, refusal and handoff lands here.</p>
         </div>
       ) : (
         <div className="tile flex min-h-[160px] flex-1 flex-col overflow-hidden rounded-[22px]! xl:min-h-0">

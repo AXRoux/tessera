@@ -7,6 +7,23 @@ import { Icon } from "../landing/icons";
 import { Btn, LinkBtn } from "../kit/metal";
 import { Kicker, Tray } from "../kit/widgets";
 import { useTourState } from "../tour";
+import type { TourStepId } from "@/lib/tour-steps";
+
+/** The next move in a few words: the dock has one line for it (the full explanation is on hover). */
+function nextLine(id: TourStepId, takeover: { reference: string } | null): string {
+  switch (id) {
+    case "seed":
+      return "Send a payout. Tessera seals it before a cent moves.";
+    case "agent":
+      return "Let the agent work the board. The code has the last word.";
+    case "adversary":
+      return "Tell the agent to cheat, and watch the code refuse.";
+    case "takeover":
+      return takeover ? `${takeover.reference} is waiting on your decision.` : "Nothing needs you yet. Run the agent again.";
+    case "certify":
+      return "Mark a payment paid, then certify it.";
+  }
+}
 
 interface Props {
   items: IncidentSummary[];
@@ -96,14 +113,14 @@ export function Sequence({ items, metrics, health, onCompose, onRun, running, ex
         {extras ? <span className="hidden shrink-0 items-center gap-3 border-l border-fg/10 pl-3 sm:flex">{extras}</span> : null}
       </div>
       <div className="flex min-w-0 flex-col gap-3 px-1 sm:flex-row sm:items-center sm:gap-4">
-        <p className="line-clamp-2 min-w-0 flex-1 text-[12.5px] leading-snug text-fg/65" title={current ? detail[current.id].text : undefined}>
+        <p className="min-w-0 flex-1 truncate text-[13px] leading-snug text-fg/70" title={current ? detail[current.id].text : undefined}>
           {current ? (
             <>
               <span className="font-medium text-accent">Next · </span>
-              {detail[current.id].text}
+              {nextLine(current.id, tour.takeover)}
             </>
           ) : (
-            "The whole loop, seen through: paid, worked, tested, decided by a person and certified. Send another payout to go again."
+            "Loop complete. Send another payout to go again."
           )}
         </p>
         <div className="shrink-0">{action}</div>

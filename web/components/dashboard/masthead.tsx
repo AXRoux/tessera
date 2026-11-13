@@ -1,19 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Health, IncidentSummary, Metrics } from "../../../src/server/wire";
-import { Kicker, Tile, Tray, useTick } from "../kit/widgets";
-
-const WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
-
-/** The state of the room in one sentence, so a glance from across the stage is enough. */
-function headline(items: IncidentSummary[], waiting: number, running: boolean): string {
-  if (running) return "The agent is working the board.";
-  if (items.length === 0) return "A quiet ledger, ready to begin.";
-  if (waiting === 1) return "One decision awaits you.";
-  if (waiting > 1) return `${WORDS[waiting] ?? waiting} decisions await you.`;
-  return "Everything is accounted for.";
-}
+import type { IncidentSummary, Metrics } from "../../../src/server/wire";
+import { Tile, Tray, useTick } from "../kit/widgets";
 
 /** A wall clock in a tile, after the reference's "10:24 AM, Wed 9 Sep" widget. Rendered after mount, so server and client agree. */
 function Clock() {
@@ -23,52 +12,49 @@ function Clock() {
   const date = new Date(now);
   const time = mounted ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }).replace(/\s?(AM|PM)$/i, "") : "--:--";
   const meridiem = mounted ? (date.getHours() < 12 ? "AM" : "PM") : "";
-  const day = mounted ? date.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) : "";
+  const weekday = mounted ? date.toLocaleDateString([], { weekday: "short" }) : "";
+  const day = mounted ? date.toLocaleDateString([], { day: "numeric", month: "short" }) : "";
   return (
-    <Tile className="flex w-[132px] shrink-0 flex-col justify-center rounded-[22px]! px-4 py-3 short:w-[118px] short:py-2">
-      <span className="flex items-baseline gap-1">
-        <span className="readout text-[30px] font-medium leading-none tracking-[-0.05em] short:text-[26px]">{time}</span>
-        <span className="readout text-[10px] text-fg/50">{meridiem}</span>
-      </span>
-      <span suppressHydrationWarning className="mt-1.5 text-[12.5px] text-fg/55">
+    <Tile className="@container flex min-w-0 flex-col justify-center rounded-[22px]! px-3.5 py-3 short:py-2.5 2xl:px-4">
+      <span className="readout whitespace-nowrap text-[clamp(24px,2vw,36px)] font-medium leading-none tracking-[-0.05em]">{time}</span>
+      {/* AM/PM rides with the date, so the time can take the tile's whole width. */}
+      <span suppressHydrationWarning className="mt-2 truncate text-[12.5px] text-fg/55 short:mt-1.5">
+        {meridiem ? <span className="readout text-[11px] text-fg/70">{meridiem}</span> : null}
+        {meridiem ? " · " : ""}
+        {/* The weekday only where the tile is wide enough for it. */}
+        {weekday ? <span className="hidden @min-[100px]:inline">{weekday}, </span> : null}
         {day}
       </span>
     </Tile>
   );
 }
 
-function Stat({ value, label, tone }: { value: number; label: string; tone: string }) {
+/** One number the room rests on, large enough to read from across a stage. */
+function Count({ value, label, dot, lit = false, pulse = false }: { value: number; label: string; dot: string; lit?: boolean; pulse?: boolean }) {
   return (
-    <span className="well inline-flex h-7 items-center gap-1.5 rounded-full! pl-2 pr-2.5">
-      <span aria-hidden className={`size-1.5 rounded-full ${tone}`} />
-      <span className="readout text-[12px] font-medium">{String(value).padStart(2, "0")}</span>
-      <span className="text-[11.5px] text-fg/55">{label}</span>
-    </span>
+    <div className="well flex min-w-0 flex-col justify-between gap-2 rounded-[20px]! px-3 py-3 short:py-2.5 2xl:px-3.5">
+      <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-fg/55 2xl:text-[12px]">
+        <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${dot} ${pulse ? "beat" : ""}`} />
+        <span className="truncate">{label}</span>
+      </span>
+      <span className={`readout text-[clamp(24px,2.1vw,36px)] font-medium leading-none tracking-[-0.04em] ${lit ? "text-warn" : ""}`}>{String(value).padStart(2, "0")}</span>
+    </div>
   );
 }
 
 /**
- * The control room's masthead: a clock tile, the state of the room as one sentence, and the three numbers that sentence
- * rests on. Replaces a paragraph of explanation with things a person can read at a glance.
+ * The control room's masthead: the time, and the three numbers that say how the room stands. Nothing to read twice;
+ * what is yours to decide turns amber the moment there is any.
  */
-export function Masthead({ items, metrics, running, health }: { items: IncidentSummary[]; metrics: Metrics | null; running: boolean; health: Health | null }) {
+export function Masthead({ items, metrics, running }: { items: IncidentSummary[]; metrics: Metrics | null; running: boolean }) {
   const waiting = items.filter((item) => item.attention !== null).length;
   const inFlight = items.filter((item) => item.status === "PAYING" || item.status === "OPEN").length;
   return (
-    <Tray label="Control room" className="flex-row! items-stretch gap-3 p-3">
+    <Tray label="Control room" className="grid! grid-cols-3 gap-2 p-3 sm:grid-cols-[minmax(0,1.12fr)_repeat(3,minmax(0,1fr))] [&>:first-child]:col-span-3 sm:[&>:first-child]:col-span-1">
       <Clock />
-      <div className="flex min-w-0 flex-1 flex-col justify-center gap-2 px-1 py-1">
-        <Kicker className="flex items-center gap-1.5">
-          <span aria-hidden className={`size-1.5 rounded-full ${running ? "beat bg-accent" : "bg-accent"}`} />
-          Control room · {health?.offline ? "offline rehearsal" : "live from Airwallex"}
-        </Kicker>
-        <h1 className="truncate text-[clamp(20px,1.75vw,28px)] font-semibold leading-[1.1] tracking-[-0.04em]">{headline(items, waiting, running)}</h1>
-        <div className="flex flex-wrap gap-1.5">
-          <Stat value={waiting} label="yours" tone="bg-warn" />
-          <Stat value={inFlight} label="in flight" tone="bg-accent" />
-          <Stat value={metrics?.certified ?? 0} label="certified" tone="bg-fg" />
-        </div>
-      </div>
+      <Count value={waiting} label="Yours" dot="bg-warn" lit={waiting > 0} />
+      <Count value={inFlight} label="In flight" dot="bg-accent" pulse={running} />
+      <Count value={metrics?.certified ?? 0} label="Certified" dot="bg-fg" />
     </Tray>
   );
 }
