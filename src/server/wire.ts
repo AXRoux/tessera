@@ -257,6 +257,8 @@ export const HealthSchema = z.object({
   agent: z.object({ kind: z.enum(["model", "scripted"]), name: z.string() }).nullable(),
   /** The offline demo can be reset to empty (POST /api/demo/reset). Never true against the sandbox. */
   canReset: z.boolean(),
+  /** Sandbox or offline: an untouched transfer is sent and paid by Tessera after this many milliseconds (bank-clock.ts). */
+  bankClockMs: z.number().int().nullable().optional(),
 });
 export type Health = z.infer<typeof HealthSchema>;
 

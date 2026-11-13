@@ -4,6 +4,7 @@
  * one of these; the multi-tenant host (host.ts) builds one per signed-in workspace from that workspace's own keys.
  */
 import { AgentGate } from "./agent-runs";
+import { BankClock } from "./bank-clock";
 import { createApi } from "./api";
 import { Reactor } from "./reactions";
 import type { Instance } from "./resettable";
@@ -31,7 +32,7 @@ export interface Assembled extends Instance {
 }
 
 export async function assemble(runtime: Runtime, options: AssembleOptions): Promise<Assembled> {
-  const { offline, api, simulator, ledger, gateway, commander, closer, cards, model, readerName, agent, paidHoldMs, webhookSecret, offlineWebhooks, agentOnEvent } = runtime;
+  const { offline, api, simulator, ledger, gateway, commander, closer, cards, model, readerName, agent, paidHoldMs, webhookSecret, offlineWebhooks, agentOnEvent, bankClockMs } = runtime;
   const beneficiaryId = await resolveBeneficiary(api, options.env);
   // The funding demo incident pays the EUR supplier; without one the API still serves, and seeding says what to run.
   const eurBeneficiaryId = await resolveBeneficiary(api, options.env, "EUR").catch(() => null);
@@ -50,13 +51,15 @@ export async function assemble(runtime: Runtime, options: AssembleOptions): Prom
   const wakes = agentOnEvent && agent ? new WakeScheduler({ ledger, gateway, commander, closer, model, agent, gate: agentGate }) : null;
   const reactor = new Reactor({ ledger, commander, wake: wakes ? (id, cause) => wakes.request(id, cause) : null });
   const webhook = webhookSecret ? createWebhookHandler({ ledger, gateway, secret: webhookSecret, reactor }) : undefined;
+  // The sandbox and the offline simulator never move a transfer by themselves; this answers for the bank (bank-clock.ts).
+  const bankClock = simulator && bankClockMs > 0 ? new BankClock({ ledger, gateway, simulator, afterMs: bankClockMs }) : null;
   // Offline deliveries go through the same route function the public listener serves.
   if (webhook) offlineWebhooks?.bind(publicWebhookRoutes(webhook));
   return {
     recovered,
     handle: createApi({
       ledger, gateway, commander, closer, cards, model, readerName, simulator, token: options.token, operator: options.operator, beneficiaryId, eurBeneficiaryId,
-      paidHoldMs, agent, offline,
+      paidHoldMs, agent, offline, bankClockMs: bankClock ? bankClockMs : null,
       payees: () => api.listBeneficiaries(),
       webhooks: { listening: webhook !== undefined, agentOnEvent: wakes !== null }, agentGate, reactor,
       reset: offline ? options.reset : undefined,
@@ -66,7 +69,14 @@ export async function assemble(runtime: Runtime, options: AssembleOptions): Prom
       // Each step runs even if another fails, so one stuck attempt never stops the rest from syncing. The reaction
       // comes last: whatever the sync saw change is reassessed exactly as a webhook would have had it.
       const failures: unknown[] = [];
-      for (const step of [() => gateway.recover(), () => commander.recoverFunding(), () => gateway.sync(), () => reactor.react({ source: "sweep" }), () => cards.sync()]) {
+      for (const step of [
+        () => gateway.recover(),
+        () => commander.recoverFunding(),
+        () => gateway.sync(),
+        () => bankClock?.tick(),
+        () => reactor.react({ source: "sweep" }),
+        () => cards.sync(),
+      ]) {
         try {
           await step();
         } catch (error) {

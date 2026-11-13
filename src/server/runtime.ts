@@ -7,6 +7,7 @@
  * the model for a deterministic scripted agent and keyword reader. Everything else (ledger, gateway, Commander,
  * Closer, toolbox) is the same code. No money and no network.
  */
+import { DEFAULT_BANK_CLOCK_MS, parseBankClockMs } from "./bank-clock";
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -144,6 +145,8 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   const pace = parsePace(env.TESSERA_PACE, sandboxHost ? "live" : "real");
   if (pace === "live" && !sandboxHost) throw new Error("TESSERA_PACE=live is only allowed on the Airwallex sandbox or offline: real money keeps the banking windows");
   const paidHoldMs = parseHoldMs(env.TESSERA_PAID_HOLD_MS, offline ? OFFLINE_HOLD_MS : pace === "live" ? LIVE_PACE.paidHoldMs : DEFAULT_HOLD_MS);
+  // Where there is no bank (sandbox, offline), Tessera answers for it at live pace: see bank-clock.ts. Never on production.
+  const bankClockMs = sandboxHost && pace === "live" ? parseBankClockMs(env.TESSERA_BANK_CLOCK_MS, DEFAULT_BANK_CLOCK_MS) : 0;
 
   let api: AirwallexApi;
   let simulator: Simulator | null;
@@ -220,7 +223,7 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   if (agentOnEvent && !agent) warnings.push("TESSERA_AGENT_ON_EVENT=1 but no agent is configured; reactions are recorded, nothing is woken");
 
   return {
-    offline, publicDemo, sandbox, approvalSecret, apiToken, generatedToken, dbPath, paidHoldMs, pace,
+    offline, publicDemo, sandbox, approvalSecret, apiToken, generatedToken, dbPath, paidHoldMs, pace, bankClockMs,
     api, simulator, ledger, gateway, commander, closer, cards, model, readerName, agent, warnings, policy, funder,
     webhookSecret, offlineWebhooks, agentOnEvent: agentOnEvent && agent !== null,
   };

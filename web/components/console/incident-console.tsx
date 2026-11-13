@@ -164,7 +164,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
           <div role="tabpanel" className="thin-scroll flex min-h-0 flex-1 flex-col overflow-y-auto p-1">
             {move === "decide" ? <ActionsPanel view={view} operator={operator} busy={busy} run={run} /> : null}
             {move === "agent" ? <AgentPanel incidentId={id} health={health} refresh={() => void refresh().catch(() => undefined)} /> : null}
-            {move === "simulate" && health?.sandbox ? <SandboxPanel view={view} busy={busy} run={run} /> : null}
+            {move === "simulate" && health?.sandbox ? <SandboxPanel view={view} busy={busy} run={run} clockMs={health?.bankClockMs ?? null} /> : null}
           </div>
         </Tray>
       </div>

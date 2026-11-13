@@ -95,6 +95,8 @@ export interface ApiDeps {
   agent?: AgentDeps | null;
   /** Airwallex is the in-process simulator: no money, no network. */
   offline?: boolean;
+  /** Sandbox or offline: milliseconds before Tessera answers for the bank on an untouched transfer; null when it does not. */
+  bankClockMs?: number | null;
   /** Whether the webhook listener is on (AWX_WEBHOOK_SECRET set), and whether a verified bank event may wake an agent. */
   webhooks?: { listening: boolean; agentOnEvent: boolean };
   /** Shared with the event-driven wakes (src/server/wake.ts), so a console run and a woken one never overlap. */
@@ -511,6 +513,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
           ok: true, reader: deps.model ? (deps.readerName ?? "model") : null, sandbox: deps.simulator !== null, offline: deps.offline ?? false,
           webhooks: deps.webhooks?.listening ?? false, agentOnEvent: deps.webhooks?.agentOnEvent ?? false,
           operator: deps.operator, agent: deps.agent ? { kind: deps.agent.kind, name: deps.agent.name } : null, canReset: deps.reset !== undefined,
+          bankClockMs: deps.bankClockMs ?? null,
         };
         return json(health);
       }

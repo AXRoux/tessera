@@ -22,7 +22,7 @@ const FAILURES = [
 ];
 
 /** Drives Airwallex's simulator so a whole incident can be played out without waiting on a bank. Sandbox only. */
-export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: string | null; run: RunAction }) {
+export function SandboxPanel({ view, busy, run, clockMs = null }: { view: IncidentView; busy: string | null; run: RunAction; clockMs?: number | null }) {
   const selectId = useId();
   const [failure, setFailure] = useState(FAILURES[0]!);
   const id = view.obligation.id;
@@ -40,6 +40,12 @@ export function SandboxPanel({ view, busy, run }: { view: IncidentView; busy: st
       <p className="well rounded-[18px]! px-4 py-3 text-[12.5px] leading-relaxed text-fg/65">
         Play the bank&rsquo;s part. These buttons drive Airwallex&rsquo;s own simulator, so you can carry an exception from first failure to certificate without waiting on anyone. Sandbox only;
         no real money.
+        {clockMs ? (
+          <span className="mt-1.5 block text-fg/55">
+            Left alone, a payment is sent and paid once it has waited {Math.max(1, Math.round(clockMs / 1000))} seconds: the sandbox never answers by itself, so Tessera answers for the bank. Press a
+            button before then to play it yourself.
+          </span>
+        ) : null}
       </p>
       {!movable ? (
         <p className="text-[12px] leading-relaxed text-fg/50">There is no live transfer on this incident to move just now.</p>
