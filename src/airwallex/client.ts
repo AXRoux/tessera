@@ -179,6 +179,8 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
             account_number: input.accountNumber,
             account_routing_type1: "aba",
             account_routing_value1: input.routingNumber,
+            // Required for US ACH since late 2026 (Airwallex's schema: Checking|Savings); older businesses were never asked.
+            bank_account_category: "Checking",
             bank_country_code: "US",
             local_clearing_system: "ACH",
           },
