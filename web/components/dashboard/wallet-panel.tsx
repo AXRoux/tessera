@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import type { CardView, Cards, Health, IncidentSummary, Wallets } from "../../../src/server/wire";
+import { Acknowledged, api, ApiProblem } from "@/lib/client-api";
 import { compactMoney, money } from "@/lib/format";
 import { CardWallet } from "../cards/card-wallet";
 import { Btn, MetalCircle } from "../kit/metal";
@@ -19,7 +21,7 @@ function headline(wallets: Wallets["wallets"]) {
  */
 export function WalletPanel({
   wallets,
-  health: _health,
+  health,
   items,
   cards,
   onCompose,
@@ -38,6 +40,19 @@ export function WalletPanel({
   const main = headline(held);
   const rest = held.filter((wallet) => wallet !== main);
   const onBoard = main ? items.filter((i) => i.currency === main.currency && i.status !== "CLOSED").reduce((sum, i) => sum + i.amountMinor, 0) : 0;
+  const [staging, setStaging] = useState(false);
+  const [stageError, setStageError] = useState<string | null>(null);
+  async function stage() {
+    setStaging(true);
+    setStageError(null);
+    try {
+      await api("wallets/stage", Acknowledged, { method: "POST", body: {} });
+    } catch (error) {
+      setStageError(error instanceof ApiProblem ? error.message : "Airwallex did not open the wallets just now. Try again in a minute.");
+    } finally {
+      setStaging(false);
+    }
+  }
 
   return (
     <Tray label="Your treasury" className="h-full gap-3 p-3">
@@ -76,7 +91,20 @@ export function WalletPanel({
           <Kicker>Other wallets</Kicker>
           <span className="readout text-[11px] text-fg/40">{String(rest.length).padStart(2, "0")}</span>
         </div>
-        {wallets === null || !wallets.readable ? (
+        {wallets?.readable && rest.length === 0 && health?.sandbox ? (
+          // A new sandbox business holds one currency: offer the other wallets the treasury story needs.
+          <div className="well rounded-[18px]! px-4 py-3">
+            <p className="text-[12px] leading-relaxed text-fg/60">
+              Only {main?.currency ?? "one currency"} is held. Open EUR and GBP wallets (bought from USD in the sandbox) to see Tessera fund a short wallet from another.
+            </p>
+            <div className="mt-2.5">
+              <Btn tone="secondary" busy={staging} onClick={() => void stage()}>
+                Add EUR and GBP
+              </Btn>
+            </div>
+            {stageError ? <p className="mt-2 text-[11.5px] text-bad">{stageError}</p> : null}
+          </div>
+        ) : wallets === null || !wallets.readable ? (
           <p className="well rounded-[18px]! px-4 py-3 text-[12px] leading-relaxed text-fg/55">
             {wallets === null ? "Reading balances from Airwallex…" : "Balances could not be read just now, so any replacement waits for a person."}
           </p>

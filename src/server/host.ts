@@ -15,6 +15,7 @@ import { AwxHttpError, SPIKE_SUPPLIER } from "../airwallex/types";
 import type { Auth } from "./auth";
 import { assemble, type Assembled } from "./instance";
 import { buildRuntime } from "./runtime";
+import { checkModelKeys, ModelKeyRejected } from "./model-check";
 import { deriveSecret, type AirwallexKeys, type ModelKeys, type WorkspaceSecrets, type WorkspaceStore, type WorkspaceView } from "./workspaces";
 import type { WorkspaceResponse } from "./wire";
 
@@ -283,20 +284,12 @@ export const liveValidators: Validators = {
     }
   },
   async model(keys) {
-    const listUrl = keys.provider === "anthropic" ? "https://api.anthropic.com/v1/models?limit=1000" : `${keys.baseUrl!.replace(/\/+$/, "")}/models`;
-    const headers: Record<string, string> =
-      keys.provider === "anthropic" ? { "x-api-key": keys.apiKey, "anthropic-version": "2023-06-01" } : { authorization: `Bearer ${keys.apiKey}` };
-    const response = await fetch(listUrl, { headers, signal: AbortSignal.timeout(15_000) }).catch(() => null);
-    if (!response) throw new KeyRejected("The model's API could not be reached. Check the endpoint and try again.");
-    if (response.status === 401 || response.status === 403) throw new KeyRejected(`${keys.provider === "anthropic" ? "Anthropic" : "The endpoint"} did not accept this key.`);
-    // An OpenAI-compatible endpoint without a model list cannot be checked further; the first run will say if the id is wrong.
-    if (!response.ok) {
-      if (keys.provider === "openai" && response.status === 404) return;
-      throw new KeyRejected(`The model's API answered ${response.status}. Try again in a moment.`);
-    }
-    const listed = ((await response.json().catch(() => null)) as { data?: { id?: string }[] } | null)?.data?.map((m) => m.id).filter((id): id is string => typeof id === "string") ?? [];
-    if (listed.length > 0 && !listed.includes(keys.modelId)) {
-      throw new KeyRejected(`This key has no model named ${keys.modelId}. Available include: ${listed.slice(0, 4).join(", ")}.`);
+    // One tiny tool-using call to the named model, so a retired model or a bad key is refused here, in the provider's words.
+    try {
+      await checkModelKeys(keys);
+    } catch (error) {
+      if (error instanceof ModelKeyRejected) throw new KeyRejected(error.message);
+      throw error;
     }
   },
 };

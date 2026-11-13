@@ -407,14 +407,14 @@ function ModelCard({ workspace, save }: { workspace: WorkspaceResponse["workspac
             ]}
           />
           {provider === "openai" ? (
-            <Field id={baseId} label="Endpoint" hint="Any Chat Completions endpoint over https: OpenRouter, Together, your own gateway.">
+            <Field id={baseId} label="Endpoint" hint="Any Chat Completions endpoint over https: OpenRouter, Nous Research (https://inference-api.nousresearch.com/v1), Together, your own gateway.">
               <input id={baseId} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} autoComplete="off" spellCheck={false} placeholder="https://openrouter.ai/api/v1" className={`${FIELD} readout`} />
             </Field>
           ) : null}
-          <Field id={modelId} label="Model">
-            <input id={modelId} value={model} onChange={(e) => setModel(e.target.value)} autoComplete="off" spellCheck={false} placeholder={provider === "anthropic" ? "claude-sonnet-4-5" : "nousresearch/hermes-4-405b"} className={`${FIELD} readout`} />
+          <Field id={modelId} label="Model" hint={provider === "openai" ? "Its id exactly as the endpoint lists it, and it must support tool calls: the agent works only through tools." : undefined}>
+            <input id={modelId} value={model} onChange={(e) => setModel(e.target.value)} autoComplete="off" spellCheck={false} placeholder={provider === "anthropic" ? "claude-sonnet-4-5" : "z-ai/glm-5.2"} className={`${FIELD} readout`} />
           </Field>
-          <Field id={keyId} label="API key" hint="Checked against the provider before it is saved. Runs spend this key only when you start one.">
+          <Field id={keyId} label="API key" hint="Checked with one tiny call to the model before it is saved. Runs spend this key only when you start one.">
             <Secret id={keyId} value={apiKey} onChange={setApiKey} placeholder={provider === "anthropic" ? "sk-ant-…" : "Paste the key"} />
           </Field>
           <Problem message={error} />

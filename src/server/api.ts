@@ -153,6 +153,11 @@ const CardRequestBody = z.object({
   reason: z.string().trim().min(1).max(500),
 });
 const CardNoteBody = z.object({ note: z.string().max(500) });
+/** Sandbox only: open other currency wallets on an account that holds one, by buying them from USD. */
+const StageWalletsBody = z.object({
+  currencies: z.array(z.enum(["EUR", "GBP"])).min(1).default(["EUR", "GBP"]),
+  amount: z.number().positive().max(50_000).default(5_000),
+});
 const CardStatusBody = z.object({ why: z.string().max(300).default("") });
 const CardChargeBody = z.object({ amount: z.number().positive().max(1_000_000), merchantCategoryCode: z.string().regex(/^\d{4}$/), merchant: z.string().trim().max(60).optional() });
 const CardCheckoutBody = z.object({ amount: z.number().positive().max(1_000_000) });
@@ -553,6 +558,17 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
           autoConvertLimitMinor,
         };
         return json(wallets);
+      }
+      if (request.method === "POST" && path === "/api/wallets/stage") {
+        // A new sandbox business holds USD only; buying a little EUR and GBP gives the treasury (and funding) something to show.
+        const stage = deps.simulator?.stageWallet;
+        if (!stage) return json({ error: "Forbidden", message: "other wallets can be opened only offline or on the Airwallex sandbox" }, 403);
+        const { currencies, amount } = await body(request, StageWalletsBody);
+        const read = (await commander.readWallets()) ?? {};
+        for (const currency of currencies) {
+          if ((read[currency] ?? 0) < toMinor(amount, currency)) await stage.call(deps.simulator, currency, amount);
+        }
+        return json({ ok: true, staged: currencies });
       }
       if (request.method === "GET" && path === "/api/payee") {
         // Who a new payout pays, named as Airwallex has it. A failed lookup still answers with the id: the payout works without a name.
