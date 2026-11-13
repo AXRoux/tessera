@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Health, IncidentSummary, IncidentView, Metrics, Wallets } from "../../../src/server/wire";
+import type { CardView, Health, IncidentSummary, IncidentView, Metrics, Wallets } from "../../../src/server/wire";
 import { useBoard } from "@/lib/use-board";
 import { useAgentRun } from "../agent/agent-run";
 import { revisionOf, useViews } from "@/lib/use-views";
 import { useWallets } from "@/lib/use-wallets";
+import { OPEN_CARD, OPEN_CARD_COMPOSER, useCards } from "@/lib/use-cards";
+import { CardComposer } from "../cards/card-composer";
+import { CardSheet } from "../cards/card-sheet";
 import { Composer } from "./composer";
 import { Masthead } from "./masthead";
 import { Workspace } from "../shell";
@@ -50,9 +53,12 @@ export function ControlRoom({
   initialWallets,
   initialViews,
   compose = false,
+  issueCard: issueCardOnArrival = false,
 }: {
   /** Open the payout composer on arrival (links from the landing page and the loop). */
   compose?: boolean;
+  /** Open the Visa card composer on arrival (the command palette, from another page). */
+  issueCard?: boolean;
   health: Health | null;
   initial: IncidentSummary[];
   initialMetrics: Metrics | null;
@@ -68,6 +74,25 @@ export function ControlRoom({
   const runShown = useAgentRun().state.status !== "idle";
   const openComposer = useCallback(() => setComposing(true), []);
   const closeComposer = useCallback(() => setComposing(false), []);
+  // Visa cards: the wallet, the composer that asks for one, and the sheet for one card (kept by id, so it stays current).
+  const { cards } = useCards();
+  const [cardComposing, setCardComposing] = useState(issueCardOnArrival);
+  const [openCardId, setOpenCardId] = useState<string | null>(null);
+  const openCard = useCallback((card: CardView) => setOpenCardId(card.id), []);
+  const issueCard = useCallback(() => setCardComposing(true), []);
+  const closeCardComposer = useCallback(() => setCardComposing(false), []);
+  const closeCard = useCallback(() => setOpenCardId(null), []);
+  useEffect(() => {
+    const onCompose = () => setCardComposing(true);
+    const onOpen = (event: Event) => setOpenCardId((event as CustomEvent<string>).detail);
+    window.addEventListener(OPEN_CARD_COMPOSER, onCompose);
+    window.addEventListener(OPEN_CARD, onOpen);
+    return () => {
+      window.removeEventListener(OPEN_CARD_COMPOSER, onCompose);
+      window.removeEventListener(OPEN_CARD, onOpen);
+    };
+  }, []);
+  const cardsToSign = cards?.items.filter((c) => c.state === "PENDING").length ?? 0;
 
   const extras = (
     <>
@@ -93,13 +118,13 @@ export function ControlRoom({
   return (
     <Workspace>
       <div className="grid shrink-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.85fr)] lg:items-stretch">
-        <Masthead items={board.items} metrics={board.metrics} running={board.running} />
+        <Masthead items={board.items} metrics={board.metrics} running={board.running} cardsToSign={cardsToSign} />
         <Sequence items={board.items} metrics={board.metrics} health={health} onCompose={openComposer} onRun={board.run} running={board.running} extras={extras} />
       </div>
 
       <div className="grid min-h-0 gap-4 xl:flex-1 xl:grid-cols-[minmax(270px,300px)_minmax(0,1fr)_minmax(320px,360px)] 2xl:grid-cols-[330px_minmax(0,1fr)_390px]">
         <div className="min-h-[560px] xl:min-h-0 [&>section]:h-full">
-          <WalletPanel wallets={wallets} health={health} items={board.items} onCompose={openComposer} />
+          <WalletPanel wallets={wallets} health={health} items={board.items} cards={cards} onCompose={openComposer} onIssueCard={issueCard} onOpenCard={openCard} />
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-4">
@@ -122,6 +147,8 @@ export function ControlRoom({
       </div>
 
       <Composer open={composing} onClose={closeComposer} health={health} create={board.create} creating={board.creating} />
+      <CardComposer open={cardComposing} cards={cards} onClose={closeCardComposer} />
+      <CardSheet card={cards?.items.find((c) => c.id === openCardId) ?? null} canCharge={cards?.canCharge ?? false} operator={health?.operator ?? "operator"} onClose={closeCard} />
       {!health ? (
         <Toast tone="bad" onClose={() => undefined}>
           The Tessera API could not be reached, so the room is empty. Start it with <span className="readout text-[12px]">bun run demo</span>.

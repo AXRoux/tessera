@@ -69,7 +69,7 @@ export function RunPanel({ items, health }: { items: IncidentSummary[]; health: 
     ? lastTool
       ? `${actionLabel(lastTool.tool).toLowerCase()}${lastTool.incident ? ` · ${lastTool.incident}` : ""}…`
       : "reading the board…"
-    : headline ?? (available ? `ten typed tools · no keys to the vault` : items.length === 0 ? "send a payout first" : "no agent connected");
+    : headline ?? (available ? `thirteen typed tools · no keys to the vault` : items.length === 0 ? "send a payout first" : "no agent connected");
 
   return (
     <Tray label="The agent" className="h-full gap-3 overflow-hidden p-3">

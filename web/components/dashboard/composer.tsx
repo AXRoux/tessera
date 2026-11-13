@@ -67,7 +67,7 @@ export function Composer({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/55 p-4 backdrop-blur-md" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <Tray label="New payout" className="w-full max-w-[540px] gap-3 p-3">
+      <Tray label="New payout" className="w-full max-w-[540px] gap-3 bg-canvas! p-3">
         <TrayHead
           className="px-2 pt-1"
           title="New payout"

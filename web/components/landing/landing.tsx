@@ -415,7 +415,7 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
           </h1>
 
           <p className="relative mt-5 max-w-[520px] text-[clamp(14px,min(1vw,1.7vh),16.5px)] leading-relaxed text-fg/70 shorter:line-clamp-3">
-            Tessera is the control layer between your AI agents and your treasury. Agents read the inbox, chase failed payouts and draft the replies. Policy written in
+            Tessera is the control layer between your AI agents and your treasury. Agents read the inbox, chase failed payouts, draft the replies and buy only what a person signed for, on single-use Visa cards. Policy written in
             code decides what may move, a person signs what matters, and every payout is sealed before it is sent and proved after it lands.
           </p>
 
@@ -427,9 +427,9 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
             </ul>
             <div className="micro space-y-0.5 text-fg/55">
               <p>api.sandbox.airwallex.com</p>
-              <p>MCP · 10 typed tools</p>
+              <p>MCP · 13 typed tools</p>
               <p>sha-256 hash chain</p>
-              <p>AES-256-GCM keys</p>
+              <p>Visa cards · TAP-signed</p>
               <p>any model, your key</p>
             </div>
             <Ruler className="mb-1 hidden max-w-[150px] justify-self-end text-fg/45 2xl:block" />
@@ -478,7 +478,7 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
             src="/landing/agents.webp"
             alt="A chrome robotic hand reaching for a point of light"
             title={["Agents", "act."]}
-            lines={["Ten typed tools", "Any model, over MCP", "No keys to the vault"]}
+            lines={["Thirteen typed tools", "Any model, over MCP", "Pays with Visa, signed by TAP"]}
             stagger="up"
             delay={220}
           />

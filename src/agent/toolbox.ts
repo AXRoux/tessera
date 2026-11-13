@@ -1,5 +1,5 @@
 /**
- * The capability boundary for any agent that works an incident: ten typed tools, and nothing else.
+ * The capability boundary for any agent that works an incident: thirteen typed tools, and nothing else.
  *
  * What is missing is the point. There is no tool that creates a transfer, signs an approval, changes an amount or a
  * beneficiary, picks a currency or a rate, or releases a payment a policy forbids. An agent can read, record what a
@@ -7,6 +7,10 @@
  * code planned to fund a replacement, ask for an automatic replacement the code will only grant when it is provably safe,
  * and ask the Closer to certify. Every refusal comes from the same code a human hits, and every call is written to the
  * hash-chained ledger.
+ *
+ * Three more tools reach Visa virtual cards (src/cards/desk.ts): list them, ask for one (code checks it, a person must
+ * sign it before it exists), and pay with one at the merchant the person named, through Visa's Trusted Agent Protocol.
+ * There is still no tool that signs a card, raises its limit, or changes its merchant.
  *
  * The same toolbox backs the in-process Claude loop (`loop.ts`) and the MCP server (`mcp.ts`).
  */
@@ -32,6 +36,9 @@ import type { PayoutGateway } from "../gateway/gateway";
 import type { InboxMessage, Ledger, Obligation } from "../ledger/ledger";
 import { formatMinor } from "../money";
 import { paidObservedAt } from "../ledger/events";
+import type { CardDesk } from "../cards/desk";
+import { CARD_CATEGORIES } from "../cards/policy";
+import { StateConflict } from "../errors";
 
 export interface ToolboxDeps {
   ledger: Ledger;
@@ -51,6 +58,8 @@ export interface ToolboxDeps {
   authority?: "operator" | "triage";
   /** Hard limit on which incidents this toolbox can see or touch. Absent means all of them. */
   scope?: ReadonlySet<string>;
+  /** Visa virtual cards. Absent, or in a run scoped to some incidents: the card tools are not offered. */
+  cards?: CardDesk;
 }
 
 export type ToolOutcome =
@@ -512,6 +521,8 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       },
     }),
 
+    ...(deps.cards && !deps.scope ? cardTools(deps.cards, actor) : []),
+
     tool({
       ...decorator({ schema: z.object({}) }),
       name: "verify_ledger",
@@ -587,7 +598,8 @@ async function run(found: Tool, input: unknown): Promise<ToolOutcome> {
     }
     if (
       error instanceof DuplicateLockError || error instanceof DuplicateConversionError || error instanceof ReplacementDenied || error instanceof ApprovalRejected ||
-      error instanceof ObligationNotPayable || error instanceof LedgerMismatchError || error instanceof DraftRejected
+      error instanceof ObligationNotPayable || error instanceof LedgerMismatchError || error instanceof DraftRejected || error instanceof CardRefused ||
+      error instanceof StateConflict
     ) {
       return { ok: false, kind: "refused", error: error.name, message: error.message };
     }
@@ -600,6 +612,79 @@ async function run(found: Tool, input: unknown): Promise<ToolOutcome> {
 
 class ToolInputError extends Error {}
 class ToolUnavailable extends Error {}
+/** Code (the card policy) or the Visa network (the card's controls, a merchant's TAP check) said no. */
+class CardRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CardRefused";
+  }
+}
+
+const CardId = z.string().min(1).max(64).describe("The card id from list_virtual_cards.");
+const CategoryIds = Object.keys(CARD_CATEGORIES) as [string, ...string[]];
+
+/**
+ * The card tools. An agent may look, ask, and pay where a person said it may; it may never sign, raise a limit, or pick
+ * another merchant. Payment goes through Visa's Trusted Agent Protocol: the checkout is signed with this workspace's
+ * agent key and the merchant verifies it before charging, so the agent never holds the card number.
+ */
+function cardTools(desk: CardDesk, actor: string): Tool[] {
+  const money = (minor: number, currency: string) => formatMinor(minor, currency);
+  return [
+    tool({
+      name: "list_virtual_cards",
+      description:
+        "List the Visa virtual cards (issued by Airwallex): what each is for, the merchant a person signed it for, its cap, what it has spent, and its state (PENDING waits for a person's signature; ACTIVE can pay; SPENT, CLOSED, REFUSED, DECLINED and FAILED cannot). Read-only.",
+      schema: z.object({}),
+      annotations: hints({ readOnlyHint: true, idempotentHint: true }),
+      operatorOnly: true,
+      run: async () =>
+        desk.list().map((c) => ({
+          cardId: c.id, purpose: c.purpose, merchant: c.merchant, category: c.category, state: c.state, cap: money(c.amountMinor, c.currency),
+          spent: money(c.spentMinor, c.currency), singleUse: c.singleUse, last4: c.last4, requestedBy: c.requestedBy, activeTo: c.activeTo,
+        })),
+    }),
+    tool({
+      name: "request_virtual_card",
+      description:
+        "Ask for a single-use Visa virtual card for one purchase. Code checks it first (category, your limit as an agent, today's total, the wallet above its reserve floor); if it passes, it waits as PENDING until a named person signs it, and only then is it issued, with the cap, currency, merchant categories and an end date as the card's own controls. You cannot sign it. Ask only for what a task needs.",
+      schema: z.object({
+        purpose: z.string().min(3).max(120).describe("What the purchase is, e.g. \"Figma, two editor seats\"."),
+        merchant: z.string().min(2).max(60).describe("The merchant the card is for. The card pays only this merchant."),
+        category: z.enum(CategoryIds).describe("The kind of merchant: its Visa merchant categories become the card's allowlist."),
+        amount: z.number().positive().describe("The most the card may be charged, in major units (100 is one hundred dollars)."),
+        currency: z.enum(["USD", "EUR", "GBP"]).default("USD"),
+        reason: z.string().min(12).max(300).describe("Why the business needs this purchase, for the person who signs."),
+      }),
+      annotations: hints({ openWorldHint: false }),
+      operatorOnly: true,
+      run: async (input) => {
+        const card = await desk.request({ ...input, requestedBy: actor });
+        if (card.state === "REFUSED") throw new CardRefused(`the card policy refused this card: ${card.lastError ?? "no reason given"}`);
+        return { cardId: card.id, state: card.state, cap: money(card.amountMinor, card.currency), next: "a named person must sign this card before it exists; it is not usable yet" };
+      },
+    }),
+    tool({
+      name: "pay_with_virtual_card",
+      description:
+        "Pay with an ACTIVE Visa virtual card at the merchant a person signed it for, through Visa's Trusted Agent Protocol: Tessera signs the checkout with your agent key, the merchant verifies the signature and the linked payment container, then charges the card. Airwallex applies the card's controls (cap, categories, single use), so a charge above the cap is declined. Refused for any other merchant or a card that is not ACTIVE. Sandbox only.",
+      schema: z.object({
+        cardId: CardId,
+        amount: z.number().positive().describe("The amount to pay, in major units."),
+        merchant: z.string().min(2).max(60).describe("The merchant being paid; it must be the one on the card."),
+      }),
+      annotations: hints({ openWorldHint: true }),
+      operatorOnly: true,
+      run: async ({ cardId, amount, merchant }) => {
+        const { card, result } = await desk.agentCheckout(cardId, { amount, merchant }, actor);
+        if (result.status !== "APPROVED") {
+          throw new CardRefused(result.status === "REJECTED" ? `the merchant rejected the checkout: ${result.reason}` : `the card declined the charge: ${result.reason}`);
+        }
+        return { paid: true, orderId: result.orderId, tapVerified: result.tap.ok, cardState: card.state, spent: money(card.spentMinor, card.currency) };
+      },
+    }),
+  ];
+}
 
 /** Inbox messages already read, so the agent is not offered the same message twice. */
 function readMessageIds(ledger: Ledger, incidentId: string): Set<string> {

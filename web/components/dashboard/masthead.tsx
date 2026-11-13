@@ -46,8 +46,9 @@ function Count({ value, label, dot, lit = false, pulse = false }: { value: numbe
  * The control room's masthead: the time, and the three numbers that say how the room stands. Nothing to read twice;
  * what is yours to decide turns amber the moment there is any.
  */
-export function Masthead({ items, metrics, running }: { items: IncidentSummary[]; metrics: Metrics | null; running: boolean }) {
-  const waiting = items.filter((item) => item.attention !== null).length;
+export function Masthead({ items, metrics, running, cardsToSign = 0 }: { items: IncidentSummary[]; metrics: Metrics | null; running: boolean; cardsToSign?: number }) {
+  // Yours: incidents waiting on a person, and Visa cards waiting for a signature.
+  const waiting = items.filter((item) => item.attention !== null).length + cardsToSign;
   const inFlight = items.filter((item) => item.status === "PAYING" || item.status === "OPEN").length;
   return (
     <Tray label="Control room" className="grid! grid-cols-3 gap-2 p-3 sm:grid-cols-[minmax(0,1.12fr)_repeat(3,minmax(0,1fr))] [&>:first-child]:col-span-3 sm:[&>:first-child]:col-span-1">

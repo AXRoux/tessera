@@ -9,7 +9,7 @@ import { buildRuntime, resolveBeneficiary } from "../server/runtime";
 import { serveStdio } from "./mcp";
 import { createToolbox } from "./toolbox";
 
-const { offline, api, simulator, ledger, gateway, commander, closer, model, dbPath } = buildRuntime();
+const { offline, api, simulator, ledger, gateway, commander, closer, cards, model, dbPath } = buildRuntime();
 const actor = process.env.TESSERA_AGENT_NAME ?? "agent:mcp";
 const authorityEnv = process.env.TESSERA_AGENT_AUTHORITY ?? "operator";
 if (authorityEnv !== "operator" && authorityEnv !== "triage") throw new Error("TESSERA_AGENT_AUTHORITY must be operator or triage");
@@ -33,4 +33,4 @@ if (offline && simulator && process.env.TESSERA_MCP_SEED !== "0") {
 }
 console.error(`tessera mcp  ledger ${dbPath}  |  actor ${actor}  |  authority ${authority}  |  reader ${model ? "on" : "off"}  |  recovered ${recovered}${offline ? `  |  OFFLINE: simulated Airwallex, ${seeded} demo incidents` : ""}`);
 
-await serveStdio(createToolbox({ ledger, gateway, commander, closer, model, actor, authority, acceptClientText: true }));
+await serveStdio(createToolbox({ ledger, gateway, commander, closer, cards, model, actor, authority, acceptClientText: true }));

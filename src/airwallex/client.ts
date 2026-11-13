@@ -28,6 +28,23 @@ import {
   type Transfer,
   type WalletBalance,
 } from "./types";
+import {
+  CardholderListSchema,
+  CardholderSchema,
+  CardTransactionListSchema,
+  IssuedCardListSchema,
+  IssuedCardSchema,
+  SimulatedChargeSchema,
+  merchantInfo,
+  type Cardholder,
+  type CardChargeSimulator,
+  type CardStatus,
+  type CardTransaction,
+  type CreateCardRequest,
+  type IssuedCard,
+  type IssuingApi,
+  type SimulatedCharge,
+} from "./issuing";
 
 export interface ClientOptions {
   baseUrl: string;
@@ -70,7 +87,10 @@ function parseRetryAfter(header: string | null, now: number): number | undefined
   return Number.isNaN(at) ? undefined : Math.max(0, at - now);
 }
 
-export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi, BeneficiaryApi, FxApi {
+/** Airwallex writes card dates as `2026-11-20T00:00:00+0000`. */
+const awxDate = (iso: string): string => `${new Date(iso).toISOString().slice(0, 19)}+0000`;
+
+export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi, BeneficiaryApi, FxApi, IssuingApi, CardChargeSimulator {
   private token: { value: string; expiresAt: number } | null = null;
   /** The login in flight, shared by every caller that needs a token meanwhile (one login, not one per request). */
   private login: Promise<string> | null = null;
@@ -294,6 +314,94 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
     if (fromCreatedAt !== undefined) query.from_created_at = fromCreatedAt;
     const body = this.parse(ConversionListSchema, await this.request("GET", "/api/v1/fx/conversions", { query }));
     return body.items.find((c) => c.request_id === undefined || c.request_id === requestId) ?? null;
+  }
+
+  // ---- Issuing: Visa virtual cards ------------------------------------------
+
+  async listCardholders(): Promise<Cardholder[]> {
+    const body = await this.request("GET", "/api/v1/issuing/cardholders", { query: { page_size: "200" } });
+    return this.parse(CardholderListSchema, body).items;
+  }
+
+  async createDelegateCardholder(email: string): Promise<Cardholder> {
+    return this.parse(CardholderSchema, await this.request("POST", "/api/v1/issuing/cardholders/create", { body: { type: "DELEGATE", email } }));
+  }
+
+  /**
+   * A commercial, virtual, non-personalised card on the account's default program (Visa). The controls are the whole
+   * point: the cap twice (per charge and for the card's life), one currency, the merchant categories, single use, an end.
+   */
+  async createCard(request: CreateCardRequest): Promise<IssuedCard> {
+    const { controls } = request;
+    const body = await this.request("POST", "/api/v1/issuing/cards/create", {
+      body: {
+        request_id: request.requestId,
+        cardholder_id: request.cardholderId,
+        created_by: request.createdBy,
+        form_factor: "VIRTUAL",
+        is_personalized: false,
+        program: { purpose: "COMMERCIAL" },
+        purpose: "ONLINE_PURCHASING",
+        nick_name: request.nickName,
+        authorization_controls: {
+          allowed_transaction_count: controls.singleUse ? "SINGLE" : "MULTIPLE",
+          allowed_currencies: [controls.currency],
+          allowed_merchant_categories: controls.merchantCategories,
+          active_to: awxDate(controls.activeTo),
+          transaction_limits: {
+            currency: controls.currency,
+            limits: [
+              { amount: controls.limit, interval: "PER_TRANSACTION" },
+              { amount: controls.limit, interval: "ALL_TIME" },
+            ],
+          },
+        },
+      },
+    });
+    return this.parse(IssuedCardSchema, body);
+  }
+
+  async getCard(cardId: string): Promise<IssuedCard> {
+    return this.parse(IssuedCardSchema, await this.request("GET", `/api/v1/issuing/cards/${encodeURIComponent(cardId)}`));
+  }
+
+  /** The card a lost create reply made, found by the nickname Tessera wrote on it. */
+  async findCardByNickName(cardholderId: string, nickName: string): Promise<IssuedCard | null> {
+    for (let page = 0; page < 20; page++) {
+      const body = this.parse(
+        IssuedCardListSchema,
+        await this.request("GET", "/api/v1/issuing/cards", { query: { cardholder_id: cardholderId, page_size: "200", page_num: String(page) } }),
+      );
+      const found = body.items.find((card) => card.nick_name === nickName);
+      if (found) return found;
+      if (!body.has_more || body.items.length === 0) return null;
+    }
+    return null;
+  }
+
+  async updateCardStatus(cardId: string, status: CardStatus): Promise<IssuedCard> {
+    return this.parse(IssuedCardSchema, await this.request("POST", `/api/v1/issuing/cards/${encodeURIComponent(cardId)}/update`, { body: { card_status: status } }));
+  }
+
+  async listCardTransactions(cardId: string): Promise<CardTransaction[]> {
+    const body = await this.request("GET", "/api/v1/issuing/transactions", { query: { card_id: cardId, page_size: "100" } });
+    return this.parse(CardTransactionListSchema, body).items;
+  }
+
+  /** Sandbox only: a merchant charges the card, authorised and cleared in one step (`single_phase`). */
+  async charge(input: { cardId: string; amount: number; currency: string; merchantCategoryCode: string; merchantName: string }): Promise<SimulatedCharge> {
+    if (!this.opts.baseUrl.includes("sandbox")) throw new Error("simulated card charges exist only on the Airwallex sandbox");
+    const body = await this.request("POST", "/api/v1/simulation/issuing/create", {
+      body: {
+        card_id: input.cardId,
+        transaction_amount: input.amount,
+        transaction_currency: input.currency,
+        merchant_category_code: input.merchantCategoryCode,
+        merchant_info: merchantInfo(input.merchantName),
+        single_phase: true,
+      },
+    });
+    return this.parse(SimulatedChargeSchema, body);
   }
 
   // ---- transport ------------------------------------------------------------

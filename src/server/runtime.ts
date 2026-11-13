@@ -13,6 +13,10 @@ import { dirname } from "node:path";
 import { AirwallexClient } from "../airwallex/client";
 import { OfflineWebhooks } from "../airwallex/fake-webhooks";
 import { FakePayoutApi } from "../airwallex/fake";
+import { FakeIssuingApi } from "../airwallex/fake-issuing";
+import type { CardChargeSimulator, IssuingApi } from "../airwallex/issuing";
+import { CardDesk } from "../cards/desk";
+import { agentKeyFrom } from "../cards/tap";
 import type { BalanceApi, BeneficiaryApi, FxApi, PayoutApi, ReconciliationApi } from "../airwallex/types";
 import { Closer } from "../closer/closer";
 import { type ConfiguredModel, modelConfigured, modelFromEnv } from "../commander/model-env";
@@ -144,6 +148,9 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   let api: AirwallexApi;
   let simulator: Simulator | null;
   let sandbox: boolean;
+  // Visa virtual cards: Airwallex Issuing (or its fake), and a merchant that can charge them only off production.
+  let issuing: IssuingApi;
+  let charger: CardChargeSimulator | null;
   // Offline, Airwallex's webhooks come from the simulator itself, signed with a secret generated for this process.
   const webhookSecret = env.AWX_WEBHOOK_SECRET || (offline ? randomBytes(32).toString("hex") : null);
   let offlineWebhooks: OfflineWebhooks | null = null;
@@ -151,12 +158,18 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
     const fake = new FakePayoutApi({ beneficiaries: structuredClone(OFFLINE_BENEFICIARIES) });
     offlineWebhooks = new OfflineWebhooks(webhookSecret!);
     api = wrap(fake);
+    // Card charges come out of the same simulated wallets the payouts use.
+    const fakeIssuing = new FakeIssuingApi(fake.balances);
+    issuing = wrap(fakeIssuing);
+    charger = wrap(fakeIssuing);
     simulator = wrap(offlineSimulator(fake, offlineWebhooks));
     sandbox = false;
   } else {
     const client = AirwallexClient.fromEnv(env);
     sandbox = (env.AWX_BASE_URL ?? "https://api.sandbox.airwallex.com").includes("sandbox");
     api = wrap(client);
+    issuing = wrap(client);
+    charger = sandbox ? wrap(client) : null;
     simulator = sandbox
       ? wrap<Simulator>({
           advance: (id, status, failureType) => client.simulateTransition(id, status, failureType),
@@ -173,6 +186,8 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   const funder = new FundingExecutor({ ledger, api, approvalSecret, policy });
   const commander = new Commander({ ledger, gateway, balances: api, funding: { fx: api, executor: funder }, secret: approvalSecret, policy });
   const closer = new Closer({ ledger, api, gateway, secret: approvalSecret, paidHoldMs });
+  // The agent's TAP key is derived from the approval secret: stable for this workspace, never stored, never shared.
+  const cards = new CardDesk({ ledger, issuing, charger, balances: api, reserveFloorMinor: policy.reserveFloorMinor, agentKey: agentKeyFrom(approvalSecret) });
 
   // A public demo is open to anyone who can reach it, so it must never be able to spend the owner's tokens.
   if (publicDemo && modelConfigured(env)) {
@@ -206,7 +221,7 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
 
   return {
     offline, publicDemo, sandbox, approvalSecret, apiToken, generatedToken, dbPath, paidHoldMs, pace,
-    api, simulator, ledger, gateway, commander, closer, model, readerName, agent, warnings, policy, funder,
+    api, simulator, ledger, gateway, commander, closer, cards, model, readerName, agent, warnings, policy, funder,
     webhookSecret, offlineWebhooks, agentOnEvent: agentOnEvent && agent !== null,
   };
 }

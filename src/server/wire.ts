@@ -344,3 +344,68 @@ export const WorkspaceResponseSchema = z.object({
   }),
 });
 export type WorkspaceResponse = z.infer<typeof WorkspaceResponseSchema>;
+
+/** One charge or decline on a card, as Airwallex reported it. */
+export const CardChargeWireSchema = z.object({
+  transactionId: z.string(),
+  type: z.string(),
+  status: z.string(),
+  amountMinor: z.number().int(),
+  currency: z.string(),
+  merchant: z.string().nullable(),
+  mcc: z.string().nullable(),
+  failureReason: z.string().nullable(),
+  at: z.string(),
+});
+
+/** An agent's checkout with the card, and what Visa's Trusted Agent Protocol said about it at the merchant. */
+export const CardCheckoutWireSchema = z.object({
+  at: z.string(),
+  actor: z.string(),
+  status: z.enum(["APPROVED", "DECLINED", "REJECTED"]),
+  orderId: z.string().nullable(),
+  reason: z.string().nullable(),
+  tapVerified: z.boolean(),
+  kid: z.string().nullable(),
+});
+
+/** A Visa virtual card and its whole story (src/ledger/cards.ts). */
+export const CardViewSchema = z.object({
+  id: z.string(),
+  purpose: z.string(),
+  merchant: z.string(),
+  category: z.string(),
+  categoryLabel: z.string(),
+  mccs: z.array(z.string()),
+  amountMinor: z.number().int(),
+  currency: z.string(),
+  singleUse: z.boolean(),
+  activeTo: z.string(),
+  state: z.enum(["PENDING", "REFUSED", "DECLINED", "ISSUING", "ACTIVE", "FAILED", "FROZEN", "SPENT", "CLOSED"]),
+  requestedBy: z.string(),
+  byAgent: z.boolean(),
+  reason: z.string(),
+  approvedBy: z.string().nullable(),
+  last4: z.string().nullable(),
+  brand: z.string().nullable(),
+  spentMinor: z.number().int(),
+  lastError: z.string().nullable(),
+  createdAt: z.string(),
+  charges: z.array(CardChargeWireSchema),
+  checkouts: z.array(CardCheckoutWireSchema),
+});
+export type CardView = z.infer<typeof CardViewSchema>;
+
+export const CardsSchema = z.object({
+  items: z.array(CardViewSchema),
+  /** Airwallex Issuing is reachable for this workspace (offline: the simulator's). */
+  connected: z.boolean(),
+  /** Merchant charges can be simulated here (offline or the Airwallex sandbox), and agents can check out. */
+  canCharge: z.boolean(),
+  categories: z.array(z.object({ id: z.string(), label: z.string(), mccs: z.array(z.string()) })),
+  /** Card limits per currency, minor units: what a person and what an agent may ask for on one card. */
+  limits: z.array(z.object({ currency: z.string(), personMaxMinor: z.number().int(), agentMaxMinor: z.number().int() })),
+  /** The agent's Visa TAP key id, published at /api/tap/keys. */
+  agentKeyId: z.string(),
+});
+export type Cards = z.infer<typeof CardsSchema>;

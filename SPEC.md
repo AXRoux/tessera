@@ -207,7 +207,7 @@ src/gateway/gateway.ts   exactly-once submit / recover / sync / webhook sync / h
 src/closer/              reconciliation, certificate schemas (pure) and signing
 src/commander/           decision policy, evidence reader, approvals, model providers: model.ts (shared turn shape, retries),
                          anthropic.ts, openai.ts (any OpenAI-compatible endpoint; native or Hermes tool calls), model-env.ts (env selection)
-src/agent/               the agent surface: toolbox (10 typed tools), provider-neutral tool-use loop, MCP server (stdio)
+src/agent/               the agent surface: toolbox (13 typed tools), provider-neutral tool-use loop, MCP server (stdio)
 src/server/              HTTP API (api.ts), process entry (main.ts), shared wiring (runtime.ts), metrics, .eml parsing, wire contract (wire.ts, pure zod),
                          webhook-only public listener (webhook-listener.ts), webhook handler (webhook.ts), reactions (reactions.ts),
                          event-driven agent runs (wake.ts), the one-agent-at-a-time gate and run budget (agent-runs.ts)

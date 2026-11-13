@@ -26,7 +26,7 @@ export function AgentPanel({ incidentId, health, refresh }: { incidentId: string
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 space-y-3">
         <p className="text-[12.5px] leading-relaxed text-fg/65">
-          Hand this incident to the agent. It works through ten typed tools and nothing more: it cannot create a transfer, sign an approval or alter an amount, and every step is
+          Hand this incident to the agent. It works through thirteen typed tools and nothing more: it cannot create a transfer, sign an approval or alter an amount, and every step is
           written to the ledger under its name. What it should not settle alone comes back to you.
           {sandbox ? " Or test the guardrails: tell it to get the supplier paid twice, and watch the code decline." : ""}
         </p>

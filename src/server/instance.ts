@@ -31,7 +31,7 @@ export interface Assembled extends Instance {
 }
 
 export async function assemble(runtime: Runtime, options: AssembleOptions): Promise<Assembled> {
-  const { offline, api, simulator, ledger, gateway, commander, closer, model, readerName, agent, paidHoldMs, webhookSecret, offlineWebhooks, agentOnEvent } = runtime;
+  const { offline, api, simulator, ledger, gateway, commander, closer, cards, model, readerName, agent, paidHoldMs, webhookSecret, offlineWebhooks, agentOnEvent } = runtime;
   const beneficiaryId = await resolveBeneficiary(api, options.env);
   // The funding demo incident pays the EUR supplier; without one the API still serves, and seeding says what to run.
   const eurBeneficiaryId = await resolveBeneficiary(api, options.env, "EUR").catch(() => null);
@@ -55,7 +55,7 @@ export async function assemble(runtime: Runtime, options: AssembleOptions): Prom
   return {
     recovered,
     handle: createApi({
-      ledger, gateway, commander, closer, model, readerName, simulator, token: options.token, operator: options.operator, beneficiaryId, eurBeneficiaryId,
+      ledger, gateway, commander, closer, cards, model, readerName, simulator, token: options.token, operator: options.operator, beneficiaryId, eurBeneficiaryId,
       paidHoldMs, agent, offline,
       payees: () => api.listBeneficiaries(),
       webhooks: { listening: webhook !== undefined, agentOnEvent: wakes !== null }, agentGate, reactor,
@@ -66,7 +66,7 @@ export async function assemble(runtime: Runtime, options: AssembleOptions): Prom
       // Each step runs even if another fails, so one stuck attempt never stops the rest from syncing. The reaction
       // comes last: whatever the sync saw change is reassessed exactly as a webhook would have had it.
       const failures: unknown[] = [];
-      for (const step of [() => gateway.recover(), () => commander.recoverFunding(), () => gateway.sync(), () => reactor.react({ source: "sweep" })]) {
+      for (const step of [() => gateway.recover(), () => commander.recoverFunding(), () => gateway.sync(), () => reactor.react({ source: "sweep" }), () => cards.sync()]) {
         try {
           await step();
         } catch (error) {

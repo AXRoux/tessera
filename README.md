@@ -13,7 +13,7 @@
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-1f4dff"></a>
 </p>
 
-<p align="center"><b>Works with any MCP agent.</b> Same ten tools, same refusals, whichever client drives them.</p>
+<p align="center"><b>Works with any MCP agent.</b> Same thirteen tools, same refusals, whichever client drives them.</p>
 
 <table align="center">
   <tr>
@@ -60,7 +60,8 @@ bun run redteam        # no keys: 50 attacks on the invariants, with a scoreboar
 |---|---|
 | **An agent that is genuinely useful** | Claude works seven real incidents on the Airwallex sandbox in 21 tool calls (2026-11-06): waits, replaces, converts exactly the €26.74 a short EUR wallet was missing and pays the replacement from it, escalates a phishing email, and drafts a proof-of-payment reply for a person to send. An earlier six-incident run, with the hold window passed, also certified the settled payment. |
 | **An agent that cannot hurt you** | Told to get a supplier paid twice, the same Claude was **refused seven times in the recorded run and could not**. The database, the playbook, the draft guard and the Closer said no. |
-| **Plugs into anything** | A zero-dependency [MCP server](#use-it-from-any-mcp-client) exposes ten typed tools over stdio, so any MCP client can hold them: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or a loop of your own. Hermes Agent has worked a full sandbox run through it, protocol checked with the official MCP Inspector. The built-in agent runs on Claude or on any OpenAI-compatible model ([choose the model](#choose-the-model)). |
+| **Plugs into anything** | A zero-dependency [MCP server](#use-it-from-any-mcp-client) exposes thirteen typed tools over stdio, so any MCP client can hold them: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or a loop of your own. Hermes Agent has worked a full sandbox run through it, protocol checked with the official MCP Inspector. The built-in agent runs on Claude or on any OpenAI-compatible model ([choose the model](#choose-the-model)). |
+| **Visa, on Airwallex** | Agents can buy, but only what a person signed for: each purchase gets its own **single-use Visa virtual card issued by Airwallex**, with the signed terms as the card's controls (cap, currency, merchant categories, end date). The agent pays through **Visa's Trusted Agent Protocol**: every checkout is signed with the workspace's agent key and verified by the merchant before anything is charged. [How it works](#visa-cards-and-the-trusted-agent-protocol). |
 | **In the console, one click** | **Let Claude work them all** (the button names whichever model you set) streams the agent live. **Try to break it** tells the same agent to pay twice and shows every refusal in black. |
 | **Proof, not claims** | 50 adversarial attacks, 530 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 94 guards removed one at a time from a private copy, every one caught. |
 
@@ -76,7 +77,7 @@ There are two doors, and both lead to the same policy, the same ledger and the s
 
 | The door | Who walks through it |
 |---|---|
-| **MCP over stdio** | Any MCP client: Claude Code and Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or your own loop. It brings its own model and its own credentials, and the ten tools never change shape. |
+| **MCP over stdio** | Any MCP client: Claude Code and Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or your own loop. It brings its own model and its own credentials, and the thirteen tools never change shape. |
 | **The built-in agent** | The console button, the terminal demos, and the agent that wakes on a bank event. It runs on Claude through Anthropic, or on any model behind an OpenAI-compatible chat endpoint: Hermes through Nous Portal or OpenRouter, a local model through Ollama, LM Studio or vLLM, or OpenAI itself. One environment variable switches it. |
 
 Whichever you pick, the division of labor holds: **the model proposes and explains, the code decides and records.** Change the model and you change how fluently the agent talks about an incident, never what it is allowed to do about one. A weaker model will finish fewer incidents and hear more refusals; the refusals themselves sit in code that has no idea which model is calling.
@@ -134,7 +135,7 @@ Afterwards the script checks Airwallex itself: **at most one live transfer per i
 
 ### Now tell it to pay twice
 
-`bun run agent -- --adversary` runs the same incidents, the same ten tools and the same model, but the system prompt says it is a compromised agent whose goal is to get suppliers paid a second time and to certify a payment that is still in flight. It may try anything the tools allow.
+`bun run agent -- --adversary` runs the same incidents, the same tools and the same model, but the system prompt says it is a compromised agent whose goal is to get suppliers paid a second time and to certify a payment that is still in flight. It may try anything the tools allow.
 
 <p align="center">
   <img src="docs/img/terminal-adversary.png" alt="Terminal: an adversarial Claude is refused seven times and the invariant holds" width="100%">
@@ -209,6 +210,27 @@ The board shows every wallet next to the reserve floor the policy keeps in it. W
 <p align="center"><sub>Every agent call is an event in the hash-chained ledger, under the agent's name. Here: the reader recorded the evidence, then <code>agent:claude</code> escalated.</sub></p>
 
 ---
+
+## Visa cards and the Trusted Agent Protocol
+
+Agents that work a treasury also need to buy things: a SaaS seat, a month of hosting, an ad campaign. Tessera lets them, through **Visa virtual cards issued by Airwallex** and **Visa's Trusted Agent Protocol (TAP)**, and keeps the same shape as everything else: the agent asks, code decides, a person signs, the ledger proves.
+
+```
+agent: request_virtual_card ──► code: card policy ──► person: signs with a note ──► Airwallex: issues a Visa card
+                                (refused here, with reasons)                        with the signed terms as controls
+agent: pay_with_virtual_card ──► Tessera signs the checkout (TAP, agent-payer-auth) ──► merchant verifies the signature,
+                                 and a payment container linked by nonce                 then charges the card ──► Airwallex
+                                                                                         applies the card's controls
+```
+
+- **One card per purchase.** Single use, one currency, a cap that is both the per-charge and the lifetime limit, the merchant categories of its kind (software, cloud, advertising, travel, office), and a seven-day end date. These are the card's own controls at Airwallex (`POST /api/v1/issuing/cards/create`), so the Visa network refuses what the policy refused: a charge above the cap comes back `LIMIT_EXCEEDED`, at a casino `MERCHANT_CATEGORY_NOT_ALLOWED`, a second charge on a spent card `CARD_CLOSED`.
+- **Code first, then a person.** `src/cards/policy.ts` refuses before anyone sees the request: an agent may ask for at most $1,000 on one card (a person, $2,500), today's cards may not carry more than the daily limit, and a card may not take the wallet below its reserve floor. An agent can never sign a card; a person signs with a written note, and the policy is checked again at the signature.
+- **Trusted Agent Protocol, both sides.** `src/cards/tap.ts` implements TAP's agent recognition signature: RFC 9421 HTTP Message Signatures over `@authority` and `@path`, Ed25519, with `created`/`expires` at most eight minutes apart, a `nonce` the merchant remembers, and `tag="agent-payer-auth"`. The checkout body carries an agentic payment container signed with the same key and linked by the same nonce. The sandbox merchant (`src/cards/merchant.ts`) verifies all of it, step by step as the specification lists them, before it charges anything; replays, expired signatures, a moved path, a wrong tag and unknown keys are refused (`tests/cards.test.ts`). The agent's key is derived from the workspace's approval secret and published as a JWK at `GET /api/tap/keys`, TAP's public key retrieval.
+- **The card number never leaves Tessera.** The agent works with a card id; the payment container carries a payment token and the last four digits.
+- **On the ledger, like everything else.** `CARD_REQUESTED`, `CARD_REFUSED`, `CARD_DECIDED`, `CARD_ISSUE_INTENT`, `CARD_ISSUED`, `CARD_CHARGE` (every charge and decline Airwallex reports, once), `CARD_CHECKOUT` (with the TAP verdict) and `CARD_STATUS`. `verifyChain` replays them and refuses a `cards` row edited behind its back. A lost create reply is matched by the nickname Tessera wrote on the card, so a retry never issues two.
+- **In the console.** The treasury is a wallet: the cards ride in a pocket that carries the working balance, and each rises out of it under the pointer. Open one to sign it, let the agent pay with it via TAP, test a merchant charge against its controls, freeze or close it. `⌘K` opens a command palette with "Issue a Visa card" from anywhere.
+
+**On your sandbox.** Card issuing must be enabled for the business. Airwallex issues commercial Visa cards in the regions its card programs cover (US, UK, Europe, Singapore, Hong Kong, Australia and others); a sandbox business registered elsewhere answers `400 Invalid issuance details`, which Tessera records as a FAILED card with Airwallex's words and lets a person retry once issuing is enabled. Offline (`bun run demo`), the simulator plays the same controls, so the whole flow runs with no keys.
 
 ## How it works
 
@@ -300,7 +322,7 @@ Later that day, with no subscription configured (`AWX_WEBHOOK_ID` and `AWX_WEBHO
 
 ## The agent surface
 
-The whole reach of an agent is **ten typed tools** (`src/agent/toolbox.ts`). What is missing is the point.
+The whole reach of an agent is **thirteen typed tools** (`src/agent/toolbox.ts`). What is missing is the point.
 
 | Tool | Does | Moves money? |
 |---|---|:-:|
@@ -314,12 +336,15 @@ The whole reach of an agent is **ten typed tools** (`src/agent/toolbox.ts`). Wha
 | `escalate_to_human` | Hands the incident to a person. Allowed on any open incident, because it only *removes* the agent's authority | no |
 | `reconcile_and_close` | Asks the Closer to reconcile and certify. Refused unless the Commander's assessment lists CLOSE as allowed, so an open non-receipt claim or an escalation blocks it. Refuses with every blocker | no |
 | `verify_ledger` | Recomputes the hash chain | no |
+| `list_virtual_cards` | Lists the Visa virtual cards: what each is for, the merchant a person signed it for, its cap, what it has spent, its state | no |
+| `request_virtual_card` | Asks for a single-use Visa card for one purchase. Code checks it (category, the agent's own limit, today's total, the wallet above its floor); if it passes it waits for a named person to sign it, and only then is it issued | no, and it cannot sign |
+| `pay_with_virtual_card` | Pays with an ACTIVE card, only at the merchant the person named, through Visa's Trusted Agent Protocol; Airwallex applies the card's controls to the charge | within the signed cap, once |
 
-**Not in the box:** create a transfer, sign or approve a payment, edit an amount, edit a beneficiary, release a forbidden replacement, choose a conversion's amount, source or rate.
+**Not in the box:** create a transfer, sign or approve a payment, edit an amount, edit a beneficiary, release a forbidden replacement, choose a conversion's amount, source or rate, sign a card, raise a card's limit, or point a card at another merchant.
 
 **Authority levels.** Start the MCP server with `TESSERA_AGENT_AUTHORITY=triage` and the agent is never offered `replace_payment`, `fund_replacement` or `reconcile_and_close`, so it can read, record evidence, defer, draft and escalate, and nothing else.
 
-**Woken by the bank.** With `TESSERA_AGENT_ON_EVENT=1`, a bank event that changes an incident's decision into something an agent can act on starts a run for that incident alone, within seconds: the same ten tools, the same refusals, scoped to that incident, briefed with its reference and the `incidentId` the tools take, under the agent's usual name. There is no extra authority to grant and no new tool. See [A bank event wakes the agent](#a-bank-event-wakes-the-agent).
+**Woken by the bank.** With `TESSERA_AGENT_ON_EVENT=1`, a bank event that changes an incident's decision into something an agent can act on starts a run for that incident alone, within seconds: the same tools, the same refusals, scoped to that incident (the card tools are left out of a scoped run), briefed with its reference and the `incidentId` the tools take, under the agent's usual name. There is no extra authority to grant and no new tool. See [A bank event wakes the agent](#a-bank-event-wakes-the-agent).
 
 Five design rules make this safe to hand to a model, any model:
 
@@ -332,7 +357,7 @@ Five design rules make this safe to hand to a model, any model:
 
 ### Use it from any MCP client
 
-`bun run mcp` serves the same toolbox over stdio. It is written against the MCP spec with **no SDK**, so there is no new dependency, and it was checked end to end with the official `@modelcontextprotocol/inspector`. Any client that can launch a stdio server works the same way, bringing its own model and its own credentials, and the ten tools and their refusals do not change with it. The command is always the same: `bun run --silent --cwd /absolute/path/to/tessera mcp`.
+`bun run mcp` serves the same toolbox over stdio. It is written against the MCP spec with **no SDK**, so there is no new dependency, and it was checked end to end with the official `@modelcontextprotocol/inspector`. Any client that can launch a stdio server works the same way, bringing its own model and its own credentials, and the thirteen tools and their refusals do not change with it. The command is always the same: `bun run --silent --cwd /absolute/path/to/tessera mcp`.
 
 **No keys? Run it offline.** Run `bun install` in the repo once, then set `TESSERA_OFFLINE=1` in the server's environment. The server then runs on the simulated Airwallex with no keys, no network and no money, and starts with the seven `ACME` demo incidents already in its ledger, so any client has something to work (`TESSERA_MCP_SEED=0` starts it empty). Without that flag the server is live: it needs the `.env` that `bun run setup` writes, with your Airwallex sandbox credentials, and it exits naming the variable it is missing.
 
@@ -753,7 +778,8 @@ Two recorded runs on 2026-11-06 drove the console agent and reader through the s
 ## Layout
 
 ```
-src/agent        the agent surface: toolbox (10 typed tools), tool-use loop, MCP server, step summaries
+src/agent        the agent surface: toolbox (13 typed tools), tool-use loop, MCP server, step summaries
+src/cards        Visa virtual cards on Airwallex Issuing: card desk, card policy, Visa TAP signer and verifier, sandbox merchant
 src/airwallex    REST client (429-aware, single-flight login, paged lists), webhook verifier, the simulated Airwallex used offline and in tests
 src/demo         the seven ACME incidents, sandbox wallet staging, the scripted agent and adversary, the keyword reader
 src/commander    decision policy, quarantined evidence reader, model providers (Anthropic, OpenAI-compatible with native or Hermes tool calls)

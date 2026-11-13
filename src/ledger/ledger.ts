@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireHumanNote } from "../approval/approval";
 import { canonicalJson, sha256Hex } from "../canonical";
 import { DuplicateConversionError, DuplicateLockError, StateConflict } from "../errors";
+import { cardMismatch, chargeSpends, replayCards, type CardCharge, type CardRow, type CardState, type CardTerms } from "./cards";
 import { conversionMismatch, replayConversions, type ConversionAttempt, type ConversionState, type ConversionTerms } from "./conversions";
 import { replayAttempts, replayObligations, replayReactions, WebhookReceivedSchema, type ReplayedAttempt } from "./events";
 
@@ -149,6 +150,8 @@ interface InboxRow {
   statementText: string | null;
 }
 type EventRow = Omit<LedgerEvent, "payload"> & { payload: string };
+type CardDbRow = Omit<CardRow, "mccs" | "singleUse"> & { mccs: string; singleUse: number };
+const toCard = (row: CardDbRow): CardRow => ({ ...row, mccs: JSON.parse(row.mccs) as string[], singleUse: row.singleUse === 1 });
 
 const GENESIS = sha256Hex("tessera-genesis");
 const PATCHABLE = [
@@ -271,6 +274,45 @@ CREATE TABLE IF NOT EXISTS conversions (
 -- The funding lock: the database itself refuses a second conversion for the same replacement.
 CREATE UNIQUE INDEX IF NOT EXISTS one_conversion_per_replacement
   ON conversions (forAttemptId) WHERE state IN ('INTENT','BOOKED','SETTLED');
+-- Visa virtual cards (src/ledger/cards.ts): one row per card a person or an agent asked for, whatever became of it.
+CREATE TABLE IF NOT EXISTS cards (
+  id TEXT PRIMARY KEY,
+  purpose TEXT NOT NULL,
+  merchant TEXT NOT NULL,
+  category TEXT NOT NULL,
+  mccs TEXT NOT NULL,
+  amountMinor INTEGER NOT NULL CHECK (amountMinor > 0),
+  currency TEXT NOT NULL,
+  singleUse INTEGER NOT NULL CHECK (singleUse IN (0, 1)),
+  activeTo TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('PENDING','REFUSED','DECLINED','ISSUING','ACTIVE','FAILED','FROZEN','SPENT','CLOSED')),
+  requestedBy TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  approvedBy TEXT,
+  requestId TEXT NOT NULL UNIQUE,
+  awxCardId TEXT UNIQUE,
+  last4 TEXT,
+  brand TEXT,
+  awxStatus TEXT,
+  spentMinor INTEGER NOT NULL DEFAULT 0,
+  lastError TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+-- Every charge or decline Airwallex reported on a card, once: the transaction id is the dedupe key.
+CREATE TABLE IF NOT EXISTS card_charges (
+  transactionId TEXT PRIMARY KEY,
+  cardId TEXT NOT NULL REFERENCES cards(id),
+  type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  amountMinor INTEGER NOT NULL,
+  currency TEXT NOT NULL,
+  merchant TEXT,
+  mcc TEXT,
+  failureReason TEXT,
+  at TEXT NOT NULL,
+  recordedAt TEXT NOT NULL
+);
 `;
 
 /** Status implied by the latest attempt, ignoring the sticky CLOSED and ESCALATED. */
@@ -656,6 +698,152 @@ export class Ledger {
     return result.changes > 0 ? this.requireConversion(id) : null;
   }
 
+  // ---- Visa virtual cards (src/ledger/cards.ts) -----------------------------
+
+  /** A card asked for: the row and its CARD_REQUESTED event, in one transaction. It waits for code, then a person. */
+  requestCard(input: CardTerms & { requestedBy: string; reason: string }): CardRow {
+    return this.tx(() => {
+      const id = crypto.randomUUID();
+      const requestId = `tessera-card-${id}`;
+      const ts = this.now().toISOString();
+      this.db
+        .query(
+          `INSERT INTO cards (id, purpose, merchant, category, mccs, amountMinor, currency, singleUse, activeTo, state, requestedBy, reason,
+             requestId, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id, input.purpose, input.merchant, input.category, JSON.stringify(input.mccs), input.amountMinor, input.currency, input.singleUse ? 1 : 0,
+          input.activeTo, input.requestedBy, input.reason, requestId, ts, ts,
+        );
+      const { requestedBy, reason, purpose, merchant, category, mccs, amountMinor, currency, singleUse, activeTo } = input;
+      this.append(null, "CARD_REQUESTED", { cardId: id, requestId, requestedBy, reason, purpose, merchant, category, mccs, amountMinor, currency, singleUse, activeTo });
+      return this.requireCard(id);
+    });
+  }
+
+  /** Compare-and-set on a card's state, so two callers (a person and the sweep) never both move it. */
+  private moveCard(id: string, from: readonly CardState[], to: CardState, patch: Partial<Pick<CardRow, "approvedBy" | "requestId" | "awxCardId" | "last4" | "brand" | "awxStatus" | "lastError">> = {}): CardRow {
+    const keys = (["approvedBy", "requestId", "awxCardId", "last4", "brand", "awxStatus", "lastError"] as const).filter((key) => patch[key] !== undefined);
+    const marks = from.map(() => "?").join(", ");
+    const result = this.db
+      .query(`UPDATE cards SET state = ?, ${keys.map((key) => `${key} = ?, `).join("")}updatedAt = ? WHERE id = ? AND state IN (${marks})`)
+      .run(to, ...keys.map((key) => patch[key] as string | null), this.now().toISOString(), id, ...from);
+    if (result.changes === 0) {
+      const current = this.getCard(id);
+      throw new StateConflict(current ? `card ${id} is ${current.state}, not ${from.join(" or ")}` : `unknown card ${id}`);
+    }
+    return this.requireCard(id);
+  }
+
+  refuseCard(id: string, reasons: string[]): CardRow {
+    return this.tx(() => {
+      const card = this.moveCard(id, ["PENDING"], "REFUSED", { lastError: reasons.join("; ").slice(0, 500) });
+      this.append(null, "CARD_REFUSED", { cardId: id, reasons });
+      return card;
+    });
+  }
+
+  declineCard(id: string, by: string, note: string): CardRow {
+    return this.tx(() => {
+      const card = this.moveCard(id, ["PENDING"], "DECLINED");
+      this.append(null, "CARD_DECIDED", { cardId: id, decision: "DECLINED", by, note });
+      return card;
+    });
+  }
+
+  /**
+   * The intent, written before Airwallex is called: a person's approval of a PENDING card, or a retry of a FAILED one
+   * (a fresh request_id, since Airwallex ignores a repeated one). A crash after this leaves an ISSUING card that the
+   * sweep resolves by the nickname the create carried.
+   */
+  beginCardIssue(id: string, cardholderId: string, approval: { by: string; note: string } | null): CardRow {
+    return this.tx(() => {
+      const current = this.requireCard(id);
+      const requestId = current.state === "FAILED" ? `tessera-card-${id}-${crypto.randomUUID().slice(0, 8)}` : current.requestId;
+      const card = this.moveCard(id, approval ? ["PENDING"] : ["FAILED"], "ISSUING", { requestId, lastError: null, ...(approval ? { approvedBy: approval.by } : {}) });
+      if (approval) this.append(null, "CARD_DECIDED", { cardId: id, decision: "APPROVED", by: approval.by, note: approval.note });
+      this.append(null, "CARD_ISSUE_INTENT", { cardId: id, requestId, cardholderId });
+      return card;
+    });
+  }
+
+  cardIssued(id: string, issued: { awxCardId: string; last4: string | null; brand: string | null; awxStatus: string }): CardRow {
+    return this.tx(() => {
+      const card = this.moveCard(id, ["ISSUING"], "ACTIVE", { awxCardId: issued.awxCardId, last4: issued.last4, brand: issued.brand, awxStatus: issued.awxStatus });
+      this.append(null, "CARD_ISSUED", { cardId: id, ...issued });
+      return card;
+    });
+  }
+
+  cardIssueFailed(id: string, code: string, message: string): CardRow {
+    return this.tx(() => {
+      const card = this.moveCard(id, ["ISSUING"], "FAILED", { lastError: `${code}: ${message}`.slice(0, 500) });
+      this.append(null, "CARD_ISSUE_FAILED", { cardId: id, code, message: message.slice(0, 300) });
+      return card;
+    });
+  }
+
+  /** A charge Airwallex reported, recorded once. False when it was already in the ledger. */
+  recordCardCharge(charge: CardCharge): boolean {
+    return this.tx(() => {
+      const inserted = this.db
+        .query(
+          `INSERT OR IGNORE INTO card_charges (transactionId, cardId, type, status, amountMinor, currency, merchant, mcc, failureReason, at, recordedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          charge.transactionId, charge.cardId, charge.type, charge.status, charge.amountMinor, charge.currency, charge.merchant, charge.mcc,
+          charge.failureReason, charge.at, this.now().toISOString(),
+        );
+      if (inserted.changes === 0) return false;
+      if (chargeSpends(charge)) {
+        this.db.query("UPDATE cards SET spentMinor = spentMinor + ?, updatedAt = ? WHERE id = ?").run(charge.amountMinor, this.now().toISOString(), charge.cardId);
+      }
+      const { at: _at, ...payload } = charge;
+      this.append(null, "CARD_CHARGE", payload);
+      return true;
+    });
+  }
+
+  /** Freeze, unfreeze, spent or closed, with who did it and why. */
+  setCardState(id: string, to: "ACTIVE" | "FROZEN" | "SPENT" | "CLOSED", by: string, why: string, awxStatus: string | null): CardRow {
+    return this.tx(() => {
+      const from = this.requireCard(id).state;
+      const allowed: CardState[] = to === "ACTIVE" ? ["FROZEN"] : to === "FROZEN" ? ["ACTIVE"] : ["ACTIVE", "FROZEN"];
+      const card = this.moveCard(id, allowed, to, { awxStatus: awxStatus ?? undefined });
+      this.append(null, "CARD_STATUS", { cardId: id, from, to, by, why, awxStatus });
+      return card;
+    });
+  }
+
+  getCard(id: string): CardRow | null {
+    const row = this.db.query("SELECT * FROM cards WHERE id = ?").get(id) as CardDbRow | null;
+    return row ? toCard(row) : null;
+  }
+
+  requireCard(id: string): CardRow {
+    const card = this.getCard(id);
+    if (!card) throw new StateConflict(`unknown card ${id}`);
+    return card;
+  }
+
+  /** Newest first. */
+  listCards(): CardRow[] {
+    return (this.db.query("SELECT * FROM cards ORDER BY createdAt DESC, rowid DESC").all() as CardDbRow[]).map(toCard);
+  }
+
+  cardsIn(states: readonly CardState[]): CardRow[] {
+    const marks = states.map(() => "?").join(", ");
+    return (this.db.query(`SELECT * FROM cards WHERE state IN (${marks}) ORDER BY createdAt, rowid`).all(...states) as CardDbRow[]).map(toCard);
+  }
+
+  cardCharges(cardId: string): CardCharge[] {
+    return this.db
+      .query("SELECT transactionId, cardId, type, status, amountMinor, currency, merchant, mcc, failureReason, at FROM card_charges WHERE cardId = ? ORDER BY at, rowid")
+      .all(cardId) as CardCharge[];
+  }
+
   // ---- closure certificates ----------------------------------------------
 
   saveCertificate(obligationId: string, hash: string, json: string): void {
@@ -904,6 +1092,19 @@ export class Ledger {
       if (!r) return { ok: false, brokenAt: null, reason: `conversion ${conversion.id} has no FUNDING_INTENT event` };
       const mismatch = conversionMismatch(conversion, r);
       if (mismatch) return { ok: false, brokenAt: null, reason: `conversion ${conversion.id} ${mismatch}` };
+    }
+
+    const replayedCards = replayCards(events);
+    const cards = (this.db.query("SELECT * FROM cards ORDER BY createdAt").all() as CardDbRow[]).map(toCard);
+    const cardIds = new Set(cards.map((c) => c.id));
+    for (const id of replayedCards.keys()) {
+      if (!cardIds.has(id)) return { ok: false, brokenAt: null, reason: `card ${id} is in the history but missing from the cards table` };
+    }
+    for (const card of cards) {
+      const r = replayedCards.get(card.id);
+      if (!r) return { ok: false, brokenAt: null, reason: `card ${card.id} has no CARD_REQUESTED event` };
+      const mismatch = cardMismatch(card, r);
+      if (mismatch) return { ok: false, brokenAt: null, reason: `card ${card.id} ${mismatch}` };
     }
 
     const webhooks = webhookRowsMismatch(events, this.db.query("SELECT id, name, transferId, receivedAt FROM webhook_events").all() as WebhookRow[]);

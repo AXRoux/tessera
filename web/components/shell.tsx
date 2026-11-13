@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { initialsOf } from "@/lib/initials";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IncidentListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
 import { api } from "@/lib/client-api";
 import { needsYou } from "@/lib/tour-steps";
@@ -14,6 +14,7 @@ import { ThemeProvider, useTheme, type Theme } from "./kit/theme";
 import { Chip, Toggle } from "./kit/widgets";
 import { Icon } from "./landing/icons";
 import { Logo } from "./logo";
+import { CommandPalette, useShortcutLabel } from "./command-palette";
 
 /**
  * The desk the operator works at: a menubar across the top and a workspace that fills exactly one screen.
@@ -29,6 +30,8 @@ interface ShellState {
   setQuery: (query: string) => void;
   /** Everything waiting on a person, most urgent first, read on the shell's own cadence. */
   waiting: ReturnType<typeof needsYou<IncidentSummary>>;
+  /** Opens the ⌘K command palette. */
+  openPalette: () => void;
 }
 
 const ShellContext = createContext<ShellState | null>(null);
@@ -57,51 +60,32 @@ function useWaiting(): ShellState["waiting"] {
   return useMemo(() => needsYou(items), [items]);
 }
 
-/** The search well. Slash focuses it from anywhere; Enter away from a list takes the query to the board. */
+/**
+ * The search well: the way into the ⌘K command palette (⌘K, Ctrl K or / from anywhere, or a click). It shows the board's
+ * current filter, if any, with a way to clear it.
+ */
 function SearchField() {
-  const { query, setQuery } = useShell();
-  const pathname = usePathname();
-  const router = useRouter();
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const typing = document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement;
-      if (event.key === "/" && !typing) {
-        event.preventDefault();
-        ref.current?.focus();
-      }
-      if (event.key === "Escape" && document.activeElement === ref.current) ref.current?.blur();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  const { query, setQuery, openPalette } = useShell();
+  const shortcut = useShortcutLabel();
   return (
-    <form
-      role="search"
-      className="relative w-full"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (pathname !== "/dashboard" && pathname !== "/queue") router.push("/dashboard");
-      }}
-    >
+    <div role="search" className="relative w-full">
+      <button
+        type="button"
+        onClick={openPalette}
+        aria-label={`Search and commands (${shortcut})`}
+        className="well flex h-11 w-full cursor-pointer items-center rounded-full! pl-11 pr-14 text-left text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      >
+        <span className={`truncate ${query ? "text-fg" : "text-fg/40"}`}>{query ? `Filtering for “${query}”` : "Search or jump to…"}</span>
+      </button>
       <Icon name="search" className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-fg/45" />
-      <input
-        ref={ref}
-        type="search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Find an invoice, a status, a rail"
-        aria-label="Search incidents"
-        className="well h-11 w-full rounded-full! pl-11 pr-11 text-[13px] text-fg outline-none placeholder:text-fg/40 focus:ring-2 focus:ring-accent/40 [&::-webkit-search-cancel-button]:hidden"
-      />
       {query === "" ? (
-        <kbd className="readout pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 rounded-md border border-fg/15 px-1.5 text-[10.5px] text-fg/45">/</kbd>
+        <kbd className="readout pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 rounded-md border border-fg/15 px-1.5 text-[10.5px] text-fg/45">{shortcut}</kbd>
       ) : (
-        <button type="button" onClick={() => setQuery("")} aria-label="Clear the search" className="absolute right-3.5 top-1/2 -translate-y-1/2 cursor-pointer text-fg/50 hover:text-fg">
+        <button type="button" onClick={() => setQuery("")} aria-label="Clear the filter" className="absolute right-3.5 top-1/2 -translate-y-1/2 cursor-pointer text-fg/50 hover:text-fg">
           <Icon name="close" className="size-4" />
         </button>
       )}
-    </form>
+    </div>
   );
 }
 
@@ -248,9 +232,16 @@ function Menubar({ health, account }: { health: Health | null; account: Account 
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2.5">
-          <span className="hidden 2xl:inline-flex" title={health?.offline ? "Airwallex simulated in-process: no network, no money" : "The Airwallex sandbox: the real API, no real money"}>
-            <Chip tone="accent">{health?.offline ? "Offline rehearsal" : "Airwallex sandbox"}</Chip>
-          </span>
+          {account && health?.offline ? (
+            // A workspace without keys yet: the way to make it real, rather than a label saying it is not.
+            <Link href="/workspace" className="hidden 2xl:inline-flex" title="Connect your Airwallex sandbox keys to run on the real API">
+              <Chip tone="warn">Connect Airwallex</Chip>
+            </Link>
+          ) : (
+            <span className="hidden 2xl:inline-flex" title={health?.offline ? "Airwallex simulated in-process: no network, no money" : "The Airwallex sandbox: the real API, no real money"}>
+              <Chip tone="accent">{health?.offline ? "Simulated Airwallex" : "Airwallex sandbox"}</Chip>
+            </span>
+          )}
           {health?.agent ? (
             <span className="hidden xl:inline-flex" title={model ? `Connected model: ${model}` : undefined}>
               <Chip tone={agent.running ? "accent" : "solid"} pulse={agent.running}>
@@ -294,7 +285,25 @@ function Menubar({ health, account }: { health: Health | null; account: Account 
 export function AppShell({ health, theme, account = null, children }: { health: Health | null; theme: Theme; account?: Account | null; children: ReactNode }) {
   const [query, setQuery] = useState("");
   const waiting = useWaiting();
-  const value = useMemo<ShellState>(() => ({ query, setQuery, waiting }), [query, waiting]);
+  const [palette, setPalette] = useState(false);
+  const openPalette = useCallback(() => setPalette(true), []);
+  const closePalette = useCallback(() => setPalette(false), []);
+  // ⌘K on a Mac, Ctrl K elsewhere, toggles the palette from anywhere; / opens it when nothing is being typed.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target as HTMLElement | null)?.isContentEditable;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPalette((open) => !open);
+      } else if (event.key === "/" && !typing) {
+        event.preventDefault();
+        setPalette(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const value = useMemo<ShellState>(() => ({ query, setQuery, waiting, openPalette }), [query, waiting, openPalette]);
   return (
     <ShellContext.Provider value={value}>
       <ThemeProvider initial={theme}>
@@ -302,6 +311,7 @@ export function AppShell({ health, theme, account = null, children }: { health: 
           <div data-theme={current} className="desk flex min-h-dvh flex-col font-ui antialiased xl:h-dvh xl:min-h-[640px]">
             <Menubar health={health} account={account} />
             <main className="flex min-h-0 min-w-0 flex-1 flex-col xl:overflow-hidden">{children}</main>
+            <CommandPalette open={palette} onClose={closePalette} query={query} setQuery={setQuery} accounts={account !== null} />
           </div>
         )}
       </ThemeProvider>

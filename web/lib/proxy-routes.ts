@@ -7,4 +7,4 @@
  *
  * Deliberately absent: `webhooks/airwallex`. Airwallex cannot hold the operator token; it talks to the API directly.
  */
-export const PROXIED_ROUTE = /^(health|metrics|wallets|payee|demo\/(seed|reset)|agent\/run|obligations(\/[\w-]+(\/[\w/-]+)?)?|workspace(\/[\w/-]+)?|auth\/[\w/-]+)$/;
+export const PROXIED_ROUTE = /^(health|metrics|wallets|payee|demo\/(seed|reset)|agent\/run|obligations(\/[\w-]+(\/[\w/-]+)?)?|cards(\/[\w-]+\/[a-z]+)?|tap\/keys|workspace(\/[\w/-]+)?|auth\/[\w/-]+)$/;

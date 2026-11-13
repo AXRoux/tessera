@@ -38,7 +38,10 @@ import { computeMetrics } from "./metrics";
 import { attentionOf, lastAgentAction, lastReaction } from "./attention";
 import { AgentGate, runLimits, scopedTask } from "./agent-runs";
 import type { Reactor } from "./reactions";
-import type { AgentStreamEvent, FundingQuote, FundingResultWire, Health, IncidentSummary, IncidentView, Payee, SeedResult, Wallets } from "./wire";
+import type { AgentStreamEvent, CardView, Cards, FundingQuote, FundingResultWire, Health, IncidentSummary, IncidentView, Payee, SeedResult, Wallets } from "./wire";
+import type { CardDesk } from "../cards/desk";
+import { CARD_CATEGORIES } from "../cards/policy";
+import type { CardRow } from "../ledger/cards";
 
 /** Sandbox or offline only: moves a transfer through Airwallex's simulator (or the fake's). Kept behind one interface so it can be removed. */
 export interface Simulator {
@@ -70,6 +73,8 @@ export interface ApiDeps {
   gateway: PayoutGateway;
   commander: Commander;
   closer: Closer;
+  /** Visa virtual cards issued by Airwallex (src/cards/desk.ts). Absent: the card routes answer 404. */
+  cards?: CardDesk;
   /** Null when no model is configured; the reader endpoint then answers 503. */
   model: StructuredModel | null;
   /** How the console names the reader (the model's label, or "offline keyword reader"); defaults to "model". */
@@ -138,6 +143,27 @@ const ManualEvidenceBody = z.object({
   summary: z.string().max(400),
 });
 const ResolveDraftBody = z.object({ draftSeq: z.number().int().positive(), resolution: z.enum(["SENT", "DISCARDED"]) });
+const CardRequestBody = z.object({
+  purpose: z.string().trim().min(3).max(120),
+  merchant: z.string().trim().min(2).max(60),
+  category: z.string().min(1).max(40),
+  amount: z.number().positive().max(1_000_000),
+  currency: z.string().length(3).default("USD"),
+  singleUse: z.boolean().default(true),
+  reason: z.string().trim().min(1).max(500),
+});
+const CardNoteBody = z.object({ note: z.string().max(500) });
+const CardStatusBody = z.object({ why: z.string().max(300).default("") });
+const CardChargeBody = z.object({ amount: z.number().positive().max(1_000_000), merchantCategoryCode: z.string().regex(/^\d{4}$/), merchant: z.string().trim().max(60).optional() });
+const CardCheckoutBody = z.object({ amount: z.number().positive().max(1_000_000) });
+const CardCheckoutEventSchema = z.looseObject({
+  cardId: z.string(),
+  actor: z.string(),
+  status: z.enum(["APPROVED", "DECLINED", "REJECTED"]),
+  orderId: z.string().nullable(),
+  reason: z.string().nullable(),
+  tap: z.looseObject({ verified: z.boolean(), kid: z.string().optional() }),
+});
 const AgentRunBody = z.object({ incidentId: z.string().min(1).max(64).optional(), mode: z.enum(["commander", "adversary"]).default("commander") });
 const ReadBody = z
   .object({
@@ -341,7 +367,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
           const toolbox = createToolbox({
             ledger, gateway, commander, closer, model: deps.model, actor,
             // The console agent may only read messages already in the ledger inbox, never text of its own.
-            acceptClientText: false, ...(scope ? { scope } : {}),
+            acceptClientText: false, ...(scope ? { scope } : {}), ...(deps.cards ? { cards: deps.cards } : {}),
           });
           const task = adversary
             ? adversaryTask(scopeLabel)
@@ -394,6 +420,79 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
     });
   }
 
+  /** Every card with its charges and its agent checkouts, newest first. */
+  const cardViews = (desk: CardDesk): CardView[] => {
+    const checkouts = new Map<string, CardView["checkouts"]>();
+    for (const event of ledger.events()) {
+      if (event.type !== "CARD_CHECKOUT") continue;
+      const p = CardCheckoutEventSchema.safeParse(event.payload);
+      if (!p.success) continue;
+      const list = checkouts.get(p.data.cardId) ?? [];
+      list.push({ at: event.ts, actor: p.data.actor, status: p.data.status, orderId: p.data.orderId, reason: p.data.reason, tapVerified: p.data.tap.verified, kid: p.data.tap.kid ?? null });
+      checkouts.set(p.data.cardId, list);
+    }
+    const view = (card: CardRow): CardView => ({
+      id: card.id, purpose: card.purpose, merchant: card.merchant, category: card.category, categoryLabel: CARD_CATEGORIES[card.category]?.label ?? card.category,
+      mccs: card.mccs, amountMinor: card.amountMinor, currency: card.currency, singleUse: card.singleUse, activeTo: card.activeTo, state: card.state,
+      requestedBy: card.requestedBy, byAgent: card.requestedBy.startsWith("agent:"), reason: card.reason, approvedBy: card.approvedBy, last4: card.last4,
+      brand: card.brand, spentMinor: card.spentMinor, lastError: card.lastError, createdAt: card.createdAt,
+      charges: desk.charges(card.id).map(({ cardId: _cardId, ...charge }) => charge), checkouts: checkouts.get(card.id) ?? [],
+    });
+    return desk.list().map(view);
+  };
+
+  async function cardRoutes(request: Request, path: string, desk: CardDesk): Promise<Response> {
+    if (path === "/api/cards") {
+      if (request.method === "GET") {
+        const cards: Cards = {
+          items: cardViews(desk),
+          connected: desk.issuingConnected,
+          canCharge: desk.canCharge,
+          categories: Object.entries(CARD_CATEGORIES).map(([id, c]) => ({ id, label: c.label, mccs: [...c.mccs] })),
+          limits: Object.entries(desk.policy.maxPerCardMinor).map(([currency, personMaxMinor]) => ({ currency, personMaxMinor, agentMaxMinor: desk.policy.agentMaxMinor[currency] ?? 0 })),
+          agentKeyId: desk.agentJwk.kid,
+        };
+        return json(cards);
+      }
+      if (request.method === "POST") {
+        const input = await body(request, CardRequestBody);
+        const card = await desk.request({ ...input, requestedBy: deps.operator });
+        return json({ id: card.id, state: card.state, reasons: card.state === "REFUSED" ? card.lastError : null }, 201);
+      }
+      return json({ error: "MethodNotAllowed", message: "unsupported method" }, 405);
+    }
+    const match = path.match(/^\/api\/cards\/([\w-]+)\/(approve|decline|retry|freeze|unfreeze|close|charge|checkout)$/);
+    if (!match || request.method !== "POST") return json({ error: "NotFound", message: "no such route" }, 404);
+    const [, id, action] = match as unknown as [string, string, string];
+    switch (action) {
+      case "approve":
+        return json({ id, state: (await desk.approve(id, deps.operator, (await body(request, CardNoteBody)).note)).state });
+      case "decline":
+        return json({ id, state: desk.decline(id, deps.operator, (await body(request, CardNoteBody)).note).state });
+      case "retry":
+        return json({ id, state: (await desk.retry(id, deps.operator)).state });
+      case "freeze":
+      case "unfreeze":
+      case "close": {
+        const { why } = await body(request, CardStatusBody);
+        const to = action === "freeze" ? "FROZEN" : action === "unfreeze" ? "ACTIVE" : "CLOSED";
+        return json({ id, state: (await desk.setStatus(id, to, deps.operator, why)).state });
+      }
+      case "charge": {
+        const input = await body(request, CardChargeBody);
+        return json({ id, state: (await desk.simulateCharge(id, input)).state });
+      }
+      case "checkout": {
+        // The agent pays with the card the person signed, through Visa TAP. Pressed by a person, signed by the agent's key.
+        const { amount } = await body(request, CardCheckoutBody);
+        const card = ledger.requireCard(id);
+        const { result } = await desk.agentCheckout(id, { amount, merchant: card.merchant }, deps.agent?.actor ?? "agent:tessera");
+        return json({ id, ...result });
+      }
+    }
+    return json({ error: "NotFound", message: "no such route" }, 404);
+  }
+
   return async (request) => {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -433,6 +532,14 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         return json({ ok: true });
       }
       if (request.method === "POST" && path === "/api/agent/run") return await startAgentRun(request);
+      if (path === "/api/tap/keys" && request.method === "GET") {
+        // Visa TAP "Public Keys Retrieval": the keys a merchant needs to verify this workspace's agent.
+        return json({ keys: deps.cards ? [deps.cards.agentJwk] : [] });
+      }
+      if (path === "/api/cards" || path.startsWith("/api/cards/")) {
+        if (!deps.cards) return json({ error: "NotFound", message: "cards are not available here" }, 404);
+        return await cardRoutes(request, path, deps.cards);
+      }
       if (request.method === "GET" && path === "/api/wallets") {
         const read = await commander.readWallets();
         const { reserveFloorMinor, fundingSources, autoConvertLimitMinor } = commander.policy;
