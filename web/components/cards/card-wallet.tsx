@@ -1,7 +1,7 @@
 "use client";
 
 import type { CardView, Cards } from "../../../src/server/wire";
-import { compactMoney } from "@/lib/format";
+import { compactMoney, money } from "@/lib/format";
 import { VisaCard, VisaMark } from "./visa-card";
 
 /** Which cards ride in the wallet: live ones first, then those waiting on a person, then the rest, newest first. */
@@ -96,7 +96,7 @@ export function CardWallet({
         <span aria-hidden className="absolute left-[16px] top-[26px] size-2.5 rounded-full bg-[#1a56d6] shadow-[inset_0_1px_1px_rgb(0_0_0/0.35),0_1px_0_rgb(255_255_255/0.35)]" />
         <span aria-hidden className="absolute right-[16px] top-[26px] size-2.5 rounded-full bg-[#1a56d6] shadow-[inset_0_1px_1px_rgb(0_0_0/0.35),0_1px_0_rgb(255_255_255/0.35)]" />
         <div className="relative flex h-full flex-col items-center justify-center px-6 pt-4 text-center text-white">
-          <span className="readout truncate text-[clamp(20px,9cqw,30px)] font-medium leading-none tracking-[-0.03em]">
+          <span className="readout truncate text-[clamp(20px,9cqw,30px)] font-medium leading-none tracking-[-0.03em]" title={balance ? money(balance.availableMinor, balance.currency) : undefined}>
             {balance ? compactMoney(balance.availableMinor, balance.currency) : "—"}
           </span>
           <span className="mt-1.5 text-[11.5px] text-white/80">{balance ? `${balance.currency} available to spend` : "Reading Airwallex…"}</span>

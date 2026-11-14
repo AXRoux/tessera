@@ -28,6 +28,84 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+const CHECK_LABEL: Record<CardView["settlements"][number]["checks"][number]["check"], string> = {
+  merchant: "Merchant",
+  cap: "Within the cap",
+  category: "Merchant category",
+  currency: "Currency",
+  single_use: "Single use",
+  signed: "Signed by a person",
+};
+
+/** A charge's status in words: Airwallex says PENDING for a charge authorised but not yet cleared. */
+const chargeWord = (c: CardView["charges"][number]): string =>
+  c.status === "FAILED" ? "declined" : c.status === "PENDING" ? "clearing" : c.status === "APPROVED" ? (c.type === "REFUND" ? "refunded" : "cleared") : c.status.toLowerCase();
+
+/**
+ * What happened to the money after the card was used: Airwallex holds it while the charge clears, then Tessera proves
+ * each cleared charge against what the person signed. The card's equivalent of a payout's closure certificate.
+ */
+function Purchase({ card }: { card: CardView }) {
+  const through = card.charges.filter((c) => c.status === "PENDING" || (c.status === "APPROVED" && c.type !== "REFUND"));
+  if (through.length === 0) return null;
+  const steps = [
+    { label: "Signed", done: card.approvedBy !== null },
+    { label: "Charged", done: true },
+    { label: "Cleared", done: card.spentMinor > 0 },
+    { label: "Proved", done: card.settlements.length > 0 },
+  ];
+  return (
+    <Tile className="rounded-[20px]! px-4 py-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <Kicker>The purchase</Kicker>
+        {card.heldMinor > 0 ? (
+          <Chip tone="warn" pulse>
+            Clearing
+          </Chip>
+        ) : card.settlements.some((s) => !s.matches) ? (
+          <Chip tone="bad">Does not match</Chip>
+        ) : card.settlements.length > 0 ? (
+          <Chip tone="accent">Proved</Chip>
+        ) : null}
+      </div>
+      <ol className="mt-3 grid grid-cols-4 gap-1.5">
+        {steps.map((step, i) => (
+          <li key={step.label} className="min-w-0">
+            <span aria-hidden className={`block h-1 rounded-full ${step.done ? "bg-accent" : i === steps.findIndex((s) => !s.done) ? "beat bg-warn/70" : "bg-fg/10"}`} />
+            <span className={`mt-1.5 block truncate text-[11px] ${step.done ? "text-fg/80" : "text-fg/40"}`}>{step.label}</span>
+          </li>
+        ))}
+      </ol>
+      {card.heldMinor > 0 ? (
+        <p className="mt-3 text-[12.5px] leading-relaxed text-fg/70">
+          Airwallex authorised {money(card.heldMinor, card.currency)} and is holding it from the wallet. Card charges clear in a batch, about half an hour on the sandbox. Tessera follows the charge and proves it against what you signed as soon as it clears.
+        </p>
+      ) : null}
+      {card.settlements.map((s) => (
+        <div key={s.transactionId} className="mt-3">
+          <p className="text-[12.5px] leading-relaxed text-fg/80">
+            {money(s.amountMinor, s.currency)} cleared at {s.merchant ?? "the merchant"}.{" "}
+            {s.matches ? "Every check against the signed terms holds." : "It does not match what was signed; look at the checks below."}
+          </p>
+          <ul className="mt-2 grid gap-1">
+            {s.checks.map((c) => (
+              <li key={c.check} className="flex items-start gap-2 text-[12px] leading-snug">
+                <Icon name={c.ok ? "check" : "close"} className={`mt-0.5 size-3.5 shrink-0 ${c.ok ? "text-accent" : "text-bad"}`} />
+                <span className="min-w-0">
+                  <span className="text-fg/85">{CHECK_LABEL[c.check]}</span> <span className="text-fg/50">{c.detail}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="readout mt-2 truncate text-[10.5px] text-fg/40" title={s.transactionId}>
+            Airwallex {s.transactionId} · proved {when(s.at)}
+          </p>
+        </div>
+      ))}
+    </Tile>
+  );
+}
+
 const when = (iso: string) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /**
@@ -102,7 +180,10 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
             <VisaCard card={card} />
             <Tile className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-[20px]! px-4 py-3.5">
               <Fact label="Cap">{money(card.amountMinor, card.currency)}</Fact>
-              <Fact label="Spent">{money(card.spentMinor, card.currency)}</Fact>
+              <Fact label="Spent">
+                {money(card.spentMinor, card.currency)}
+                {card.heldMinor > 0 ? <span className="text-fg/50"> · {money(card.heldMinor, card.currency)} clearing</span> : null}
+              </Fact>
               <Fact label="Merchant category">
                 <span title={card.mccs.join(", ")}>{card.categoryLabel}</span>
               </Fact>
@@ -126,6 +207,8 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
                 </p>
               ) : null}
             </Tile>
+
+            <Purchase card={card} />
 
             {card.state === "PENDING" ? (
               <Tile className="grid gap-3 rounded-[20px]! px-4 py-3.5">
@@ -213,7 +296,7 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
         <Tile className="rounded-[20px]! px-4 py-3">
           <Kicker>History on the ledger</Kicker>
           {card.charges.length === 0 && card.checkouts.length === 0 ? (
-            <p className="mt-1.5 text-[12.5px] text-fg/50">No charges yet. Every charge and every decline Airwallex reports lands here, once.</p>
+            <p className="mt-1.5 text-[12.5px] text-fg/50">No charges yet. Every charge and every decline Airwallex reports lands here, and each charge is followed until it clears.</p>
           ) : (
             <ul className="mt-2 divide-y divide-fg/[0.06]">
               {[
@@ -239,8 +322,11 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
                   row: (
                     <>
                       <span className="flex min-w-0 items-center gap-2">
-                        <Chip tone={c.status === "APPROVED" ? "solid" : c.status === "FAILED" ? "bad" : "neutral"}>{c.status === "FAILED" ? "declined" : c.status.toLowerCase()}</Chip>
-                        <span className="readout shrink-0 text-[12.5px]">{money(c.amountMinor, c.currency)}</span>
+                        <Chip tone={c.status === "APPROVED" ? "solid" : c.status === "FAILED" ? "bad" : c.status === "PENDING" ? "warn" : "neutral"}>{chargeWord(c)}</Chip>
+                        <span className={`readout shrink-0 text-[12.5px] ${c.status === "FAILED" ? "text-fg/45 line-through" : ""}`}>
+                          {c.type === "REFUND" ? "+" : "−"}
+                          {money(Math.abs(c.amountMinor), c.currency)}
+                        </span>
                         <span className="truncate text-[12px] text-fg/60">
                           {c.merchant ?? "merchant"} · {c.mcc ?? "—"}
                           {c.failureReason ? ` · ${c.failureReason}` : ""}

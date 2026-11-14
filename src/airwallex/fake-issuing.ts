@@ -23,6 +23,10 @@ interface FakeCard {
  * (`MERCHANT_CATEGORY_NOT_ALLOWED`), above its per-charge or lifetime limit (`LIMIT_EXCEEDED`, inclusive), or beyond the
  * wallet (`INSUFFICIENT_FUNDS`). A single-use card closes after its one approved charge. An approved charge debits the
  * wallet it was charged in, which is the same balance map as the payout fake when one is passed.
+ *
+ * Reported the way the sandbox reports them (seen on 2026-11-14): a purchase is a CLEARING transaction with a negative
+ * amount, PENDING when authorised and APPROVED under the same id once it clears. The sandbox clears in about half an
+ * hour; `clearAfterMs` sets how long here (0: at once).
  */
 export class FakeIssuingApi implements IssuingApi, CardChargeSimulator {
   readonly cardholders = new Map<string, Cardholder>();
@@ -33,6 +37,7 @@ export class FakeIssuingApi implements IssuingApi, CardChargeSimulator {
   constructor(
     private readonly balances: Map<string, number> = new Map(),
     private readonly now: () => Date = () => new Date(),
+    private readonly clearAfterMs = 0,
   ) {}
 
   async listCardholders(): Promise<Cardholder[]> {
@@ -99,7 +104,13 @@ export class FakeIssuingApi implements IssuingApi, CardChargeSimulator {
 
   async listCardTransactions(cardId: string): Promise<CardTransaction[]> {
     this.require(cardId);
-    return structuredClone(this.transactions.get(cardId) ?? []);
+    const now = this.now().getTime();
+    return (this.transactions.get(cardId) ?? []).map((tx) => {
+      const copy = structuredClone(tx);
+      // An approved purchase clears once its time has come; until then Airwallex reports it PENDING.
+      if (copy.status === "APPROVED" && Date.parse(copy.transaction_date!) + this.clearAfterMs > now) copy.status = "PENDING";
+      return copy;
+    });
   }
 
   async charge(input: { cardId: string; amount: number; currency: string; merchantCategoryCode: string; merchantName: string }): Promise<SimulatedCharge> {
@@ -110,9 +121,9 @@ export class FakeIssuingApi implements IssuingApi, CardChargeSimulator {
       card_id: input.cardId,
       transaction_type: failure ? "AUTHORIZATION" : "CLEARING",
       status: failure ? "FAILED" : "APPROVED",
-      transaction_amount: input.amount,
+      transaction_amount: -input.amount,
       transaction_currency: input.currency,
-      billing_amount: input.amount,
+      billing_amount: -input.amount,
       billing_currency: input.currency,
       failure_reason: failure,
       merchant: { name: input.merchantName, category_code: input.merchantCategoryCode },

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireHumanNote } from "../approval/approval";
 import { canonicalJson, sha256Hex } from "../canonical";
 import { DuplicateConversionError, DuplicateLockError, StateConflict } from "../errors";
-import { cardMismatch, chargeSpends, replayCards, type CardCharge, type CardRow, type CardState, type CardTerms } from "./cards";
+import { cardMismatch, CardSettledSchema, replayCards, spentFrom, type CardCharge, type CardRow, type CardSettlement, type CardState, type CardTerms } from "./cards";
 import { conversionMismatch, replayConversions, type ConversionAttempt, type ConversionState, type ConversionTerms } from "./conversions";
 import { replayAttempts, replayObligations, replayReactions, WebhookReceivedSchema, type ReplayedAttempt } from "./events";
 
@@ -784,25 +784,59 @@ export class Ledger {
     });
   }
 
-  /** A charge Airwallex reported, recorded once. False when it was already in the ledger. */
+  /**
+   * A charge as Airwallex reports it now. New, it is recorded; already known, it is updated only when Airwallex has moved
+   * it (a charge clears from PENDING to APPROVED under the same transaction id), and each move is its own CARD_CHARGE
+   * event. The card's spend is recomputed from the latest word on every charge. False when nothing changed.
+   */
   recordCardCharge(charge: CardCharge): boolean {
     return this.tx(() => {
-      const inserted = this.db
-        .query(
-          `INSERT OR IGNORE INTO card_charges (transactionId, cardId, type, status, amountMinor, currency, merchant, mcc, failureReason, at, recordedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          charge.transactionId, charge.cardId, charge.type, charge.status, charge.amountMinor, charge.currency, charge.merchant, charge.mcc,
-          charge.failureReason, charge.at, this.now().toISOString(),
-        );
-      if (inserted.changes === 0) return false;
-      if (chargeSpends(charge)) {
-        this.db.query("UPDATE cards SET spentMinor = spentMinor + ?, updatedAt = ? WHERE id = ?").run(charge.amountMinor, this.now().toISOString(), charge.cardId);
+      const known = this.db
+        .query("SELECT type, status, amountMinor, failureReason FROM card_charges WHERE transactionId = ?")
+        .get(charge.transactionId) as Pick<CardCharge, "type" | "status" | "amountMinor" | "failureReason"> | null;
+      const now = this.now().toISOString();
+      if (!known) {
+        this.db
+          .query(
+            `INSERT INTO card_charges (transactionId, cardId, type, status, amountMinor, currency, merchant, mcc, failureReason, at, recordedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            charge.transactionId, charge.cardId, charge.type, charge.status, charge.amountMinor, charge.currency, charge.merchant, charge.mcc,
+            charge.failureReason, charge.at, now,
+          );
+      } else if (
+        known.type === charge.type && known.status === charge.status && known.amountMinor === charge.amountMinor && known.failureReason === charge.failureReason
+      ) {
+        return false;
+      } else {
+        this.db
+          .query("UPDATE card_charges SET type = ?, status = ?, amountMinor = ?, failureReason = ?, merchant = COALESCE(?, merchant), mcc = COALESCE(?, mcc) WHERE transactionId = ?")
+          .run(charge.type, charge.status, charge.amountMinor, charge.failureReason, charge.merchant, charge.mcc, charge.transactionId);
       }
+      const spent = spentFrom(this.cardCharges(charge.cardId));
+      this.db.query("UPDATE cards SET spentMinor = ?, updatedAt = ? WHERE id = ?").run(spent, now, charge.cardId);
       const { at: _at, ...payload } = charge;
       this.append(null, "CARD_CHARGE", payload);
       return true;
+    });
+  }
+
+  /** Writes a cleared charge's proof once. False when that charge was already proved. */
+  settleCardCharge(settlement: CardSettlement): boolean {
+    return this.tx(() => {
+      if (this.cardSettlements(settlement.cardId).some((s) => s.transactionId === settlement.transactionId)) return false;
+      this.append(null, "CARD_SETTLED", settlement);
+      return true;
+    });
+  }
+
+  /** Every cleared charge proved against the signed terms, oldest first; one card's when an id is given. */
+  cardSettlements(cardId?: string): (CardSettlement & { at: string })[] {
+    const rows = this.db.query("SELECT payload, ts FROM events WHERE type = 'CARD_SETTLED' ORDER BY seq").all() as { payload: string; ts: string }[];
+    return rows.flatMap((row) => {
+      const p = CardSettledSchema.safeParse(JSON.parse(row.payload));
+      return p.success && (!cardId || p.data.cardId === cardId) ? [{ ...p.data, at: row.ts }] : [];
     });
   }
 

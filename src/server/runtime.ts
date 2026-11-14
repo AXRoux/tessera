@@ -161,8 +161,9 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
     const fake = new FakePayoutApi({ beneficiaries: structuredClone(OFFLINE_BENEFICIARIES) });
     offlineWebhooks = new OfflineWebhooks(webhookSecret!);
     api = wrap(fake);
-    // Card charges come out of the same simulated wallets the payouts use.
-    const fakeIssuing = new FakeIssuingApi(fake.balances);
+    // Card charges come out of the same simulated wallets the payouts use, and clear on the bank clock's beat, the way
+    // the sandbox clears them a while after the charge.
+    const fakeIssuing = new FakeIssuingApi(fake.balances, undefined, bankClockMs);
     issuing = wrap(fakeIssuing);
     charger = wrap(fakeIssuing);
     simulator = wrap(offlineSimulator(fake, offlineWebhooks));

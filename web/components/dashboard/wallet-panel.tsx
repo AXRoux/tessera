@@ -39,6 +39,10 @@ export function WalletPanel({
   const held = wallets?.wallets ?? [];
   const main = headline(held);
   const rest = held.filter((wallet) => wallet !== main);
+  // What the cards have taken from the working wallet, cleared or still clearing: too small to see in a compact balance.
+  const onCards = main
+    ? (cards?.items ?? []).filter((c) => c.currency === main.currency).reduce((sum, c) => sum + c.spentMinor + c.heldMinor, 0)
+    : 0;
   const onBoard = main ? items.filter((i) => i.currency === main.currency && i.status !== "CLOSED").reduce((sum, i) => sum + i.amountMinor, 0) : 0;
   const [staging, setStaging] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
@@ -82,6 +86,7 @@ export function WalletPanel({
       {main ? (
         <p className="-mt-1 flex justify-between px-2 text-[11px] text-fg/45">
           <span title={money(main.floorMinor, main.currency)}>floor {compactMoney(main.floorMinor, main.currency)}</span>
+          {onCards > 0 ? <span title={`${money(onCards, main.currency)} spent on Visa cards, cleared or clearing`}>{money(onCards, main.currency)} on cards</span> : null}
           <span className="text-accent">{compactMoney(onBoard, main.currency)} in play</span>
         </p>
       ) : null}

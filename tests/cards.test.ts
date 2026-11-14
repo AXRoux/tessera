@@ -68,11 +68,11 @@ describe("Visa Trusted Agent Protocol", () => {
   });
 });
 
-function desk(options: { failCreate?: boolean } = {}) {
+function desk(options: { failCreate?: boolean; clearAfterMs?: number; now?: () => Date } = {}) {
   const ledger = new Ledger(":memory:");
   const payouts = new FakePayoutApi();
   payouts.balances.set("USD", 50_000);
-  const issuing = new FakeIssuingApi(payouts.balances);
+  const issuing = new FakeIssuingApi(payouts.balances, options.now, options.clearAfterMs);
   if (options.failCreate) {
     const create = issuing.createCard.bind(issuing);
     let fail = true;
@@ -91,6 +91,7 @@ function desk(options: { failCreate?: boolean } = {}) {
     balances: payouts,
     reserveFloorMinor: { USD: 100_000 },
     agentKey: agentKeyFrom("desk secret"),
+    now: options.now,
   });
   return { ledger, issuing, payouts, cards };
 }
@@ -155,6 +156,54 @@ describe("the card desk", () => {
     const checkout = ledger.events().find((e) => e.type === "CARD_CHECKOUT");
     expect(checkout?.payload).toMatchObject({ actor: "agent:claude", status: "APPROVED", tap: { verified: true } });
     await expect(cards.agentCheckout(card.id, { amount: 45, merchant: "Figma" }, "agent:claude")).rejects.toThrow("only an active card can pay");
+  });
+
+  it("follows a charge from authorised to cleared under the same id, then proves it against the signed terms once", async () => {
+    let now = Date.parse("2026-11-14T12:00:00Z");
+    const { cards, ledger, payouts } = desk({ clearAfterMs: 30 * 60_000, now: () => new Date(now) });
+    const card = await cards.approve((await cards.request({ ...figma, requestedBy: "agent:claude" })).id, "operator:ops", "Approved for the design seats");
+    const { card: authorised } = await cards.agentCheckout(card.id, { amount: 45, merchant: "Figma" }, "agent:claude");
+    // Airwallex took the money from the wallet and closed the single-use card at authorisation; the charge is clearing.
+    expect(payouts.balances.get("USD")).toBe(50_000 - 45);
+    expect(authorised).toMatchObject({ state: "SPENT", spentMinor: 0 });
+    expect(cards.charges(card.id)).toEqual([expect.objectContaining({ type: "CLEARING", status: "PENDING", amountMinor: 4_500 })]);
+    expect(cards.settlements(card.id)).toEqual([]);
+
+    now += 31 * 60_000;
+    await cards.sync();
+    expect(ledger.requireCard(card.id)).toMatchObject({ state: "SPENT", spentMinor: 4_500 });
+    expect(cards.charges(card.id)).toEqual([expect.objectContaining({ status: "APPROVED", amountMinor: 4_500 })]);
+    const [proof] = cards.settlements(card.id);
+    expect(proof).toMatchObject({ amountMinor: 4_500, currency: "USD", merchant: "Figma", mcc: "5734", matches: true });
+    expect(proof!.checks.map((c) => c.check)).toEqual(["merchant", "cap", "category", "currency", "single_use", "signed"]);
+
+    const events = ledger.events().length;
+    await cards.sync();
+    expect(ledger.events().length).toBe(events);
+    expect(ledger.events().filter((e) => e.type === "CARD_CHARGE").map((e) => (e.payload as { status: string }).status)).toEqual(["PENDING", "APPROVED"]);
+    expect(ledger.verifyChain().ok).toBe(true);
+  });
+
+  it("heals a charge an earlier build stored as Airwallex's negative PENDING amount once it clears", async () => {
+    const { cards, ledger } = desk();
+    const card = await cards.approve((await cards.request({ ...figma, requestedBy: "operator:ops" })).id, "operator:ops", "Approved for the design seats");
+    const base = { transactionId: "tx-1", cardId: card.id, type: "CLEARING", currency: "USD", merchant: "Figma", mcc: "5734", failureReason: null, at: "2026-11-13T21:00:59Z" };
+    ledger.recordCardCharge({ ...base, status: "PENDING", amountMinor: -4_500 });
+    expect(ledger.requireCard(card.id).spentMinor).toBe(0);
+    expect(ledger.recordCardCharge({ ...base, status: "APPROVED", amountMinor: 4_500 })).toBe(true);
+    expect(ledger.recordCardCharge({ ...base, status: "APPROVED", amountMinor: 4_500 })).toBe(false);
+    expect(ledger.requireCard(card.id).spentMinor).toBe(4_500);
+    expect(ledger.verifyChain().ok).toBe(true);
+  });
+
+  it("flags a cleared charge from a merchant the person did not name, even though the card's controls let it through", async () => {
+    const { cards } = desk();
+    const card = await cards.approve((await cards.request({ ...figma, requestedBy: "operator:ops" })).id, "operator:ops", "Approved for the design seats");
+    await cards.simulateCharge(card.id, { amount: 30, merchantCategoryCode: "5734", merchant: "Canva" });
+    const [proof] = cards.settlements(card.id);
+    expect(proof?.matches).toBe(false);
+    expect(proof?.checks.find((c) => c.check === "merchant")).toEqual({ check: "merchant", ok: false, detail: "charged by Canva, but signed for Figma" });
+    expect(proof?.checks.filter((c) => !c.ok)).toHaveLength(1);
   });
 
   it("keeps a card Airwallex refused as FAILED with Airwallex's words, and issues it on a retry with a fresh request id", async () => {

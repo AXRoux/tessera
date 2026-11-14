@@ -6,8 +6,8 @@ import { keyFromJwk } from "../src/cards/tap";
 
 const TOKEN = "operator-token-for-card-tests";
 
-function offlineApi() {
-  const runtime = buildRuntime({ TESSERA_OFFLINE: "1" });
+function offlineApi(env: Record<string, string> = {}) {
+  const runtime = buildRuntime({ TESSERA_OFFLINE: "1", ...env });
   const handle = createApi({
     ledger: runtime.ledger, gateway: runtime.gateway, commander: runtime.commander, closer: runtime.closer, cards: runtime.cards,
     model: null, simulator: runtime.simulator, token: TOKEN, operator: "ops@tessera.demo", beneficiaryId: "offline-us-supplier",
@@ -37,10 +37,22 @@ describe("the card routes", () => {
     const cards = CardsSchema.parse((await call("GET", "/api/cards")).json);
     expect(cards).toMatchObject({ connected: true, canCharge: true });
     const card = cards.items.find((c) => c.id === id)!;
-    expect(card).toMatchObject({ state: "SPENT", brand: "VISA", spentMinor: 4_500, approvedBy: "ops@tessera.demo", categoryLabel: "Software and SaaS" });
-    expect(card.charges.map((c) => c.failureReason)).toEqual(["LIMIT_EXCEEDED", null]);
+    // Offline, a charge clears on the bank clock's beat, as on the sandbox: spent once it clears, held until then.
+    expect(card).toMatchObject({ state: "SPENT", brand: "VISA", spentMinor: 0, heldMinor: 4_500, approvedBy: "ops@tessera.demo", categoryLabel: "Software and SaaS" });
+    expect(card.charges.map((c) => [c.status, c.failureReason])).toEqual([["FAILED", "LIMIT_EXCEEDED"], ["PENDING", null]]);
+    expect(card.settlements).toEqual([]);
     expect(card.checkouts).toEqual([expect.objectContaining({ status: "APPROVED", tapVerified: true, kid: cards.agentKeyId })]);
     expect(runtime.ledger.verifyChain().ok).toBe(true);
+  });
+
+  it("shows a cleared charge as spent, with its proof against the signed terms", async () => {
+    const { call } = offlineApi({ TESSERA_BANK_CLOCK_MS: "0" });
+    const id = (await call("POST", "/api/cards", { purpose: "Figma, two editor seats", merchant: "Figma", category: "software", amount: 45, reason: "Design team needs two more editor seats" })).json.id as string;
+    await call("POST", `/api/cards/${id}/approve`, { note: "Approved for the design team" });
+    await call("POST", `/api/cards/${id}/checkout`, { amount: 45 });
+    const card = CardsSchema.parse((await call("GET", "/api/cards")).json).items.find((c) => c.id === id)!;
+    expect(card).toMatchObject({ state: "SPENT", spentMinor: 4_500, heldMinor: 0 });
+    expect(card.settlements).toEqual([expect.objectContaining({ amountMinor: 4_500, merchant: "Figma", matches: true })]);
   });
 
   it("publishes the agent's TAP key, and the published key is the one that signed", async () => {

@@ -37,6 +37,7 @@ import type { InboxMessage, Ledger, Obligation } from "../ledger/ledger";
 import { formatMinor } from "../money";
 import { paidObservedAt } from "../ledger/events";
 import type { CardDesk } from "../cards/desk";
+import { chargeHoldsMinor } from "../ledger/cards";
 import { CARD_CATEGORIES } from "../cards/policy";
 import { StateConflict } from "../errors";
 
@@ -634,15 +635,21 @@ function cardTools(desk: CardDesk, actor: string): Tool[] {
     tool({
       name: "list_virtual_cards",
       description:
-        "List the Visa virtual cards (issued by Airwallex): what each is for, the merchant a person signed it for, its cap, what it has spent, and its state (PENDING waits for a person's signature; ACTIVE can pay; SPENT, CLOSED, REFUSED, DECLINED and FAILED cannot). Read-only.",
+        "List the Visa virtual cards (issued by Airwallex): what each is for, the merchant a person signed it for, its cap, what it has spent (cleared) and what is still clearing, its state (PENDING waits for a person's signature; ACTIVE can pay; SPENT, CLOSED, REFUSED, DECLINED and FAILED cannot), and whether each cleared charge was proved against the signed terms. Read-only.",
       schema: z.object({}),
       annotations: hints({ readOnlyHint: true, idempotentHint: true }),
       operatorOnly: true,
       run: async () =>
-        desk.list().map((c) => ({
-          cardId: c.id, purpose: c.purpose, merchant: c.merchant, category: c.category, state: c.state, cap: money(c.amountMinor, c.currency),
-          spent: money(c.spentMinor, c.currency), singleUse: c.singleUse, last4: c.last4, requestedBy: c.requestedBy, activeTo: c.activeTo,
-        })),
+        desk.list().map((c) => {
+          const clearing = desk.charges(c.id).reduce((sum, charge) => sum + chargeHoldsMinor(charge), 0);
+          const proofs = desk.settlements(c.id);
+          return {
+            cardId: c.id, purpose: c.purpose, merchant: c.merchant, category: c.category, state: c.state, cap: money(c.amountMinor, c.currency),
+            spent: money(c.spentMinor, c.currency), clearing: money(clearing, c.currency), singleUse: c.singleUse, last4: c.last4, requestedBy: c.requestedBy,
+            activeTo: c.activeTo,
+            proofs: proofs.map((p) => ({ amount: money(p.amountMinor, p.currency), merchant: p.merchant, matchesSignedTerms: p.matches, failed: p.checks.filter((k) => !k.ok).map((k) => k.detail) })),
+          };
+        }),
     }),
     tool({
       name: "request_virtual_card",
@@ -680,7 +687,12 @@ function cardTools(desk: CardDesk, actor: string): Tool[] {
         if (result.status !== "APPROVED") {
           throw new CardRefused(result.status === "REJECTED" ? `the merchant rejected the checkout: ${result.reason}` : `the card declined the charge: ${result.reason}`);
         }
-        return { paid: true, orderId: result.orderId, tapVerified: result.tap.ok, cardState: card.state, spent: money(card.spentMinor, card.currency) };
+        return {
+          paid: true, orderId: result.orderId, tapVerified: result.tap.ok, cardState: card.state, spent: money(card.spentMinor, card.currency),
+          next: card.spentMinor > 0
+            ? "the charge has cleared; Tessera has proved it against the signed terms"
+            : "Airwallex authorised the charge and holds the money; it clears in a batch, and Tessera proves it against the signed terms once it does. Do not pay again.",
+        };
       },
     }),
   ];

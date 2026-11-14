@@ -387,6 +387,19 @@ export const CardCheckoutWireSchema = z.object({
   kid: z.string().nullable(),
 });
 
+/** A cleared charge proved against the terms a person signed: the purchase's receipt (CARD_SETTLED). */
+export const CardSettlementWireSchema = z.object({
+  transactionId: z.string(),
+  at: z.string(),
+  amountMinor: z.number().int(),
+  currency: z.string(),
+  merchant: z.string().nullable(),
+  mcc: z.string().nullable(),
+  checks: z.array(z.object({ check: z.enum(["merchant", "cap", "category", "currency", "single_use", "signed"]), ok: z.boolean(), detail: z.string() })),
+  matches: z.boolean(),
+});
+export type CardSettlementWire = z.infer<typeof CardSettlementWireSchema>;
+
 /** A Visa virtual card and its whole story (src/ledger/cards.ts). */
 export const CardViewSchema = z.object({
   id: z.string(),
@@ -406,11 +419,15 @@ export const CardViewSchema = z.object({
   approvedBy: z.string().nullable(),
   last4: z.string().nullable(),
   brand: z.string().nullable(),
+  /** What cleared charges have taken. */
   spentMinor: z.number().int(),
+  /** What Airwallex holds for charges authorised but not yet cleared. */
+  heldMinor: z.number().int(),
   lastError: z.string().nullable(),
   createdAt: z.string(),
   charges: z.array(CardChargeWireSchema),
   checkouts: z.array(CardCheckoutWireSchema),
+  settlements: z.array(CardSettlementWireSchema),
 });
 export type CardView = z.infer<typeof CardViewSchema>;
 

@@ -42,7 +42,7 @@ import type { Reactor } from "./reactions";
 import type { AgentStreamEvent, CardView, Cards, FundingQuote, FundingResultWire, Health, IncidentSummary, IncidentView, Payee, SeedResult, Wallets } from "./wire";
 import type { CardDesk } from "../cards/desk";
 import { CARD_CATEGORIES } from "../cards/policy";
-import type { CardRow } from "../ledger/cards";
+import { chargeHoldsMinor, type CardRow } from "../ledger/cards";
 
 /** Sandbox or offline only: moves a transfer through Airwallex's simulator (or the fake's). Kept behind one interface so it can be removed. */
 export interface Simulator {
@@ -496,8 +496,10 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       id: card.id, purpose: card.purpose, merchant: card.merchant, category: card.category, categoryLabel: CARD_CATEGORIES[card.category]?.label ?? card.category,
       mccs: card.mccs, amountMinor: card.amountMinor, currency: card.currency, singleUse: card.singleUse, activeTo: card.activeTo, state: card.state,
       requestedBy: card.requestedBy, byAgent: card.requestedBy.startsWith("agent:"), reason: card.reason, approvedBy: card.approvedBy, last4: card.last4,
-      brand: card.brand, spentMinor: card.spentMinor, lastError: card.lastError, createdAt: card.createdAt,
+      brand: card.brand, spentMinor: card.spentMinor, heldMinor: desk.charges(card.id).reduce((sum, c) => sum + chargeHoldsMinor(c), 0),
+      lastError: card.lastError, createdAt: card.createdAt,
       charges: desk.charges(card.id).map(({ cardId: _cardId, ...charge }) => charge), checkouts: checkouts.get(card.id) ?? [],
+      settlements: desk.settlements(card.id).map(({ cardId: _cardId, ...settlement }) => settlement),
     });
     return desk.list().map(view);
   };

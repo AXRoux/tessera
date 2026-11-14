@@ -10,8 +10,11 @@
  *                  -> CARD_DECIDED(APPROVED), CARD_ISSUE_INTENT     (before the call)     ISSUING
  *                       -> CARD_ISSUED                                                    ACTIVE
  *                       -> CARD_ISSUE_FAILED                        (Airwallex said no)   FAILED
- *   CARD_CHARGE      every merchant charge or decline Airwallex reports, once each
+ *   CARD_CHARGE      every merchant charge or decline Airwallex reports, and again each time Airwallex moves it
+ *                    (a charge is reported PENDING when authorised and APPROVED once it clears, under the same id)
  *   CARD_STATUS      frozen, unfrozen, spent (a single-use card after its charge), closed
+ *   CARD_SETTLED     a cleared charge proved against the terms a person signed: merchant, cap, category, currency,
+ *                    single use. Once per charge; the purchase's receipt.
  */
 import { z } from "zod";
 import type { LedgerEvent } from "./ledger";
@@ -70,8 +73,49 @@ export interface CardCharge {
   at: string;
 }
 
-/** A charge that took money: cleared and approved. Authorisations alone reserve, declines take nothing. */
-export const chargeSpends = (charge: Pick<CardCharge, "type" | "status">): boolean => charge.type === "CLEARING" && charge.status === "APPROVED";
+/**
+ * What a charge has taken from the card, in minor units: a cleared, approved charge takes its amount, an approved refund
+ * gives it back, and an authorisation or a charge still clearing takes nothing yet (Airwallex holds it; see
+ * `chargeHoldsMinor`). Airwallex reports a purchase as a negative amount, so the sign comes from the type, never the amount.
+ */
+export function chargeTakesMinor(charge: Pick<CardCharge, "type" | "status" | "amountMinor">): number {
+  if (charge.status !== "APPROVED") return 0;
+  if (charge.type === "CLEARING") return Math.abs(charge.amountMinor);
+  if (charge.type === "REFUND") return -Math.abs(charge.amountMinor);
+  return 0;
+}
+
+/** What Airwallex is holding for a charge that is authorised but not yet cleared. */
+export function chargeHoldsMinor(charge: Pick<CardCharge, "type" | "status" | "amountMinor">): number {
+  return charge.status === "PENDING" && charge.type !== "REFUND" ? Math.abs(charge.amountMinor) : 0;
+}
+
+/** What a card has spent, from the latest word on each of its charges. */
+export const spentFrom = (charges: Iterable<Pick<CardCharge, "type" | "status" | "amountMinor">>): number => {
+  let total = 0;
+  for (const charge of charges) total += chargeTakesMinor(charge);
+  return total;
+};
+
+/** One check of a cleared charge against the signed terms. */
+export interface SettlementCheck {
+  check: "merchant" | "cap" | "category" | "currency" | "single_use" | "signed";
+  ok: boolean;
+  detail: string;
+}
+
+/** A cleared charge, proved against what a person signed. Written once per charge as CARD_SETTLED. */
+export interface CardSettlement {
+  cardId: string;
+  transactionId: string;
+  amountMinor: number;
+  currency: string;
+  merchant: string | null;
+  mcc: string | null;
+  checks: SettlementCheck[];
+  /** Every check passed: the money went where the person said, for no more than they said. */
+  matches: boolean;
+}
 
 const TermsSchema = z.object({
   purpose: z.string(),
@@ -100,6 +144,16 @@ export const CardChargeSchema = z.object({
   mcc: z.string().nullable(),
   failureReason: z.string().nullable(),
 });
+export const CardSettledSchema = z.object({
+  cardId: z.string(),
+  transactionId: z.string(),
+  amountMinor: z.number().int(),
+  currency: z.string(),
+  merchant: z.string().nullable(),
+  mcc: z.string().nullable(),
+  checks: z.array(z.object({ check: z.enum(["merchant", "cap", "category", "currency", "single_use", "signed"]), ok: z.boolean(), detail: z.string() })),
+  matches: z.boolean(),
+});
 export const CardStatusSchema = z.object({
   cardId: z.string(),
   from: z.string(),
@@ -120,6 +174,8 @@ export interface ReplayedCard {
 /** Every card's state as its own events say it is. */
 export function replayCards(events: LedgerEvent[]): Map<string, ReplayedCard> {
   const cards = new Map<string, ReplayedCard>();
+  // The latest word on each charge, per card: a charge is reported again when Airwallex moves it.
+  const charges = new Map<string, Map<string, z.infer<typeof CardChargeSchema>>>();
   for (const event of events) {
     if (!event.type.startsWith("CARD_")) continue;
     if (event.type === "CARD_REQUESTED") {
@@ -162,7 +218,12 @@ export function replayCards(events: LedgerEvent[]): Map<string, ReplayedCard> {
         break;
       case "CARD_CHARGE": {
         const p = CardChargeSchema.safeParse(event.payload);
-        if (p.success && chargeSpends(p.data)) card.spentMinor += p.data.amountMinor;
+        if (p.success) {
+          const own = charges.get(p.data.cardId) ?? new Map();
+          own.set(p.data.transactionId, p.data);
+          charges.set(p.data.cardId, own);
+          card.spentMinor = spentFrom(own.values());
+        }
         break;
       }
       case "CARD_STATUS": {

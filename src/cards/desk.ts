@@ -13,9 +13,9 @@ import type { CardChargeSimulator, IssuingApi } from "../airwallex/issuing";
 import { lastFour } from "../airwallex/issuing";
 import { AwxHttpError, type BalanceApi } from "../airwallex/types";
 import { ApprovalRejected, StateConflict } from "../errors";
-import type { CardCharge, CardRow, CardState } from "../ledger/cards";
+import { chargeHoldsMinor, chargeTakesMinor, type CardCharge, type CardRow, type CardSettlement, type CardState, type SettlementCheck } from "../ledger/cards";
 import type { Ledger } from "../ledger/ledger";
-import { fromMinor, toMinor } from "../money";
+import { formatMinor, fromMinor, toMinor } from "../money";
 import { SANDBOX_MERCHANT_ORIGIN, SandboxMerchant, type CheckoutResult } from "./merchant";
 import { CARD_CATEGORIES, checkCardRequest, DEFAULT_CARD_POLICY, type CardPolicy } from "./policy";
 import { newNonce, publicJwk, signObject, signRequest, type TapJwk, type TapKey } from "./tap";
@@ -59,6 +59,61 @@ export interface AgentCheckout {
 }
 
 const isAgent = (actor: string): boolean => actor.startsWith("agent:");
+
+/** "Framer, Inc." and "FRAMER" are the same merchant; Airwallex pads and shouts merchant names. */
+const merchantKey = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * Proves one cleared charge against what a person signed: the merchant they named, the cap, the card's merchant
+ * categories, its currency, its single use, and that a person (not an agent) signed it. Airwallex enforces the cap,
+ * categories, currency and single use at authorisation; the merchant name only Tessera can check.
+ */
+export function settle(card: CardRow, charge: CardCharge, charges: readonly CardCharge[]): CardSettlement {
+  const amount = Math.abs(charge.amountMinor);
+  const spending = charges.filter((c) => chargeTakesMinor(c) > 0 || chargeHoldsMinor(c) > 0);
+  const signed = card.merchant.trim();
+  const named = charge.merchant ? merchantKey(charge.merchant) : "";
+  const merchantOk = named.length > 0 && (named.includes(merchantKey(signed)) || merchantKey(signed).includes(named));
+  const fmt = (minor: number) => formatMinor(minor, card.currency);
+  const checks: SettlementCheck[] = [
+    {
+      check: "merchant",
+      ok: merchantOk,
+      detail: charge.merchant ? (merchantOk ? `charged by ${charge.merchant}, the merchant signed for` : `charged by ${charge.merchant}, but signed for ${signed}`) : `Airwallex did not name the merchant; signed for ${signed}`,
+    },
+    {
+      check: "cap",
+      ok: amount <= card.amountMinor && card.spentMinor <= card.amountMinor,
+      detail: `${fmt(amount)} against a cap of ${fmt(card.amountMinor)}`,
+    },
+    {
+      check: "category",
+      ok: charge.mcc !== null && card.mccs.includes(charge.mcc),
+      detail: charge.mcc ? `${charge.mcc}${card.mccs.includes(charge.mcc) ? ", one the card allows" : `, not one of ${card.mccs.join(", ")}`}` : "none reported",
+    },
+    { check: "currency", ok: charge.currency === card.currency, detail: `charged in ${charge.currency}, signed in ${card.currency}` },
+    {
+      check: "single_use",
+      ok: !card.singleUse || spending.length <= 1,
+      detail: card.singleUse ? (spending.length <= 1 ? "the card's one charge" : `${spending.length} charges on a single-use card`) : "a card for more than one charge",
+    },
+    {
+      check: "signed",
+      ok: card.approvedBy !== null && !isAgent(card.approvedBy),
+      detail: card.approvedBy ? `signed by ${card.approvedBy.replace(/^\w+:/, "")}` : "no signature on record",
+    },
+  ];
+  return {
+    cardId: card.id,
+    transactionId: charge.transactionId,
+    amountMinor: amount,
+    currency: charge.currency,
+    merchant: charge.merchant,
+    mcc: charge.mcc,
+    checks,
+    matches: checks.every((c) => c.ok),
+  };
+}
 const nickFor = (card: Pick<CardRow, "id" | "merchant">): string => `tessera:${card.id.slice(0, 8)} ${card.merchant}`.slice(0, 40);
 
 export class CardDesk {
@@ -97,6 +152,11 @@ export class CardDesk {
 
   charges(cardId: string): CardCharge[] {
     return this.deps.ledger.cardCharges(cardId);
+  }
+
+  /** Each cleared charge on the card, proved against the signed terms. */
+  settlements(cardId: string) {
+    return this.deps.ledger.cardSettlements(cardId);
   }
 
   /** Records a request, then lets code decide: PENDING (a person signs next) or REFUSED, with the reasons. */
@@ -215,8 +275,10 @@ export class CardDesk {
 
   /**
    * Brings every card up to date with Airwallex: an ISSUING card is matched by nickname (or called lost after two
-   * minutes), each issued card's charges and declines are recorded once, and a single-use card that has spent its one
-   * charge is closed at Airwallex and marked SPENT.
+   * minutes); each issued card's charges and declines are recorded, and followed until they clear (Airwallex reports a
+   * purchase PENDING when it is authorised and APPROVED once it clears, under the same id, about half an hour later on
+   * the sandbox); a single-use card that has used its one charge is closed at Airwallex and marked SPENT; and each
+   * cleared charge is proved against the terms a person signed (CARD_SETTLED).
    */
   async sync(): Promise<void> {
     const { ledger } = this.deps;
@@ -228,7 +290,10 @@ export class CardDesk {
       if (found) ledger.cardIssued(card.id, { awxCardId: found.card_id, last4: lastFour(found.card_number), brand: found.brand ?? "VISA", awxStatus: found.card_status });
       else if (this.now().getTime() - Date.parse(card.updatedAt) > LOST_ISSUE_MS) ledger.cardIssueFailed(card.id, "not_found", "Airwallex has no card for this request");
     }
-    for (const card of ledger.cardsIn(["ACTIVE", "FROZEN"])) {
+    // Live cards, and spent or closed ones whose charges have not all cleared yet.
+    const clearing = (id: string) => ledger.cardCharges(id).some((c) => c.status === "PENDING");
+    const watched = [...ledger.cardsIn(["ACTIVE", "FROZEN"]), ...ledger.cardsIn(["SPENT", "CLOSED"]).filter((c) => clearing(c.id))];
+    for (const card of watched) {
       if (!card.awxCardId) continue;
       for (const tx of await issuing.listCardTransactions(card.awxCardId)) {
         const currency = tx.transaction_currency ?? card.currency;
@@ -237,7 +302,8 @@ export class CardDesk {
           cardId: card.id,
           type: tx.transaction_type ?? "UNKNOWN",
           status: tx.status ?? "UNKNOWN",
-          amountMinor: toMinor(tx.transaction_amount ?? 0, currency),
+          // Airwallex reports a purchase as a negative amount; the ledger keeps the size, and the type says which way.
+          amountMinor: Math.abs(toMinor(tx.transaction_amount ?? 0, currency)),
           currency,
           merchant: tx.merchant?.name?.trim() || null,
           mcc: tx.merchant?.category_code ?? null,
@@ -246,10 +312,21 @@ export class CardDesk {
         });
       }
       const fresh = ledger.requireCard(card.id);
-      if (fresh.singleUse && fresh.spentMinor > 0 && fresh.state === "ACTIVE") {
+      const charges = ledger.cardCharges(card.id);
+      // A single-use card is used once a charge is through, cleared or still clearing; a decline does not use it.
+      const used = charges.some((c) => chargeTakesMinor(c) > 0 || chargeHoldsMinor(c) > 0);
+      if (fresh.singleUse && used && fresh.state === "ACTIVE") {
         const remote = await issuing.getCard(card.awxCardId);
-        const closed = remote.card_status === "CLOSED" ? remote : await issuing.updateCardStatus(card.awxCardId, "CLOSED");
-        ledger.setCardState(card.id, "SPENT", "tessera", "single use: its one charge has cleared", closed.card_status);
+        // Airwallex closes a single-use card itself at authorisation. Tessera closes it only once the charge has cleared,
+        // so a close can never race the clearing.
+        const closed = remote.card_status === "CLOSED" ? remote : fresh.spentMinor > 0 ? await issuing.updateCardStatus(card.awxCardId, "CLOSED") : null;
+        if (closed) {
+          const why = fresh.spentMinor > 0 ? "single use: its one charge has cleared" : "single use: Airwallex closed it after its one charge, which is clearing";
+          ledger.setCardState(card.id, "SPENT", "tessera", why, closed.card_status);
+        }
+      }
+      for (const charge of charges) {
+        if (chargeTakesMinor(charge) > 0) ledger.settleCardCharge(settle(ledger.requireCard(card.id), charge, charges));
       }
     }
   }
