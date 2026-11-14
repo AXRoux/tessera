@@ -1,0 +1,2176 @@
+{
+ "scenes": {
+  "hook": {
+   "file": "audio/voice-hook.mp3",
+   "duration": 18.622404,
+   "words": [
+    {
+     "text": "A",
+     "start": 0,
+     "end": 0.081
+    },
+    {
+     "text": "supplier",
+     "start": 0.163,
+     "end": 0.534
+    },
+    {
+     "text": "writes:",
+     "start": 0.58,
+     "end": 1.091
+    },
+    {
+     "text": "the",
+     "start": 1.207,
+     "end": 1.312
+    },
+    {
+     "text": "transfer",
+     "start": 1.358,
+     "end": 1.776
+    },
+    {
+     "text": "never",
+     "start": 1.892,
+     "end": 2.125
+    },
+    {
+     "text": "arrived.",
+     "start": 2.183,
+     "end": 2.821
+    },
+    {
+     "text": "Your",
+     "start": 3.402,
+     "end": 3.599
+    },
+    {
+     "text": "agent",
+     "start": 3.669,
+     "end": 4.052
+    },
+    {
+     "text": "has",
+     "start": 4.122,
+     "end": 4.261
+    },
+    {
+     "text": "three",
+     "start": 4.331,
+     "end": 4.563
+    },
+    {
+     "text": "choices.",
+     "start": 4.609,
+     "end": 5.248
+    },
+    {
+     "text": "Wait.",
+     "start": 5.329,
+     "end": 5.782
+    },
+    {
+     "text": "Replace.",
+     "start": 5.875,
+     "end": 6.502
+    },
+    {
+     "text": "Or",
+     "start": 6.583,
+     "end": 6.745
+    },
+    {
+     "text": "escalate.",
+     "start": 6.827,
+     "end": 7.465
+    },
+    {
+     "text": "Replace",
+     "start": 8.046,
+     "end": 8.429
+    },
+    {
+     "text": "too",
+     "start": 8.464,
+     "end": 8.591
+    },
+    {
+     "text": "early,",
+     "start": 8.649,
+     "end": 9.009
+    },
+    {
+     "text": "and",
+     "start": 9.033,
+     "end": 9.183
+    },
+    {
+     "text": "you",
+     "start": 9.23,
+     "end": 9.3
+    },
+    {
+     "text": "have",
+     "start": 9.334,
+     "end": 9.427
+    },
+    {
+     "text": "paid",
+     "start": 9.451,
+     "end": 9.625
+    },
+    {
+     "text": "twice.",
+     "start": 9.671,
+     "end": 10.194
+    },
+    {
+     "text": "Trust",
+     "start": 10.31,
+     "end": 10.635
+    },
+    {
+     "text": "an",
+     "start": 10.67,
+     "end": 10.728
+    },
+    {
+     "text": "email",
+     "start": 10.797,
+     "end": 11.029
+    },
+    {
+     "text": "that",
+     "start": 11.076,
+     "end": 11.18
+    },
+    {
+     "text": "says",
+     "start": 11.227,
+     "end": 11.401
+    },
+    {
+     "text": "we",
+     "start": 11.459,
+     "end": 11.552
+    },
+    {
+     "text": "changed",
+     "start": 11.61,
+     "end": 11.912
+    },
+    {
+     "text": "banks,",
+     "start": 11.958,
+     "end": 12.469
+    },
+    {
+     "text": "and",
+     "start": 12.562,
+     "end": 12.713
+    },
+    {
+     "text": "you",
+     "start": 12.748,
+     "end": 12.817
+    },
+    {
+     "text": "have",
+     "start": 12.841,
+     "end": 12.933
+    },
+    {
+     "text": "paid",
+     "start": 12.957,
+     "end": 13.108
+    },
+    {
+     "text": "a",
+     "start": 13.131,
+     "end": 13.154
+    },
+    {
+     "text": "fraudster.",
+     "start": 13.201,
+     "end": 13.874
+    },
+    {
+     "text": "Trust",
+     "start": 14.454,
+     "end": 14.78
+    },
+    {
+     "text": "a",
+     "start": 14.826,
+     "end": 14.849
+    },
+    {
+     "text": "bank",
+     "start": 14.896,
+     "end": 15.058
+    },
+    {
+     "text": "that",
+     "start": 15.105,
+     "end": 15.221
+    },
+    {
+     "text": "says",
+     "start": 15.256,
+     "end": 15.442
+    },
+    {
+     "text": "paid,",
+     "start": 15.511,
+     "end": 16.034
+    },
+    {
+     "text": "and",
+     "start": 16.405,
+     "end": 16.695
+    },
+    {
+     "text": "you",
+     "start": 16.777,
+     "end": 16.858
+    },
+    {
+     "text": "can",
+     "start": 16.904,
+     "end": 17.009
+    },
+    {
+     "text": "be",
+     "start": 17.055,
+     "end": 17.137
+    },
+    {
+     "text": "wrong",
+     "start": 17.171,
+     "end": 17.473
+    },
+    {
+     "text": "for",
+     "start": 17.543,
+     "end": 17.659
+    },
+    {
+     "text": "days.",
+     "start": 17.717,
+     "end": 18.623
+    }
+   ]
+  },
+  "idea": {
+   "file": "audio/voice-idea.mp3",
+   "duration": 14.953651,
+   "words": [
+    {
+     "text": "This",
+     "start": 0,
+     "end": 0.232
+    },
+    {
+     "text": "is",
+     "start": 0.279,
+     "end": 0.348
+    },
+    {
+     "text": "Tessera,",
+     "start": 0.406,
+     "end": 0.917
+    },
+    {
+     "text": "built",
+     "start": 0.975,
+     "end": 1.219
+    },
+    {
+     "text": "on",
+     "start": 1.265,
+     "end": 1.335
+    },
+    {
+     "text": "the",
+     "start": 1.37,
+     "end": 1.44
+    },
+    {
+     "text": "Airwallex",
+     "start": 1.486,
+     "end": 1.962
+    },
+    {
+     "text": "sandbox.",
+     "start": 1.985,
+     "end": 2.752
+    },
+    {
+     "text": "The",
+     "start": 3.181,
+     "end": 3.297
+    },
+    {
+     "text": "model",
+     "start": 3.344,
+     "end": 3.564
+    },
+    {
+     "text": "reads",
+     "start": 3.622,
+     "end": 3.843
+    },
+    {
+     "text": "the",
+     "start": 3.878,
+     "end": 3.947
+    },
+    {
+     "text": "messy",
+     "start": 3.994,
+     "end": 4.284
+    },
+    {
+     "text": "email.",
+     "start": 4.331,
+     "end": 4.865
+    },
+    {
+     "text": "A",
+     "start": 5.178,
+     "end": 5.248
+    },
+    {
+     "text": "few",
+     "start": 5.329,
+     "end": 5.445
+    },
+    {
+     "text": "hundred",
+     "start": 5.468,
+     "end": 5.689
+    },
+    {
+     "text": "lines",
+     "start": 5.735,
+     "end": 5.968
+    },
+    {
+     "text": "of",
+     "start": 6.002,
+     "end": 6.06
+    },
+    {
+     "text": "plain,",
+     "start": 6.107,
+     "end": 6.362
+    },
+    {
+     "text": "tested",
+     "start": 6.385,
+     "end": 6.722
+    },
+    {
+     "text": "code",
+     "start": 6.78,
+     "end": 7.036
+    },
+    {
+     "text": "decide",
+     "start": 7.059,
+     "end": 7.372
+    },
+    {
+     "text": "what",
+     "start": 7.396,
+     "end": 7.5
+    },
+    {
+     "text": "is",
+     "start": 7.535,
+     "end": 7.605
+    },
+    {
+     "text": "allowed.",
+     "start": 7.639,
+     "end": 8.185
+    },
+    {
+     "text": "Nothing",
+     "start": 8.499,
+     "end": 8.766
+    },
+    {
+     "text": "the",
+     "start": 8.812,
+     "end": 8.882
+    },
+    {
+     "text": "agent",
+     "start": 8.928,
+     "end": 9.195
+    },
+    {
+     "text": "says,",
+     "start": 9.242,
+     "end": 9.694
+    },
+    {
+     "text": "not",
+     "start": 10.008,
+     "end": 10.17
+    },
+    {
+     "text": "a",
+     "start": 10.205,
+     "end": 10.228
+    },
+    {
+     "text": "clever",
+     "start": 10.275,
+     "end": 10.53
+    },
+    {
+     "text": "prompt,",
+     "start": 10.599,
+     "end": 11.134
+    },
+    {
+     "text": "not",
+     "start": 11.25,
+     "end": 11.401
+    },
+    {
+     "text": "a",
+     "start": 11.435,
+     "end": 11.459
+    },
+    {
+     "text": "retry,",
+     "start": 11.528,
+     "end": 12.074
+    },
+    {
+     "text": "not",
+     "start": 12.12,
+     "end": 12.248
+    },
+    {
+     "text": "a",
+     "start": 12.283,
+     "end": 12.306
+    },
+    {
+     "text": "crash,",
+     "start": 12.364,
+     "end": 12.956
+    },
+    {
+     "text": "can",
+     "start": 13.223,
+     "end": 13.386
+    },
+    {
+     "text": "argue",
+     "start": 13.456,
+     "end": 13.757
+    },
+    {
+     "text": "with",
+     "start": 13.781,
+     "end": 13.908
+    },
+    {
+     "text": "that",
+     "start": 13.943,
+     "end": 14.094
+    },
+    {
+     "text": "code.",
+     "start": 14.175,
+     "end": 14.953
+    }
+   ]
+  },
+  "incident": {
+   "file": "audio/voice-incident.mp3",
+   "duration": 26.331429,
+   "words": [
+    {
+     "text": "Watch",
+     "start": 0,
+     "end": 0.36
+    },
+    {
+     "text": "one",
+     "start": 0.43,
+     "end": 0.604
+    },
+    {
+     "text": "incident",
+     "start": 0.639,
+     "end": 1.01
+    },
+    {
+     "text": "change.",
+     "start": 1.045,
+     "end": 1.66
+    },
+    {
+     "text": "The",
+     "start": 2.09,
+     "end": 2.206
+    },
+    {
+     "text": "goal:",
+     "start": 2.264,
+     "end": 2.717
+    },
+    {
+     "text": "get",
+     "start": 2.914,
+     "end": 3.1
+    },
+    {
+     "text": "this",
+     "start": 3.135,
+     "end": 3.262
+    },
+    {
+     "text": "supplier",
+     "start": 3.286,
+     "end": 3.692
+    },
+    {
+     "text": "paid",
+     "start": 3.762,
+     "end": 3.959
+    },
+    {
+     "text": "once.",
+     "start": 4.052,
+     "end": 4.621
+    },
+    {
+     "text": "The",
+     "start": 5.108,
+     "end": 5.224
+    },
+    {
+     "text": "transfer",
+     "start": 5.283,
+     "end": 5.677
+    },
+    {
+     "text": "is",
+     "start": 5.712,
+     "end": 5.759
+    },
+    {
+     "text": "in",
+     "start": 5.817,
+     "end": 5.875
+    },
+    {
+     "text": "flight,",
+     "start": 5.956,
+     "end": 6.327
+    },
+    {
+     "text": "inside",
+     "start": 6.351,
+     "end": 6.722
+    },
+    {
+     "text": "its",
+     "start": 6.745,
+     "end": 6.85
+    },
+    {
+     "text": "window,",
+     "start": 6.908,
+     "end": 7.407
+    },
+    {
+     "text": "so",
+     "start": 7.546,
+     "end": 7.686
+    },
+    {
+     "text": "the",
+     "start": 7.744,
+     "end": 7.814
+    },
+    {
+     "text": "plan",
+     "start": 7.848,
+     "end": 8.057
+    },
+    {
+     "text": "is",
+     "start": 8.115,
+     "end": 8.185
+    },
+    {
+     "text": "wait.",
+     "start": 8.243,
+     "end": 8.696
+    },
+    {
+     "text": "Then",
+     "start": 9.276,
+     "end": 9.474
+    },
+    {
+     "text": "an",
+     "start": 9.532,
+     "end": 9.59
+    },
+    {
+     "text": "email",
+     "start": 9.66,
+     "end": 9.973
+    },
+    {
+     "text": "arrives,",
+     "start": 10.008,
+     "end": 10.612
+    },
+    {
+     "text": "asking",
+     "start": 10.774,
+     "end": 11.146
+    },
+    {
+     "text": "to",
+     "start": 11.192,
+     "end": 11.238
+    },
+    {
+     "text": "change",
+     "start": 11.297,
+     "end": 11.656
+    },
+    {
+     "text": "bank",
+     "start": 11.703,
+     "end": 11.947
+    },
+    {
+     "text": "details,",
+     "start": 12.028,
+     "end": 12.701
+    },
+    {
+     "text": "with",
+     "start": 12.864,
+     "end": 13.038
+    },
+    {
+     "text": "instructions",
+     "start": 13.084,
+     "end": 13.642
+    },
+    {
+     "text": "aimed",
+     "start": 13.7,
+     "end": 13.932
+    },
+    {
+     "text": "at",
+     "start": 13.955,
+     "end": 14.013
+    },
+    {
+     "text": "the",
+     "start": 14.036,
+     "end": 14.106
+    },
+    {
+     "text": "assistant.",
+     "start": 14.153,
+     "end": 14.768
+    },
+    {
+     "text": "Claude",
+     "start": 14.965,
+     "end": 15.302
+    },
+    {
+     "text": "reads",
+     "start": 15.36,
+     "end": 15.615
+    },
+    {
+     "text": "it",
+     "start": 15.662,
+     "end": 15.766
+    },
+    {
+     "text": "through",
+     "start": 15.824,
+     "end": 16.161
+    },
+    {
+     "text": "a",
+     "start": 16.219,
+     "end": 16.254
+    },
+    {
+     "text": "quarantined",
+     "start": 16.37,
+     "end": 17.009
+    },
+    {
+     "text": "reader",
+     "start": 17.055,
+     "end": 17.276
+    },
+    {
+     "text": "that",
+     "start": 17.322,
+     "end": 17.427
+    },
+    {
+     "text": "returns",
+     "start": 17.473,
+     "end": 17.845
+    },
+    {
+     "text": "facts,",
+     "start": 17.914,
+     "end": 18.46
+    },
+    {
+     "text": "never",
+     "start": 18.576,
+     "end": 18.785
+    },
+    {
+     "text": "text.",
+     "start": 18.831,
+     "end": 19.423
+    },
+    {
+     "text": "The",
+     "start": 19.737,
+     "end": 19.865
+    },
+    {
+     "text": "decision",
+     "start": 19.923,
+     "end": 20.283
+    },
+    {
+     "text": "flips:",
+     "start": 20.341,
+     "end": 20.944
+    },
+    {
+     "text": "hand",
+     "start": 21.211,
+     "end": 21.409
+    },
+    {
+     "text": "it",
+     "start": 21.455,
+     "end": 21.513
+    },
+    {
+     "text": "to",
+     "start": 21.548,
+     "end": 21.595
+    },
+    {
+     "text": "a",
+     "start": 21.676,
+     "end": 21.699
+    },
+    {
+     "text": "person,",
+     "start": 21.757,
+     "end": 22.256
+    },
+    {
+     "text": "critical,",
+     "start": 22.419,
+     "end": 23.069
+    },
+    {
+     "text": "with",
+     "start": 23.208,
+     "end": 23.406
+    },
+    {
+     "text": "every",
+     "start": 23.487,
+     "end": 23.731
+    },
+    {
+     "text": "blocked",
+     "start": 23.789,
+     "end": 24.137
+    },
+    {
+     "text": "action",
+     "start": 24.195,
+     "end": 24.59
+    },
+    {
+     "text": "and",
+     "start": 24.671,
+     "end": 24.822
+    },
+    {
+     "text": "the",
+     "start": 24.869,
+     "end": 24.938
+    },
+    {
+     "text": "reason",
+     "start": 24.985,
+     "end": 25.228
+    },
+    {
+     "text": "why.",
+     "start": 25.275,
+     "end": 26.331
+    }
+   ]
+  },
+  "webhook": {
+   "file": "audio/voice-webhook.mp3",
+   "duration": 17.972245,
+   "words": [
+    {
+     "text": "Sometimes",
+     "start": 0,
+     "end": 0.476
+    },
+    {
+     "text": "nobody",
+     "start": 0.546,
+     "end": 0.836
+    },
+    {
+     "text": "has",
+     "start": 0.882,
+     "end": 0.998
+    },
+    {
+     "text": "to",
+     "start": 1.057,
+     "end": 1.103
+    },
+    {
+     "text": "ask.",
+     "start": 1.173,
+     "end": 1.695
+    },
+    {
+     "text": "Airwallex",
+     "start": 2.009,
+     "end": 2.647
+    },
+    {
+     "text": "sends",
+     "start": 2.705,
+     "end": 3.181
+    },
+    {
+     "text": "a",
+     "start": 3.239,
+     "end": 3.297
+    },
+    {
+     "text": "signed",
+     "start": 3.413,
+     "end": 3.796
+    },
+    {
+     "text": "webhook.",
+     "start": 3.843,
+     "end": 4.47
+    },
+    {
+     "text": "Tessera",
+     "start": 4.899,
+     "end": 5.387
+    },
+    {
+     "text": "does",
+     "start": 5.457,
+     "end": 5.596
+    },
+    {
+     "text": "not",
+     "start": 5.642,
+     "end": 5.793
+    },
+    {
+     "text": "trust",
+     "start": 5.851,
+     "end": 6.235
+    },
+    {
+     "text": "the",
+     "start": 6.281,
+     "end": 6.351
+    },
+    {
+     "text": "message,",
+     "start": 6.409,
+     "end": 6.966
+    },
+    {
+     "text": "it",
+     "start": 7.279,
+     "end": 7.407
+    },
+    {
+     "text": "re-reads",
+     "start": 7.477,
+     "end": 7.883
+    },
+    {
+     "text": "the",
+     "start": 7.941,
+     "end": 8.011
+    },
+    {
+     "text": "transfer.",
+     "start": 8.057,
+     "end": 8.8
+    },
+    {
+     "text": "The",
+     "start": 9.23,
+     "end": 9.346
+    },
+    {
+     "text": "decision",
+     "start": 9.404,
+     "end": 9.787
+    },
+    {
+     "text": "flips",
+     "start": 9.845,
+     "end": 10.159
+    },
+    {
+     "text": "from",
+     "start": 10.205,
+     "end": 10.356
+    },
+    {
+     "text": "wait",
+     "start": 10.426,
+     "end": 10.612
+    },
+    {
+     "text": "to",
+     "start": 10.658,
+     "end": 10.716
+    },
+    {
+     "text": "replace,",
+     "start": 10.786,
+     "end": 11.389
+    },
+    {
+     "text": "and",
+     "start": 11.552,
+     "end": 11.703
+    },
+    {
+     "text": "the",
+     "start": 11.761,
+     "end": 11.831
+    },
+    {
+     "text": "agent",
+     "start": 11.9,
+     "end": 12.156
+    },
+    {
+     "text": "wakes",
+     "start": 12.202,
+     "end": 12.457
+    },
+    {
+     "text": "for",
+     "start": 12.492,
+     "end": 12.597
+    },
+    {
+     "text": "that",
+     "start": 12.631,
+     "end": 12.771
+    },
+    {
+     "text": "one",
+     "start": 12.887,
+     "end": 13.131
+    },
+    {
+     "text": "incident,",
+     "start": 13.165,
+     "end": 13.746
+    },
+    {
+     "text": "under",
+     "start": 14.013,
+     "end": 14.21
+    },
+    {
+     "text": "the",
+     "start": 14.257,
+     "end": 14.326
+    },
+    {
+     "text": "same",
+     "start": 14.373,
+     "end": 14.593
+    },
+    {
+     "text": "rules,",
+     "start": 14.64,
+     "end": 15.104
+    },
+    {
+     "text": "and",
+     "start": 15.267,
+     "end": 15.499
+    },
+    {
+     "text": "pays",
+     "start": 15.58,
+     "end": 15.813
+    },
+    {
+     "text": "the",
+     "start": 15.859,
+     "end": 15.929
+    },
+    {
+     "text": "replacement",
+     "start": 15.975,
+     "end": 16.497
+    },
+    {
+     "text": "the",
+     "start": 16.544,
+     "end": 16.614
+    },
+    {
+     "text": "code",
+     "start": 16.66,
+     "end": 16.869
+    },
+    {
+     "text": "allows.",
+     "start": 16.892,
+     "end": 17.972
+    }
+   ]
+  },
+  "agent": {
+   "file": "audio/voice-agent.mp3",
+   "duration": 26.842268,
+   "words": [
+    {
+     "text": "Now",
+     "start": 0,
+     "end": 0.209
+    },
+    {
+     "text": "seven",
+     "start": 0.325,
+     "end": 0.685
+    },
+    {
+     "text": "incidents,",
+     "start": 0.743,
+     "end": 1.416
+    },
+    {
+     "text": "each",
+     "start": 1.486,
+     "end": 1.683
+    },
+    {
+     "text": "wrong",
+     "start": 1.73,
+     "end": 1.95
+    },
+    {
+     "text": "in",
+     "start": 1.985,
+     "end": 2.032
+    },
+    {
+     "text": "a",
+     "start": 2.067,
+     "end": 2.09
+    },
+    {
+     "text": "different",
+     "start": 2.136,
+     "end": 2.426
+    },
+    {
+     "text": "way.",
+     "start": 2.473,
+     "end": 2.868
+    },
+    {
+     "text": "Claude",
+     "start": 3.355,
+     "end": 3.669
+    },
+    {
+     "text": "assesses",
+     "start": 3.704,
+     "end": 4.249
+    },
+    {
+     "text": "every",
+     "start": 4.331,
+     "end": 4.563
+    },
+    {
+     "text": "one,",
+     "start": 4.644,
+     "end": 4.946
+    },
+    {
+     "text": "and",
+     "start": 5.085,
+     "end": 5.248
+    },
+    {
+     "text": "acts",
+     "start": 5.329,
+     "end": 5.584
+    },
+    {
+     "text": "only",
+     "start": 5.654,
+     "end": 5.909
+    },
+    {
+     "text": "on",
+     "start": 5.968,
+     "end": 6.049
+    },
+    {
+     "text": "what",
+     "start": 6.095,
+     "end": 6.235
+    },
+    {
+     "text": "the",
+     "start": 6.269,
+     "end": 6.339
+    },
+    {
+     "text": "code",
+     "start": 6.385,
+     "end": 6.594
+    },
+    {
+     "text": "allows.",
+     "start": 6.618,
+     "end": 7.175
+    },
+    {
+     "text": "It",
+     "start": 7.663,
+     "end": 7.779
+    },
+    {
+     "text": "replaces",
+     "start": 7.825,
+     "end": 8.29
+    },
+    {
+     "text": "the",
+     "start": 8.348,
+     "end": 8.417
+    },
+    {
+     "text": "transient",
+     "start": 8.464,
+     "end": 8.951
+    },
+    {
+     "text": "failure.",
+     "start": 9.009,
+     "end": 9.555
+    },
+    {
+     "text": "It",
+     "start": 10.043,
+     "end": 10.182
+    },
+    {
+     "text": "escalates",
+     "start": 10.24,
+     "end": 10.762
+    },
+    {
+     "text": "the",
+     "start": 10.809,
+     "end": 10.879
+    },
+    {
+     "text": "possible",
+     "start": 10.913,
+     "end": 11.354
+    },
+    {
+     "text": "duplicate",
+     "start": 11.389,
+     "end": 11.958
+    },
+    {
+     "text": "and",
+     "start": 12.005,
+     "end": 12.132
+    },
+    {
+     "text": "the",
+     "start": 12.167,
+     "end": 12.237
+    },
+    {
+     "text": "bank",
+     "start": 12.272,
+     "end": 12.457
+    },
+    {
+     "text": "change.",
+     "start": 12.527,
+     "end": 13.108
+    },
+    {
+     "text": "It",
+     "start": 13.595,
+     "end": 13.769
+    },
+    {
+     "text": "drafts",
+     "start": 13.816,
+     "end": 14.164
+    },
+    {
+     "text": "replies",
+     "start": 14.222,
+     "end": 14.64
+    },
+    {
+     "text": "for",
+     "start": 14.698,
+     "end": 14.814
+    },
+    {
+     "text": "a",
+     "start": 14.849,
+     "end": 14.872
+    },
+    {
+     "text": "person",
+     "start": 14.93,
+     "end": 15.221
+    },
+    {
+     "text": "to",
+     "start": 15.267,
+     "end": 15.325
+    },
+    {
+     "text": "send,",
+     "start": 15.418,
+     "end": 15.929
+    },
+    {
+     "text": "and",
+     "start": 16.126,
+     "end": 16.3
+    },
+    {
+     "text": "certifies",
+     "start": 16.393,
+     "end": 17.032
+    },
+    {
+     "text": "the",
+     "start": 17.078,
+     "end": 17.148
+    },
+    {
+     "text": "paid",
+     "start": 17.194,
+     "end": 17.415
+    },
+    {
+     "text": "one.",
+     "start": 17.496,
+     "end": 17.752
+    },
+    {
+     "text": "One",
+     "start": 18.332,
+     "end": 18.553
+    },
+    {
+     "text": "replacement",
+     "start": 18.599,
+     "end": 19.133
+    },
+    {
+     "text": "had",
+     "start": 19.18,
+     "end": 19.307
+    },
+    {
+     "text": "no",
+     "start": 19.389,
+     "end": 19.516
+    },
+    {
+     "text": "money",
+     "start": 19.586,
+     "end": 19.772
+    },
+    {
+     "text": "behind",
+     "start": 19.818,
+     "end": 20.132
+    },
+    {
+     "text": "it,",
+     "start": 20.19,
+     "end": 20.399
+    },
+    {
+     "text": "so",
+     "start": 20.596,
+     "end": 20.735
+    },
+    {
+     "text": "the",
+     "start": 20.793,
+     "end": 20.863
+    },
+    {
+     "text": "code",
+     "start": 20.921,
+     "end": 21.188
+    },
+    {
+     "text": "computed",
+     "start": 21.235,
+     "end": 21.699
+    },
+    {
+     "text": "the",
+     "start": 21.734,
+     "end": 21.803
+    },
+    {
+     "text": "shortfall,",
+     "start": 21.85,
+     "end": 22.593
+    },
+    {
+     "text": "and",
+     "start": 22.906,
+     "end": 23.115
+    },
+    {
+     "text": "Claude",
+     "start": 23.185,
+     "end": 23.475
+    },
+    {
+     "text": "converted",
+     "start": 23.51,
+     "end": 23.963
+    },
+    {
+     "text": "exactly",
+     "start": 24.033,
+     "end": 24.555
+    },
+    {
+     "text": "that",
+     "start": 24.613,
+     "end": 24.776
+    },
+    {
+     "text": "amount,",
+     "start": 24.81,
+     "end": 25.205
+    },
+    {
+     "text": "then",
+     "start": 25.368,
+     "end": 25.542
+    },
+    {
+     "text": "paid.",
+     "start": 25.611,
+     "end": 26.842
+    }
+   ]
+  },
+  "break": {
+   "file": "audio/voice-break.mp3",
+   "duration": 14.721451,
+   "words": [
+    {
+     "text": "Now",
+     "start": 0,
+     "end": 0.186
+    },
+    {
+     "text": "the",
+     "start": 0.244,
+     "end": 0.313
+    },
+    {
+     "text": "same",
+     "start": 0.36,
+     "end": 0.557
+    },
+    {
+     "text": "toolbox,",
+     "start": 0.592,
+     "end": 1.138
+    },
+    {
+     "text": "the",
+     "start": 1.173,
+     "end": 1.254
+    },
+    {
+     "text": "same",
+     "start": 1.3,
+     "end": 1.509
+    },
+    {
+     "text": "model,",
+     "start": 1.544,
+     "end": 2.02
+    },
+    {
+     "text": "told",
+     "start": 2.183,
+     "end": 2.403
+    },
+    {
+     "text": "to",
+     "start": 2.438,
+     "end": 2.485
+    },
+    {
+     "text": "get",
+     "start": 2.519,
+     "end": 2.635
+    },
+    {
+     "text": "a",
+     "start": 2.67,
+     "end": 2.694
+    },
+    {
+     "text": "supplier",
+     "start": 2.74,
+     "end": 3.123
+    },
+    {
+     "text": "paid",
+     "start": 3.181,
+     "end": 3.355
+    },
+    {
+     "text": "twice,",
+     "start": 3.39,
+     "end": 3.901
+    },
+    {
+     "text": "forge",
+     "start": 4.017,
+     "end": 4.319
+    },
+    {
+     "text": "a",
+     "start": 4.342,
+     "end": 4.365
+    },
+    {
+     "text": "message,",
+     "start": 4.423,
+     "end": 4.795
+    },
+    {
+     "text": "and",
+     "start": 4.818,
+     "end": 4.899
+    },
+    {
+     "text": "certify",
+     "start": 4.957,
+     "end": 5.352
+    },
+    {
+     "text": "a",
+     "start": 5.41,
+     "end": 5.445
+    },
+    {
+     "text": "payment",
+     "start": 5.492,
+     "end": 5.805
+    },
+    {
+     "text": "still",
+     "start": 5.851,
+     "end": 6.072
+    },
+    {
+     "text": "in",
+     "start": 6.118,
+     "end": 6.177
+    },
+    {
+     "text": "flight.",
+     "start": 6.246,
+     "end": 6.745
+    },
+    {
+     "text": "Every",
+     "start": 7.326,
+     "end": 7.605
+    },
+    {
+     "text": "move",
+     "start": 7.663,
+     "end": 7.86
+    },
+    {
+     "text": "is",
+     "start": 7.895,
+     "end": 7.964
+    },
+    {
+     "text": "refused.",
+     "start": 8.034,
+     "end": 8.673
+    },
+    {
+     "text": "By",
+     "start": 9.102,
+     "end": 9.276
+    },
+    {
+     "text": "code,",
+     "start": 9.369,
+     "end": 9.892
+    },
+    {
+     "text": "not",
+     "start": 10.008,
+     "end": 10.194
+    },
+    {
+     "text": "by",
+     "start": 10.24,
+     "end": 10.333
+    },
+    {
+     "text": "the",
+     "start": 10.379,
+     "end": 10.449
+    },
+    {
+     "text": "model",
+     "start": 10.484,
+     "end": 10.704
+    },
+    {
+     "text": "being",
+     "start": 10.751,
+     "end": 10.913
+    },
+    {
+     "text": "polite.",
+     "start": 10.971,
+     "end": 11.528
+    },
+    {
+     "text": "The",
+     "start": 11.958,
+     "end": 12.086
+    },
+    {
+     "text": "model",
+     "start": 12.132,
+     "end": 12.387
+    },
+    {
+     "text": "cannot",
+     "start": 12.457,
+     "end": 12.829
+    },
+    {
+     "text": "argue",
+     "start": 12.898,
+     "end": 13.316
+    },
+    {
+     "text": "with",
+     "start": 13.339,
+     "end": 13.479
+    },
+    {
+     "text": "a",
+     "start": 13.514,
+     "end": 13.548
+    },
+    {
+     "text": "database.",
+     "start": 13.595,
+     "end": 14.721
+    }
+   ]
+  },
+  "proof": {
+   "file": "audio/voice-proof.mp3",
+   "duration": 18.390204,
+   "words": [
+    {
+     "text": "Fifty",
+     "start": 0,
+     "end": 0.441
+    },
+    {
+     "text": "adversarial",
+     "start": 0.522,
+     "end": 1.196
+    },
+    {
+     "text": "attacks,",
+     "start": 1.254,
+     "end": 1.707
+    },
+    {
+     "text": "all",
+     "start": 1.73,
+     "end": 1.95
+    },
+    {
+     "text": "held.",
+     "start": 2.02,
+     "end": 2.461
+    },
+    {
+     "text": "Five",
+     "start": 2.891,
+     "end": 3.17
+    },
+    {
+     "text": "hundred",
+     "start": 3.204,
+     "end": 3.448
+    },
+    {
+     "text": "twenty-seven",
+     "start": 3.495,
+     "end": 4.075
+    },
+    {
+     "text": "tests.",
+     "start": 4.133,
+     "end": 4.807
+    },
+    {
+     "text": "Ninety-four",
+     "start": 5.294,
+     "end": 5.793
+    },
+    {
+     "text": "guards,",
+     "start": 5.851,
+     "end": 6.432
+    },
+    {
+     "text": "each",
+     "start": 6.629,
+     "end": 6.838
+    },
+    {
+     "text": "removed",
+     "start": 6.896,
+     "end": 7.279
+    },
+    {
+     "text": "one",
+     "start": 7.361,
+     "end": 7.535
+    },
+    {
+     "text": "at",
+     "start": 7.57,
+     "end": 7.628
+    },
+    {
+     "text": "a",
+     "start": 7.686,
+     "end": 7.709
+    },
+    {
+     "text": "time",
+     "start": 7.767,
+     "end": 8.255
+    },
+    {
+     "text": "to",
+     "start": 8.452,
+     "end": 8.557
+    },
+    {
+     "text": "prove",
+     "start": 8.615,
+     "end": 8.847
+    },
+    {
+     "text": "something",
+     "start": 8.882,
+     "end": 9.149
+    },
+    {
+     "text": "breaks.",
+     "start": 9.207,
+     "end": 9.752
+    },
+    {
+     "text": "And",
+     "start": 10.426,
+     "end": 10.588
+    },
+    {
+     "text": "on",
+     "start": 10.646,
+     "end": 10.716
+    },
+    {
+     "text": "the",
+     "start": 10.762,
+     "end": 10.832
+    },
+    {
+     "text": "real",
+     "start": 10.89,
+     "end": 11.099
+    },
+    {
+     "text": "sandbox,",
+     "start": 11.169,
+     "end": 11.9
+    },
+    {
+     "text": "we",
+     "start": 12.098,
+     "end": 12.225
+    },
+    {
+     "text": "kill",
+     "start": 12.283,
+     "end": 12.458
+    },
+    {
+     "text": "the",
+     "start": 12.492,
+     "end": 12.562
+    },
+    {
+     "text": "process",
+     "start": 12.597,
+     "end": 13.05
+    },
+    {
+     "text": "with",
+     "start": 13.085,
+     "end": 13.224
+    },
+    {
+     "text": "signal",
+     "start": 13.259,
+     "end": 13.561
+    },
+    {
+     "text": "nine",
+     "start": 13.619,
+     "end": 13.886
+    },
+    {
+     "text": "in",
+     "start": 13.909,
+     "end": 13.967
+    },
+    {
+     "text": "the",
+     "start": 13.99,
+     "end": 14.06
+    },
+    {
+     "text": "middle",
+     "start": 14.095,
+     "end": 14.327
+    },
+    {
+     "text": "of",
+     "start": 14.35,
+     "end": 14.408
+    },
+    {
+     "text": "a",
+     "start": 14.455,
+     "end": 14.49
+    },
+    {
+     "text": "payment,",
+     "start": 14.536,
+     "end": 14.942
+    },
+    {
+     "text": "restart",
+     "start": 15.024,
+     "end": 15.453
+    },
+    {
+     "text": "it,",
+     "start": 15.488,
+     "end": 15.662
+    },
+    {
+     "text": "and",
+     "start": 15.72,
+     "end": 15.883
+    },
+    {
+     "text": "Airwallex",
+     "start": 15.941,
+     "end": 16.429
+    },
+    {
+     "text": "holds",
+     "start": 16.463,
+     "end": 16.707
+    },
+    {
+     "text": "exactly",
+     "start": 16.765,
+     "end": 17.241
+    },
+    {
+     "text": "one",
+     "start": 17.322,
+     "end": 17.508
+    },
+    {
+     "text": "transfer.",
+     "start": 17.543,
+     "end": 18.391
+    }
+   ]
+  },
+  "outro": {
+   "file": "audio/voice-outro.mp3",
+   "duration": 20.851519,
+   "words": [
+    {
+     "text": "It",
+     "start": 0,
+     "end": 0.174
+    },
+    {
+     "text": "speaks",
+     "start": 0.221,
+     "end": 0.522
+    },
+    {
+     "text": "MCP,",
+     "start": 0.592,
+     "end": 1.358
+    },
+    {
+     "text": "with",
+     "start": 1.498,
+     "end": 1.672
+    },
+    {
+     "text": "no",
+     "start": 1.73,
+     "end": 1.846
+    },
+    {
+     "text": "SDK.",
+     "start": 1.916,
+     "end": 2.577
+    },
+    {
+     "text": "Claude",
+     "start": 2.891,
+     "end": 3.228
+    },
+    {
+     "text": "Code,",
+     "start": 3.274,
+     "end": 3.75
+    },
+    {
+     "text": "Codex,",
+     "start": 3.913,
+     "end": 4.54
+    },
+    {
+     "text": "Cursor,",
+     "start": 4.656,
+     "end": 5.283
+    },
+    {
+     "text": "Gemini,",
+     "start": 5.422,
+     "end": 6.072
+    },
+    {
+     "text": "Copilot",
+     "start": 6.142,
+     "end": 6.745
+    },
+    {
+     "text": "and",
+     "start": 6.803,
+     "end": 6.931
+    },
+    {
+     "text": "Hermes",
+     "start": 6.989,
+     "end": 7.338
+    },
+    {
+     "text": "Agent",
+     "start": 7.407,
+     "end": 7.767
+    },
+    {
+     "text": "all",
+     "start": 8.081,
+     "end": 8.313
+    },
+    {
+     "text": "get",
+     "start": 8.371,
+     "end": 8.487
+    },
+    {
+     "text": "the",
+     "start": 8.522,
+     "end": 8.591
+    },
+    {
+     "text": "same",
+     "start": 8.638,
+     "end": 8.858
+    },
+    {
+     "text": "ten",
+     "start": 8.893,
+     "end": 9.079
+    },
+    {
+     "text": "tools,",
+     "start": 9.137,
+     "end": 9.659
+    },
+    {
+     "text": "and",
+     "start": 9.857,
+     "end": 10.019
+    },
+    {
+     "text": "the",
+     "start": 10.077,
+     "end": 10.147
+    },
+    {
+     "text": "same",
+     "start": 10.194,
+     "end": 10.403
+    },
+    {
+     "text": "refusals.",
+     "start": 10.437,
+     "end": 11.18
+    },
+    {
+     "text": "It",
+     "start": 11.668,
+     "end": 11.784
+    },
+    {
+     "text": "is",
+     "start": 11.831,
+     "end": 11.9
+    },
+    {
+     "text": "sandbox",
+     "start": 11.935,
+     "end": 12.434
+    },
+    {
+     "text": "only,",
+     "start": 12.516,
+     "end": 12.899
+    },
+    {
+     "text": "one",
+     "start": 13.015,
+     "end": 13.224
+    },
+    {
+     "text": "operator,",
+     "start": 13.27,
+     "end": 13.851
+    },
+    {
+     "text": "tamper-evident,",
+     "start": 14.164,
+     "end": 15.105
+    },
+    {
+     "text": "not",
+     "start": 15.221,
+     "end": 15.418
+    },
+    {
+     "text": "tamper-proof,",
+     "start": 15.464,
+     "end": 16.277
+    },
+    {
+     "text": "and",
+     "start": 16.544,
+     "end": 16.776
+    },
+    {
+     "text": "the",
+     "start": 16.834,
+     "end": 16.904
+    },
+    {
+     "text": "limits",
+     "start": 16.962,
+     "end": 17.229
+    },
+    {
+     "text": "are",
+     "start": 17.252,
+     "end": 17.345
+    },
+    {
+     "text": "written",
+     "start": 17.369,
+     "end": 17.589
+    },
+    {
+     "text": "down.",
+     "start": 17.636,
+     "end": 17.995
+    },
+    {
+     "text": "Tessera.",
+     "start": 18.158,
+     "end": 18.727
+    },
+    {
+     "text": "Money",
+     "start": 18.855,
+     "end": 19.075
+    },
+    {
+     "text": "that",
+     "start": 19.11,
+     "end": 19.203
+    },
+    {
+     "text": "moves",
+     "start": 19.249,
+     "end": 19.447
+    },
+    {
+     "text": "once,",
+     "start": 19.516,
+     "end": 19.807
+    },
+    {
+     "text": "and",
+     "start": 19.83,
+     "end": 19.958
+    },
+    {
+     "text": "can",
+     "start": 20.016,
+     "end": 20.12
+    },
+    {
+     "text": "prove",
+     "start": 20.178,
+     "end": 20.41
+    },
+    {
+     "text": "it.",
+     "start": 20.445,
+     "end": 20.852
+    }
+   ]
+  }
+ },
+ "sfx": {
+  "whoosh": {
+   "file": "audio/sfx-whoosh.mp3",
+   "duration": 1.48
+  },
+  "chime": {
+   "file": "audio/sfx-chime.mp3",
+   "duration": 1.48
+  },
+  "refuse": {
+   "file": "audio/sfx-refuse.mp3",
+   "duration": 1.48
+  },
+  "tick": {
+   "file": "audio/sfx-tick.mp3",
+   "duration": 1.48
+  },
+  "impact": {
+   "file": "audio/sfx-impact.mp3",
+   "duration": 2.48
+  },
+  "keys": {
+   "file": "audio/sfx-keys.mp3",
+   "duration": 1.48
+  },
+  "alert": {
+   "file": "audio/sfx-alert.mp3",
+   "duration": 1.48
+  }
+ },
+ "music": {
+  "file": "audio/music.mp3",
+  "duration": 180.035875
+ }
+}
