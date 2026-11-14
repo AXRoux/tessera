@@ -665,6 +665,51 @@ describe("what the board is told about agents and people", () => {
   });
 });
 
+describe("each invoice's next move, and runs over the invoices the board names", () => {
+  const items = async (a: ApiWorld) => (await a.call("GET", "/api/obligations")).parse(IncidentListSchema).items;
+
+  it("tells the board what Tessera would do next on every invoice, and how many supplier messages are unread", async () => {
+    const a = apiWorld();
+    const flying = await openIncident(a);
+    const failed = await openIncident(a);
+    await a.call("POST", `/api/obligations/${failed}/simulate`, { status: "FAILED", failureType: "CHANNEL_TIMEOUT" });
+    await a.call("POST", `/api/obligations/${flying}/inbox`, { from: "ar@supplier.example", email: "Where is our money?" });
+
+    const board = await items(a);
+    const of = (id: string) => board.find((i) => i.id === id)!;
+    expect(of(flying).next).toMatchObject({ action: "WAIT", recheckAt: expect.any(String) });
+    expect(of(flying).unread).toBe(1);
+    expect(of(failed).next).toMatchObject({ action: "REPLACE", allowed: expect.arrayContaining(["REPLACE"]) });
+    expect(of(failed).unread).toBe(0);
+  });
+
+  it("holds a run over chosen invoices to exactly those: a tool call on any other is refused", async () => {
+    let other = "";
+    let turn = 0;
+    const model: AgentModel = {
+      async converse() {
+        turn += 1;
+        if (turn === 1) return { content: [{ type: "tool_use", id: "t1", name: "assess_incident", input: { incidentId: other } }], stopReason: "tool_use" };
+        return { content: [{ type: "text", text: "done" }], stopReason: "end_turn" };
+      },
+    };
+    const a = apiWorld({ deps: { agent: { model, actor: "agent:test", kind: "scripted", name: "scripted agent" } } });
+    const run = a;
+    const first = await openIncident(a);
+    const second = await openIncident(a);
+    other = await openIncident(a);
+    const response = await run.handle(
+      new Request("http://api.test/api/agent/run", { method: "POST", headers: { "x-tessera-token": TOKEN }, body: JSON.stringify({ incidentIds: [first, second] }) }),
+    );
+    const events = (await response.text()).split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)) as Record<string, unknown>);
+    const references = [first, second].map((id) => a.ledger.requireObligation(id).reference);
+
+    expect(events[0]).toMatchObject({ type: "start", scope: references.join(", ") });
+    expect(events.find((e) => e.type === "result")).toMatchObject({ tool: "assess_incident", ok: false });
+    expect((await run.call("POST", "/api/agent/run", { incidentIds: ["missing"] })).status).toBe(404);
+  });
+});
+
 describe("starting the offline demo over", () => {
   const references = async (call: (method: string, path: string) => Promise<Response>) =>
     (await (await call("GET", "/api/obligations")).json() as { items: Array<{ reference: string }> }).items.map((i) => i.reference);

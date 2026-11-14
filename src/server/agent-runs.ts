@@ -66,3 +66,9 @@ export function runLimits(
 export function scopedTask(incident: { id: string; reference: string }): string {
   return `Work incident ${incident.reference} (incidentId ${incident.id}) only. Do not touch any other incident. Report in one or two sentences.`;
 }
+
+/** The brief for a run over a chosen set of incidents (the board's "work these"), naming each id as the tools take it. */
+export function scopedTasks(incidents: { id: string; reference: string }[]): string {
+  const list = incidents.map((i) => `${i.reference} (incidentId ${i.id})`).join("; ");
+  return `Work these incidents only: ${list}. Do not touch any other incident. Report one sentence per incident.`;
+}

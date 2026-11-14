@@ -16,7 +16,7 @@ import { ControlPanel } from "./control-panel";
 import { IncidentsPanel } from "./incidents-panel";
 import { Queue } from "./queue";
 import { RunPanel } from "./run-panel";
-import { Sequence } from "./sequence";
+import { NextMoves } from "./next-moves";
 import { WalletPanel } from "./wallet-panel";
 
 /** A message that should be seen but not shove the layout: it floats, then leaves on its own. */
@@ -44,7 +44,7 @@ function Toast({ tone, children, onClose }: { tone: "ok" | "bad"; children: Reac
 /**
  * The control room, composed to fit one 16:9 screen and read in order, left to right:
  * 01 the money Tessera guards, 02 what it holds and how the board looks, 03 the agent working it, 04 what is left for you.
- * The loop across the top says which move comes next.
+ * Across the top: the next move on each invoice that needs one, most urgent first.
  */
 export function ControlRoom({
   health,
@@ -117,9 +117,9 @@ export function ControlRoom({
 
   return (
     <Workspace>
-      <div className="grid shrink-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.85fr)] lg:items-stretch">
+      <div className="grid shrink-0 gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1.6fr)] lg:items-stretch 2xl:grid-cols-[minmax(0,1.12fr)_minmax(0,1.75fr)]">
         <Masthead items={board.items} metrics={board.metrics} running={board.running} cardsToSign={cardsToSign} />
-        <Sequence items={board.items} metrics={board.metrics} health={health} onCompose={openComposer} onRun={board.run} running={board.running} extras={extras} />
+        <NextMoves items={board.items} health={health} onCompose={openComposer} onChanged={() => void board.refresh()} extras={extras} />
       </div>
 
       <div className="grid min-h-0 gap-4 xl:flex-1 xl:grid-cols-[minmax(270px,300px)_minmax(0,1fr)_minmax(320px,360px)] 2xl:grid-cols-[330px_minmax(0,1fr)_390px]">

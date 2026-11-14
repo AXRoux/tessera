@@ -74,7 +74,8 @@ interface AgentRun {
   /** The incident the running (or last) run was started for; null for the whole board. */
   target: string | null;
   running: boolean;
-  start: (incidentId: string | null, mode?: Mode) => void;
+  /** One invoice, a chosen set (the board's plan), or null for every open one. */
+  start: (incidentId: string | string[] | null, mode?: Mode) => void;
   stop: () => void;
   /** Stops a running run and empties the timeline. Used when the demo is reset underneath it. */
   clear: () => void;
@@ -99,12 +100,14 @@ export function AgentRunProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const start = useCallback(
-    (incidentId: string | null, mode: Mode = "commander") => {
+    (incidentId: string | string[] | null, mode: Mode = "commander") => {
       if (controller.current) return;
       const abort = new AbortController();
       controller.current = abort;
-      setTarget(incidentId);
-      setState({ ...IDLE, status: "running", mode, scope: incidentId });
+      // A run over one invoice is that invoice's; a run over a set belongs to the board.
+      const one = Array.isArray(incidentId) ? (incidentId.length === 1 ? incidentId[0]! : null) : incidentId;
+      setTarget(one);
+      setState({ ...IDLE, status: "running", mode, scope: one });
       void (async () => {
         try {
           await streamAgentRun(

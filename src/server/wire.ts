@@ -206,6 +206,22 @@ export const IncidentSummarySchema = z.object({
       woke: z.enum(["started", "capped", "skipped"]).nullable(),
     })
     .nullable(),
+  /**
+   * What Tessera would do next on this invoice, decided on the ledger as it stands (no call to Airwallex): the move it
+   * recommends, every move that is safe, and when a waiting window ends. Null when no decision could be made.
+   */
+  next: z
+    .object({
+      action: Action,
+      allowed: z.array(Action),
+      recheckAt: z.string().nullable(),
+      /** A replacement is within the automatic limit: the agent (or a person, without a signature) may send it. */
+      autoReplace: z.boolean().optional(),
+    })
+    .nullable()
+    .optional(),
+  /** Supplier messages in the inbox that nothing has read yet. */
+  unread: z.number().int().optional(),
 });
 export type IncidentSummary = z.infer<typeof IncidentSummarySchema>;
 

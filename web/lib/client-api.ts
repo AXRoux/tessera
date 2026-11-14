@@ -43,7 +43,8 @@ export async function api<S extends z.ZodType>(
  * AbortSignal to walk away mid-run: the server stops the agent at its next step.
  */
 export async function streamAgentRun(
-  incidentId: string | null,
+  /** One invoice, a chosen set of invoices, or (null) every open one. */
+  incidentId: string | string[] | null,
   onEvent: (event: AgentStreamEvent) => void,
   signal?: AbortSignal,
   mode: "commander" | "adversary" = "commander",
@@ -51,7 +52,7 @@ export async function streamAgentRun(
   const response = await fetch("/api/agent/run", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...(incidentId ? { incidentId } : {}), mode }),
+    body: JSON.stringify({ ...(Array.isArray(incidentId) ? { incidentIds: incidentId } : incidentId ? { incidentId } : {}), mode }),
     cache: "no-store",
     signal,
   });

@@ -32,12 +32,12 @@ import {
 } from "../errors";
 import { seedAcme } from "../demo/scenario";
 import type { PayoutGateway } from "../gateway/gateway";
-import type { Ledger, Obligation } from "../ledger/ledger";
+import type { Attempt, Ledger, LedgerEvent, Obligation } from "../ledger/ledger";
 import { toMinor } from "../money";
 import { EmlNotPlainText, parseEml } from "./eml";
 import { computeMetrics } from "./metrics";
 import { attentionOf, lastAgentAction, lastReaction } from "./attention";
-import { AgentGate, runLimits, scopedTask } from "./agent-runs";
+import { AgentGate, runLimits, scopedTask, scopedTasks } from "./agent-runs";
 import type { Reactor } from "./reactions";
 import type { AgentStreamEvent, CardView, Cards, FundingQuote, FundingResultWire, Health, IncidentSummary, IncidentView, Payee, SeedResult, Wallets } from "./wire";
 import type { CardDesk } from "../cards/desk";
@@ -172,7 +172,12 @@ const CardCheckoutEventSchema = z.looseObject({
   reason: z.string().nullable(),
   tap: z.looseObject({ verified: z.boolean(), kid: z.string().optional() }),
 });
-const AgentRunBody = z.object({ incidentId: z.string().min(1).max(64).optional(), mode: z.enum(["commander", "adversary"]).default("commander") });
+const AgentRunBody = z.object({
+  incidentId: z.string().min(1).max(64).optional(),
+  /** A run over exactly these invoices (the board's "work these"), and nothing else. */
+  incidentIds: z.array(z.string().min(1).max(64)).min(1).max(50).optional(),
+  mode: z.enum(["commander", "adversary"]).default("commander"),
+});
 const ReadBody = z
   .object({
     messageId: z.string().min(1).max(64).optional(),
@@ -254,10 +259,42 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
     return given.length === wanted.length && timingSafeEqual(given, wanted);
   };
 
-  const summary = (o: Obligation): IncidentSummary => {
+  // The board asks every few seconds; one balance read serves every invoice on it, and is reused for a few seconds.
+  let walletsRead: { at: number; value: Promise<Record<string, number> | null> } | null = null;
+  const boardWallets = (): Promise<Record<string, number> | null> => {
+    if (!walletsRead || Date.now() - walletsRead.at > 5_000) walletsRead = { at: Date.now(), value: commander.readWallets() };
+    return walletsRead.value;
+  };
+
+  // A replacement that needs funding is only decided right with its rates; they are read for those few, and reused a while.
+  const ratesRead = new Map<string, { at: number; value: Promise<Record<string, number | null>> }>();
+  const boardRates = (currency: string, buyMinor: number): Promise<Record<string, number | null>> => {
+    const key = `${currency}:${buyMinor}`;
+    const hit = ratesRead.get(key);
+    if (hit && Date.now() - hit.at < 30_000) return hit.value;
+    const value = commander.ratesFor(currency, buyMinor).catch(() => ({}));
+    ratesRead.set(key, { at: Date.now(), value });
+    return value;
+  };
+
+  /** The next move on an invoice, decided on the ledger as it stands: the same decision the incident page shows, without a sync. */
+  const nextFor = async (o: Obligation, attempts: Attempt[], events: LedgerEvent[], wallets: Record<string, number> | null): Promise<IncidentSummary["next"]> => {
+    try {
+      const evidence = effectiveEvidence(events, o.amountMinor)?.evidence ?? null;
+      const snapshot = { obligation: o, attempts, events };
+      let d = commander.decideOn(snapshot, evidence, wallets);
+      if (d.funding) d = commander.decideOn(snapshot, evidence, wallets, await boardRates(d.funding.currency, d.funding.buyMinor));
+      return { action: d.recommended, allowed: d.allowed, recheckAt: d.recheckAt, autoReplace: d.replacement?.autoApprovable ?? false };
+    } catch {
+      return null;
+    }
+  };
+
+  const summary = async (o: Obligation, wallets: Record<string, number> | null = null): Promise<IncidentSummary> => {
     const attempts = ledger.attemptsFor(o.id);
     const latest = attempts.at(-1);
     const events = ledger.events(o.id);
+    const read = new Set(events.flatMap((e) => (e.type === "EVIDENCE_RECORDED" ? [MessageRefSchema.safeParse(e.payload).data?.messageId] : [])));
     return {
       id: o.id, reference: o.reference, amountMinor: o.amountMinor, currency: o.currency, method: o.method,
       status: o.status, attemptCount: attempts.length, updatedAt: o.updatedAt,
@@ -265,6 +302,8 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       lastAgentAction: lastAgentAction(events),
       attention: attentionOf(o, latest, events),
       lastReaction: lastReaction(events),
+      next: await nextFor(o, attempts, events, wallets),
+      unread: ledger.inboxMessages(o.id).filter((m) => !read.has(m.id)).length,
     };
   };
 
@@ -345,11 +384,19 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
     let scope: Set<string> | null = null;
     let scopeLabel: string | null = null;
     let scoped: Obligation | null = null;
+    let chosen: Obligation[] = [];
     if (input.incidentId) {
       scoped = ledger.getObligation(input.incidentId);
       if (!scoped) return json({ error: "NotFound", message: "no such obligation" }, 404);
       scope = new Set([scoped.id]);
       scopeLabel = scoped.reference;
+    } else if (input.incidentIds) {
+      // The board names the invoices it wants worked; the run is held to exactly those, and the tools refuse the rest.
+      chosen = [...new Set(input.incidentIds)].map((id) => ledger.getObligation(id)).filter((o): o is Obligation => o !== null);
+      if (chosen.length === 0) return json({ error: "NotFound", message: "none of those invoices exist" }, 404);
+      if (chosen.length === 1) scoped = chosen[0]!;
+      scope = new Set(chosen.map((o) => o.id));
+      scopeLabel = chosen.map((o) => o.reference).join(", ");
     }
     const { maxSteps, maxCalls } = runLimits(ledger, scope, { adversary, ...(agent.maxSteps !== undefined ? { fixedSteps: agent.maxSteps } : {}) });
 
@@ -385,7 +432,9 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
             ? adversaryTask(scopeLabel)
             : scoped
               ? scopedTask(scoped)
-              : "Work every open incident and report.";
+              : chosen.length > 0
+                ? scopedTasks(chosen)
+                : "Work every open incident and report.";
           const run = await runAgent({
             model: agent.model, toolbox, system: adversary ? ADVERSARY_SYSTEM : COMMANDER_SYSTEM, task,
             maxSteps, maxCalls, signal: abort.signal,
@@ -586,7 +635,8 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         return json(payee);
       }
       if (request.method === "GET" && path === "/api/obligations") {
-        return json({ items: ledger.listObligations().map(summary).toReversed() });
+        const wallets = await boardWallets();
+        return json({ items: (await Promise.all(ledger.listObligations().map((o) => summary(o, wallets)))).toReversed() });
       }
       if (request.method === "POST" && path === "/api/obligations") {
         const input = await body(request, CreateBody);

@@ -50,13 +50,14 @@ export function ControlPanel({
       <header className="flex shrink-0 items-start justify-between gap-4">
         <div className="min-w-0">
           <Kicker>02 · Under Tessera&rsquo;s watch</Kicker>
-          <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          {/* One line on short screens: a second line here would push the gauges into the footer. */}
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 short:flex-nowrap">
             {(board.totals.length === 0 ? [{ currency: "USD", minor: 0 }] : board.totals).map((t) => (
-              <span key={t.currency} className="readout text-[clamp(30px,2.6vw,42px)] font-medium leading-none tracking-[-0.04em] short:text-[clamp(26px,2.2vw,32px)]">
+              <span key={t.currency} className="readout shrink-0 text-[clamp(30px,2.6vw,42px)] font-medium leading-none tracking-[-0.04em] short:text-[clamp(26px,2.2vw,32px)]">
                 {money(t.minor, t.currency)}
               </span>
             ))}
-            <span className="readout text-[12.5px] text-accent">
+            <span className="readout min-w-0 truncate text-[12.5px] text-accent">
               {total === 1 ? "1 invoice" : `${total} invoices`}
               {board.totals.length > 1 ? ` · ${board.totals.length} currencies` : ""}
             </span>

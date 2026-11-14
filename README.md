@@ -90,13 +90,16 @@ bun run demo           # API on :4010, site on http://127.0.0.1:3100, and it ope
 ```
 
 The site opens on the front page; **Start here** (hero, header, or the pill that follows you down) opens the **control room**
-at `/dashboard`: one screen for the whole loop. A five-step guide down the short side, the wallets and their reserve floors,
-one column per incident for what is at stake, a live ledger-activity chart, the agent's transcript, the **Needs you** queue and
-the full incident table, all of it read from the ledger on every poll.
+at `/dashboard`: one screen for every payout. Across the top, how the invoices stand (yours, in flight, to certify, certified)
+and **Next on your payouts**: one key per invoice that is waiting for a move, most urgent first, each with a sentence and a
+button that acts on that invoice only (decide on it, certify it, or let the agent make the move). Below, the wallets and their
+reserve floors, what is at stake per invoice, the agent, the **Waiting on you** queue and the invoice table, whose **Next**
+column says who makes each invoice's next move. All of it is read from the ledger on every poll.
 
-The guide is derived from the board, so it is right after a reload and it survives one: load seven incidents, watch the agent
-work them, try to break it, take over the one it handed you, get one certified. The **Needs you** queue lists everything waiting
-for a person, each row shows what the agent last did there, and after a run **What the agent did** gives one line per incident.
+The agent never works "the board" blindly. Before a run it lists the invoices it will work, each with its move, and the ones it
+leaves alone and why (yours to decide, with the bank, paid and holding); the run is held to exactly that list, and a tool call
+on any other invoice is refused. **Test the guardrails** runs on one invoice you pick. Each row of **Waiting on you** shows what
+the agent last did there.
 **Reset demo** clears it and starts over. The same board is embedded further down the front page for a quick look, with a link
 into the control room.
 

@@ -7,18 +7,35 @@ import type { IncidentSummary } from "../../../src/server/wire";
 import { actorLabel, agentVerdict } from "@/lib/agent-verdict";
 import { ago, money } from "@/lib/format";
 import { describeFailure, STATUS } from "@/lib/status";
+import { moveOf } from "@/lib/next-moves";
+import { AgentMark } from "../kit/agent-mark";
+import { Icon } from "../landing/icons";
 import { useShell } from "../shell";
 import { Btn } from "../kit/metal";
 import { Chip, STATUS_CHIP, Toggle, Tray, TrayHead } from "../kit/widgets";
 
-type Filter = "all" | "live" | "you" | "done";
+type Filter = "all" | "live" | "you" | "certify" | "done";
 
 const MATCH: Record<Filter, (item: IncidentSummary) => boolean> = {
   all: () => true,
   live: (item) => item.status === "PAYING" || item.status === "OPEN",
   you: (item) => item.attention !== null,
+  certify: (item) => item.status === "PAID",
   done: (item) => item.status === "CLOSED",
 };
+
+/** What happens next on the invoice, and who makes the move: yours in amber, the agent's in blue, the bank's quiet. */
+function Next({ item }: { item: IncidentSummary }) {
+  const move = moveOf(item);
+  const tone = move.who === "you" ? "text-warn font-medium" : move.who === "agent" ? "text-accent font-medium" : "text-fg/45";
+  const who = move.who === "you" ? "Yours" : move.who === "agent" ? "The agent's" : null;
+  return (
+    <span className={`flex min-w-0 items-center gap-1.5 text-[12px] ${tone}`} title={who ? `${who}: ${move.line}` : move.line}>
+      {move.who === "you" ? <Icon name="hand" className="size-3.5 shrink-0" /> : move.who === "agent" ? <AgentMark size={14} className="shrink-0 rounded-[4px]" /> : null}
+      <span className="truncate">{move.label}</span>
+    </span>
+  );
+}
 
 function searchable(item: IncidentSummary): string {
   return [item.reference, item.id, item.status, STATUS[item.status].label, STATUS_CHIP[item.status].label, item.method, item.currency, String(item.amountMinor / 100)].join(" ").toLowerCase();
@@ -50,22 +67,9 @@ function LastWord({ item }: { item: IncidentSummary }) {
   return <span className="block truncate text-[12.5px] text-fg/40">{item.latest ? `Airwallex: ${item.latest.awxStatus ?? "no word yet"}` : "Not yet sent"}</span>;
 }
 
-/** Attempts as the reference's dotted tail: one dot each, the newest coloured by where it stands. */
-function Attempts({ item }: { item: IncidentSummary }) {
-  const earlier = Math.max(0, item.attemptCount - 1);
-  const latest = item.latest?.state;
-  const tone = latest === "PAID" ? "bg-fg" : latest === "LIVE" ? "bg-accent" : latest === "DEAD" ? "bg-bad" : "bg-fg/30";
-  return (
-    <span className="inline-flex items-center gap-1" aria-label={`${item.attemptCount} attempt${item.attemptCount === 1 ? "" : "s"}`}>
-      {Array.from({ length: earlier }, (_, i) => (
-        <span key={i} className="size-[7px] rounded-full bg-fg/25" />
-      ))}
-      <span className={`size-[7px] rounded-full ${tone}`} />
-    </span>
-  );
-}
-
-const COLUMNS = "grid-cols-[minmax(124px,1fr)_minmax(78px,0.55fr)_minmax(132px,0.85fr)_minmax(0,2fr)_44px_minmax(60px,0.45fr)]";
+// "Last word" needs room; below 2xl it gives way, so the columns that remain are never cut.
+const COLUMNS =
+  "grid-cols-[minmax(104px,0.95fr)_minmax(70px,0.5fr)_minmax(112px,0.8fr)_minmax(104px,0.9fr)_minmax(48px,0.4fr)] 2xl:grid-cols-[minmax(104px,0.95fr)_minmax(70px,0.5fr)_minmax(112px,0.75fr)_minmax(104px,0.85fr)_minmax(0,1.6fr)_minmax(48px,0.4fr)]";
 
 /** Every invoice in Tessera's care, filtered by the toggle and the menubar search. Every row opens the incident. */
 export function IncidentsPanel({ items, onCompose }: { items: IncidentSummary[]; onCompose: () => void }) {
@@ -80,7 +84,7 @@ export function IncidentsPanel({ items, onCompose }: { items: IncidentSummary[];
     <Tray label="Every invoice" className="h-full p-3">
       <TrayHead
         className="px-2 pb-3 pt-1"
-        title="Every invoice"
+        title="Invoices"
         note={needle ? `Matching “${query.trim()}”` : "Most recently moved first. Open any row for its whole story."}
         right={
           <Toggle
@@ -91,6 +95,7 @@ export function IncidentsPanel({ items, onCompose }: { items: IncidentSummary[];
               { id: "all", label: "All", count: items.length },
               { id: "live", label: "In flight", count: count("live") },
               { id: "you", label: "Yours", count: count("you") },
+              { id: "certify", label: "To certify", count: count("certify") },
               { id: "done", label: "Certified", count: count("done") },
             ]}
           />
@@ -98,8 +103,8 @@ export function IncidentsPanel({ items, onCompose }: { items: IncidentSummary[];
       />
       <div role="table" aria-label="Invoices" className="tile flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px]!">
         <div role="row" className={`grid ${COLUMNS} shrink-0 items-center gap-4 border-b border-fg/[0.07] px-5 py-2.5`}>
-          {["Invoice", "Amount", "Status", "Last word", "Tries", "Moved"].map((head) => (
-            <span key={head} role="columnheader" className="kicker truncate">
+          {["Invoice", "Amount", "Status", "Next", "Last word", "Moved"].map((head) => (
+            <span key={head} role="columnheader" className={`kicker truncate ${head === "Last word" ? "hidden 2xl:block" : ""}`}>
               {head}
             </span>
           ))}
@@ -150,10 +155,10 @@ export function IncidentsPanel({ items, onCompose }: { items: IncidentSummary[];
                     </Chip>
                   </span>
                   <span role="cell" className="min-w-0">
-                    <LastWord item={item} />
+                    <Next item={item} />
                   </span>
-                  <span role="cell">
-                    <Attempts item={item} />
+                  <span role="cell" className="hidden min-w-0 2xl:block">
+                    <LastWord item={item} />
                   </span>
                   <span role="cell" suppressHydrationWarning className="readout truncate text-[11.5px] text-fg/45">
                     {ago(item.updatedAt)}

@@ -183,7 +183,7 @@ export class Commander {
     let facts = this.factsFrom(snapshot, evidence, wallets, {});
     let decision = decide(facts, this.policy);
     if (decision.funding !== null) {
-      facts = { ...facts, fxRates: await this.readRates(decision.funding.currency, decision.funding.buyMinor) };
+      facts = { ...facts, fxRates: await this.ratesFor(decision.funding.currency, decision.funding.buyMinor) };
       decision = decide(facts, this.policy);
     }
     return { obligationId, facts, decision, evidenceHash: this.hashOf(snapshot, evidence, decision) };
@@ -242,7 +242,8 @@ export class Commander {
   }
 
   /** Indicative units of each permitted source currency one unit of `currency` costs; null where no rate could be read. */
-  private async readRates(currency: string, buyMinor: number): Promise<Record<string, number | null>> {
+  /** Indicative rates from every funding source into `currency`, for a buy of `buyMinor`; an unreadable one is null. */
+  async ratesFor(currency: string, buyMinor: number): Promise<Record<string, number | null>> {
     const rates: Record<string, number | null> = {};
     for (const source of this.policy.fundingSources) {
       if (source === currency) continue;

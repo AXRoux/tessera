@@ -32,8 +32,8 @@ function Clock() {
 /** One number the room rests on, large enough to read from across a stage. */
 function Count({ value, label, dot, lit = false, pulse = false }: { value: number; label: string; dot: string; lit?: boolean; pulse?: boolean }) {
   return (
-    <div className="well flex min-w-0 flex-col justify-between gap-2 rounded-[20px]! px-3 py-3 short:py-2.5 2xl:px-3.5">
-      <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-fg/55 2xl:text-[12px]">
+    <div className="well flex min-w-0 flex-col justify-between gap-2 rounded-[20px]! px-2.5 py-3 short:py-2.5 2xl:px-3.5">
+      <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-fg/55 2xl:text-[12px]">
         <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${dot} ${pulse ? "beat" : ""}`} />
         <span className="truncate">{label}</span>
       </span>
@@ -43,18 +43,21 @@ function Count({ value, label, dot, lit = false, pulse = false }: { value: numbe
 }
 
 /**
- * The control room's masthead: the time, and the three numbers that say how the room stands. Nothing to read twice;
- * what is yours to decide turns amber the moment there is any.
+ * The control room's masthead: the time, and where every invoice stands, in the order money moves: in flight, paid and
+ * waiting to be certified, certified. Yours (waiting on a person) turns amber the moment there is any.
  */
 export function Masthead({ items, metrics, running, cardsToSign = 0 }: { items: IncidentSummary[]; metrics: Metrics | null; running: boolean; cardsToSign?: number }) {
   // Yours: incidents waiting on a person, and Visa cards waiting for a signature.
   const waiting = items.filter((item) => item.attention !== null).length + cardsToSign;
   const inFlight = items.filter((item) => item.status === "PAYING" || item.status === "OPEN").length;
+  // Paid but not yet certified: the money has landed, the books are not closed.
+  const toCertify = items.filter((item) => item.status === "PAID").length;
   return (
-    <Tray label="Control room" className="grid! grid-cols-3 gap-2 p-3 sm:grid-cols-[minmax(0,1.12fr)_repeat(3,minmax(0,1fr))] [&>:first-child]:col-span-3 sm:[&>:first-child]:col-span-1">
+    <Tray label="Control room" className="grid! grid-cols-4 gap-2 p-3 sm:grid-cols-[minmax(0,1.1fr)_repeat(4,minmax(0,1fr))] [&>:first-child]:col-span-4 sm:[&>:first-child]:col-span-1">
       <Clock />
       <Count value={waiting} label="Yours" dot="bg-warn" lit={waiting > 0} />
       <Count value={inFlight} label="In flight" dot="bg-accent" pulse={running} />
+      <Count value={toCertify} label="To certify" dot="bg-accent/50" />
       <Count value={metrics?.certified ?? 0} label="Certified" dot="bg-fg" />
     </Tray>
   );
