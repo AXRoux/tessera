@@ -27,5 +27,5 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "exclude": ["web", "node_modules", ".data"]
+  "exclude": ["web", "video", "node_modules", ".data"]
 }

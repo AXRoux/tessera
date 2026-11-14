@@ -45,6 +45,21 @@ jobs:
       - run: bun run build
       - run: bun run typecheck
 
+  video:
+    name: video · typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: video
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun audit
+      - run: bun run typecheck
+
   docker:
     name: docker · the offline demo image builds and serves
     runs-on: ubuntu-latest

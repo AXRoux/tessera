@@ -5,7 +5,8 @@
   "scripts": {
     "studio": "remotion studio",
     "audio": "bun run scripts/generate-audio.ts",
-    "render": "remotion render Tessera out/tessera.mp4"
+    "render": "remotion render Tessera out/tessera.mp4",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.542",
