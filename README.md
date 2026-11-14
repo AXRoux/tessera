@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/AXRoux/tessera/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AXRoux/tessera/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="attacks held 50/50" src="https://img.shields.io/badge/attacks_held-50%2F50-1f4dff">
-  <img alt="530 tests passing" src="https://img.shields.io/badge/tests-530_passing-0b0d12">
+  <img alt="620 tests passing" src="https://img.shields.io/badge/tests-620_passing-0b0d12">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-1f4dff">
   <img alt="Airwallex sandbox" src="https://img.shields.io/badge/Airwallex-sandbox-0b0d12">
   <img alt="Bun and TypeScript" src="https://img.shields.io/badge/Bun_%C2%B7_TypeScript-strict-1f4dff?logo=bun&logoColor=white">
@@ -63,7 +63,7 @@ bun run redteam        # no keys: 50 attacks on the invariants, with a scoreboar
 | **Plugs into anything** | A zero-dependency [MCP server](#use-it-from-any-mcp-client) exposes thirteen typed tools over stdio, so any MCP client can hold them: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or a loop of your own. Hermes Agent has worked a full sandbox run through it, protocol checked with the official MCP Inspector. The built-in agent runs on Claude or on any OpenAI-compatible model ([choose the model](#choose-the-model)). |
 | **Visa, on Airwallex** | Agents can buy, but only what a person signed for: each purchase gets its own **single-use Visa virtual card issued by Airwallex**, with the signed terms as the card's controls (cap, currency, merchant categories, end date). The agent pays through **Visa's Trusted Agent Protocol**: every checkout is signed with the workspace's agent key and verified by the merchant before anything is charged. [How it works](#visa-cards-and-the-trusted-agent-protocol). |
 | **In the console, one click** | **Let Claude work them all** (the button names whichever model you set) streams the agent live. **Try to break it** tells the same agent to pay twice and shows every refusal in black. |
-| **Proof, not claims** | 50 adversarial attacks, 530 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 94 guards removed one at a time from a private copy, every one caught. |
+| **Proof, not claims** | 50 adversarial attacks, 620 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 94 guards removed one at a time from a private copy, every one caught. |
 
 ### Why this is worth building
 
@@ -224,15 +224,15 @@ agent: request_virtual_card ──► code: card policy ──► person: signs 
 agent: pay_with_virtual_card ──► Tessera signs the checkout (TAP, agent-payer-auth) ──► merchant verifies the signature,
                                  and a payment container linked by nonce                 then charges the card ──► Airwallex
                                                                                          applies the card's controls
-sweep: the charge clears at Airwallex ──► Tessera proves it against the signed terms (CARD_SETTLED): the purchase's receipt
+sweep: the charge clears (CLEARING) ──► Tessera proves it against the signed terms (CARD_SETTLED): the purchase's receipt
 ```
 
 - **One card per purchase.** Single use, one currency, a cap that is both the per-charge and the lifetime limit, the merchant categories of its kind (software, cloud, advertising, travel, office), and a seven-day end date. These are the card's own controls at Airwallex (`POST /api/v1/issuing/cards/create`), so the Visa network refuses what the policy refused: a charge above the cap comes back `LIMIT_EXCEEDED`, at a casino `MERCHANT_CATEGORY_NOT_ALLOWED`, a second charge on a spent card `CARD_CLOSED`.
 - **Code first, then a person.** `src/cards/policy.ts` refuses before anyone sees the request: an agent may ask for at most $1,000 on one card (a person, $2,500), today's cards may not carry more than the daily limit, and a card may not take the wallet below its reserve floor. An agent can never sign a card; a person signs with a written note, and the policy is checked again at the signature.
 - **Trusted Agent Protocol, both sides.** `src/cards/tap.ts` implements TAP's agent recognition signature: RFC 9421 HTTP Message Signatures over `@authority` and `@path`, Ed25519, with `created`/`expires` at most eight minutes apart, a `nonce` the merchant remembers, and `tag="agent-payer-auth"`. The checkout body carries an agentic payment container signed with the same key and linked by the same nonce. The sandbox merchant (`src/cards/merchant.ts`) verifies all of it, step by step as the specification lists them, before it charges anything; replays, expired signatures, a moved path, a wrong tag and unknown keys are refused (`tests/cards.test.ts`). The agent's key is derived from the workspace's approval secret and published as a JWK at `GET /api/tap/keys`, TAP's public key retrieval.
 - **The card number never leaves Tessera.** The agent works with a card id; the payment container carries a payment token and the last four digits.
-- **Followed until it clears, then proved.** Airwallex reports a purchase as a `CLEARING` transaction with a negative amount, `PENDING` when it is authorised (the money is held from the wallet and a single-use card is closed) and `APPROVED`, under the same id, once it clears, about half an hour later on the sandbox. Tessera's sweep keeps following the charge until it clears; the card shows what is clearing and what is spent. Each cleared charge is then proved against what the person signed, the way a payout ends in a closure certificate: the merchant they named (the one thing the card's controls cannot check), the cap, the merchant category, the currency, single use, and a person's signature. A charge from another merchant is flagged even though the card let it through. Offline, the simulator clears charges on the bank clock's beat.
-- **On the ledger, like everything else.** `CARD_REQUESTED`, `CARD_REFUSED`, `CARD_DECIDED`, `CARD_ISSUE_INTENT`, `CARD_ISSUED`, `CARD_CHARGE` (every charge and decline Airwallex reports, and again each time Airwallex moves it), `CARD_CHECKOUT` (with the TAP verdict), `CARD_STATUS` and `CARD_SETTLED` (the proof of a cleared charge). `verifyChain` replays them and refuses a `cards` row edited behind its back. A lost create reply is matched by the nickname Tessera wrote on the card, so a retry never issues two.
+- **Proved when it clears, followed until it posts.** Airwallex reports a purchase as a `CLEARING` transaction with a negative amount: `PENDING` at first (the money leaves the wallet and a single-use card is closed) and `APPROVED`, under the same id, once Airwallex posts it in a batch, about half an hour later on the sandbox. As the builder guide advises, Tessera treats the `CLEARING` itself as accepted rather than waiting for `APPROVED`: the charge counts as spent and is proved against what the person signed at once, the way a payout ends in a closure certificate. The proof checks the merchant they named (the one thing the card's controls cannot check), the cap, the merchant category, the currency, single use, and a person's signature; a charge from another merchant is flagged even though the card let it through. The sweep keeps following the charge until Airwallex posts it ("settling", then "settled"), and a bare authorisation shows as held, never as spent. Offline, the simulator posts charges on the bank clock's beat.
+- **On the ledger, like everything else.** `CARD_REQUESTED`, `CARD_REFUSED`, `CARD_DECIDED`, `CARD_ISSUE_INTENT`, `CARD_ISSUED`, `CARD_CHARGE` (every charge and decline Airwallex reports, and again each time Airwallex moves it), `CARD_CHECKOUT` (with the TAP verdict), `CARD_STATUS` and `CARD_SETTLED` (the proof of an accepted charge). `verifyChain` replays them and refuses a `cards` row edited behind its back. A lost create reply is matched by the nickname Tessera wrote on the card, so a retry never issues two.
 - **In the console.** The treasury is a wallet: the cards ride in a pocket that carries the working balance, and each rises out of it under the pointer. Open one to sign it, let the agent pay with it via TAP, test a merchant charge against its controls, freeze or close it. `⌘K` opens a command palette with "Issue a Visa card" from anywhere.
 
 **On your sandbox.** Card issuing must be enabled for the business. Airwallex issues commercial Visa cards in the regions its card programs cover (US, UK, Europe, Singapore, Hong Kong, Australia and others); a sandbox business registered elsewhere answers `400 Invalid issuance details`, which Tessera records as a FAILED card with Airwallex's words and lets a person retry once issuing is enabled. Offline (`bun run demo`), the simulator plays the same controls, so the whole flow runs with no keys.
@@ -447,7 +447,7 @@ The loop is about 60 lines, and it has no authority of its own: no gateway, no s
 ## Prove it
 
 ```sh
-bun test                   # 530 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
+bun test                   # 620 tests: in-memory SQLite and a fake Airwallex that behaves like the sandbox
 bun run redteam            # 50 attacks, offline, with a scoreboard
 bun run mutate             # 94 guard removals on a private copy of the repo; fails unless each is caught (about a minute)
 bun run typecheck && (cd web && bun run typecheck)
@@ -678,13 +678,13 @@ For the sandbox:
 
 ```sh
 bun run setup                   # creates .env, generates the two secrets, creates the sandbox beneficiaries
-bun run doctor -- --live        # checks the sandbox login, the beneficiary and your model (one real tool call) with real calls
+bun run doctor -- --live        # checks the sandbox login, the beneficiaries against this account's schema, and your model (one real tool call)
 bun run dev                     # API on 127.0.0.1:4010 + console on :3100, prefixed logs, Ctrl-C stops both
 ```
 
 The console reads `TESSERA_API_URL` and `TESSERA_API_TOKEN` from the root `.env`, so no `web/.env.local` is needed. For a production build: `cd web && bun run build && bun run start`.
 
-`bun run setup` creates `spike-us-supplier` (US, USD, `LOCAL`, ABA `021000021`) and `spike-eu-supplier` (DE, EUR, `SWIFT`) if missing. `TESSERA_BENEFICIARY_ID` overrides the USD beneficiary in the API and every script.
+`bun run setup` creates `spike-us-supplier` (US, USD, `LOCAL`, ABA `021000021`) and `spike-eu-supplier` (DE, EUR, `SWIFT`) if missing. Every beneficiary Tessera creates, here and when a workspace first connects its keys, is first checked against the account's own schema (`POST /api/v1/beneficiaries/schema`, `src/airwallex/beneficiary-schema.ts`): required fields differ by account, not only by corridor (on 2026-11-14 one sandbox business required `bank_name` and called `bank_account_category` irrelevant, while a newer one required the category), so fields the schema calls irrelevant are dropped, and a request it would refuse is stopped before the create, in Airwallex's words. `TESSERA_BENEFICIARY_ID` overrides the USD beneficiary in the API and every script.
 
 **To watch the agent in the console:** seed the agent demo's ledger, then point the API at it.
 

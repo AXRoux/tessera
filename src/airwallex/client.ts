@@ -45,6 +45,7 @@ import {
   type IssuingApi,
   type SimulatedCharge,
 } from "./issuing";
+import { fitToSchema, type SchemaAnswer, type SchemaFit } from "./beneficiary-schema";
 
 export interface ClientOptions {
   baseUrl: string;
@@ -89,6 +90,57 @@ function parseRetryAfter(header: string | null, now: number): number | undefined
 
 /** Airwallex writes card dates as `2026-11-20T00:00:00+0000`. */
 const awxDate = (iso: string): string => `${new Date(iso).toISOString().slice(0, 19)}+0000`;
+
+/** The create-beneficiary request for a US company paid by LOCAL (ACH) in USD. */
+export function usBeneficiaryRequest(input: NewUsBeneficiary): Record<string, unknown> {
+  return {
+    beneficiary: {
+      entity_type: "COMPANY",
+      company_name: input.companyName,
+      address: { country_code: "US", city: "Seattle", state: "Washington", postcode: "98104", street_address: "412 5th Avenue" },
+      bank_details: {
+        account_currency: "USD",
+        account_name: input.companyName,
+        account_number: input.accountNumber,
+        account_routing_type1: "aba",
+        account_routing_value1: input.routingNumber,
+        bank_name: input.bankName,
+        // Some businesses require it (Checking|Savings), others call it irrelevant: the schema fit drops it where unused.
+        bank_account_category: "Checking",
+        bank_country_code: "US",
+        local_clearing_system: "ACH",
+      },
+    },
+    nickname: input.nickname,
+    transfer_methods: ["LOCAL"],
+  };
+}
+
+/** The create-beneficiary request for a German company paid by SWIFT in EUR. */
+export function euBeneficiaryRequest(input: NewEuBeneficiary): Record<string, unknown> {
+  return {
+    beneficiary: {
+      entity_type: "COMPANY",
+      company_name: input.companyName,
+      address: { country_code: "DE", city: "Berlin", postcode: "10115", street_address: "Invalidenstrasse 1" },
+      bank_details: {
+        account_currency: "EUR",
+        account_name: input.companyName,
+        iban: input.iban,
+        swift_code: input.swiftCode,
+        bank_name: input.bankName,
+        bank_country_code: "DE",
+      },
+    },
+    nickname: input.nickname,
+    transfer_methods: ["SWIFT"],
+  };
+}
+
+const SchemaAnswerSchema = z.looseObject({
+  errors: z.record(z.string(), z.looseObject({ code: z.string().optional(), value: z.unknown().optional(), validation_functions: z.array(z.looseObject({ description: z.string().optional() })).optional() })).optional(),
+  schema: z.record(z.string(), z.looseObject({ required: z.boolean().optional(), relevant: z.boolean().optional(), type: z.string().optional() })).optional(),
+});
 
 export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi, BeneficiaryApi, FxApi, IssuingApi, CardChargeSimulator {
   private token: { value: string; expiresAt: number } | null = null;
@@ -163,59 +215,49 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
   }
 
   /**
-   * Creates a US company beneficiary paid by LOCAL (ACH) in USD, for `bun run setup`. Not retried: a retry could
-   * create two. Callers look the nickname up first.
+   * Airwallex's schema for a partial create-beneficiary request: the fields this account requires and what is wrong with
+   * the ones given (`src/airwallex/beneficiary-schema.ts`). Creates nothing. Beta at Airwallex.
    */
-  async createBeneficiary(input: NewUsBeneficiary): Promise<Beneficiary> {
-    const body = await this.request("POST", "/api/v1/beneficiaries/create", {
-      body: {
-        beneficiary: {
-          entity_type: "COMPANY",
-          company_name: input.companyName,
-          address: { country_code: "US", city: "Seattle", state: "Washington", postcode: "98104", street_address: "412 5th Avenue" },
-          bank_details: {
-            account_currency: "USD",
-            account_name: input.companyName,
-            account_number: input.accountNumber,
-            account_routing_type1: "aba",
-            account_routing_value1: input.routingNumber,
-            // Required for US ACH since late 2026 (Airwallex's schema: Checking|Savings); older businesses were never asked.
-            bank_account_category: "Checking",
-            bank_country_code: "US",
-            local_clearing_system: "ACH",
-          },
-        },
-        nickname: input.nickname,
-        transfer_methods: ["LOCAL"],
-      },
-    });
-    // The create response nests the record id at the top level next to `beneficiary`.
-    const created = this.parse(z.looseObject({ id: z.string() }), body);
-    return { id: created.id, nickname: input.nickname };
+  async beneficiarySchema(request: Record<string, unknown>): Promise<SchemaAnswer> {
+    const body = await this.request("POST", "/api/v1/beneficiaries/schema", { body: { create_beneficiary_request: request } });
+    return this.parse(SchemaAnswerSchema, body);
   }
 
-  /** Creates a German company beneficiary paid by SWIFT in EUR, for `bun run setup`. Not retried, like the US one. */
+  /** A request checked against this account's schema: irrelevant fields dropped, and refused before the create if it would be. */
+  async fitBeneficiary(request: Record<string, unknown>): Promise<SchemaFit> {
+    let fit: SchemaFit;
+    try {
+      fit = fitToSchema(request, await this.beneficiarySchema(request));
+    } catch (error) {
+      // The endpoint is beta. If it cannot answer, the create itself still validates; only the early, clear refusal is lost.
+      if (error instanceof AwxHttpError && (error.status === 401 || error.status === 403)) throw error;
+      return { request, dropped: [], problems: [] };
+    }
+    if (fit.problems.length > 0) {
+      throw new AwxHttpError(400, "beneficiary_schema", `Airwallex's beneficiary schema for this account refuses it: ${fit.problems.join("; ")}`, {});
+    }
+    return fit;
+  }
+
+  /**
+   * Creates a US company beneficiary paid by LOCAL (ACH) in USD, for `bun run setup` and a workspace's first connect.
+   * Fitted to the account's schema first. Not retried: a retry could create two. Callers look the nickname up first.
+   */
+  async createBeneficiary(input: NewUsBeneficiary): Promise<Beneficiary> {
+    return this.createFitted(usBeneficiaryRequest(input), input.nickname);
+  }
+
+  /** Creates a German company beneficiary paid by SWIFT in EUR, for `bun run setup`. Fitted and not retried, like the US one. */
   async createEuBeneficiary(input: NewEuBeneficiary): Promise<Beneficiary> {
-    const body = await this.request("POST", "/api/v1/beneficiaries/create", {
-      body: {
-        beneficiary: {
-          entity_type: "COMPANY",
-          company_name: input.companyName,
-          address: { country_code: "DE", city: "Berlin", postcode: "10115", street_address: "Invalidenstrasse 1" },
-          bank_details: {
-            account_currency: "EUR",
-            account_name: input.companyName,
-            iban: input.iban,
-            swift_code: input.swiftCode,
-            bank_country_code: "DE",
-          },
-        },
-        nickname: input.nickname,
-        transfer_methods: ["SWIFT"],
-      },
-    });
+    return this.createFitted(euBeneficiaryRequest(input), input.nickname);
+  }
+
+  private async createFitted(request: Record<string, unknown>, nickname: string): Promise<Beneficiary> {
+    const { request: fitted } = await this.fitBeneficiary(request);
+    const body = await this.request("POST", "/api/v1/beneficiaries/create", { body: fitted });
+    // The create response nests the record id at the top level next to `beneficiary`.
     const created = this.parse(z.looseObject({ id: z.string() }), body);
-    return { id: created.id, nickname: input.nickname };
+    return { id: created.id, nickname };
   }
 
   // ---- webhook subscriptions (used by `bun run webhook:register`, never by the API process) --------------------

@@ -37,17 +37,26 @@ const CHECK_LABEL: Record<CardView["settlements"][number]["checks"][number]["che
   signed: "Signed by a person",
 };
 
-/** A charge's status in words: Airwallex says PENDING for a charge authorised but not yet cleared. */
-const chargeWord = (c: CardView["charges"][number]): string =>
-  c.status === "FAILED" ? "declined" : c.status === "PENDING" ? "clearing" : c.status === "APPROVED" ? (c.type === "REFUND" ? "refunded" : "cleared") : c.status.toLowerCase();
+/** A charge accepted by the network that Airwallex has not posted to the wallet yet (REST reads it PENDING until then). */
+const settling = (c: CardView["charges"][number]) => c.type === "CLEARING" && c.status === "PENDING";
+
+/** A charge's status in words. A CLEARING is accepted whatever its status says; PENDING only means not posted yet. */
+const chargeWord = (c: CardView["charges"][number]): string => {
+  if (c.status === "FAILED") return "declined";
+  if (c.type === "REFUND") return "refunded";
+  if (c.type === "AUTHORIZATION") return "authorised";
+  if (c.type === "CLEARING") return settling(c) ? "settling" : "settled";
+  return c.status.toLowerCase();
+};
 
 /**
- * What happened to the money after the card was used: Airwallex holds it while the charge clears, then Tessera proves
- * each cleared charge against what the person signed. The card's equivalent of a payout's closure certificate.
+ * What happened to the money after the card was used: the charge clears, Tessera proves it against what the person
+ * signed at once, and Airwallex posts it to the wallet in its own time. The card's equivalent of a payout's closure
+ * certificate.
  */
 function Purchase({ card }: { card: CardView }) {
-  const through = card.charges.filter((c) => c.status === "PENDING" || (c.status === "APPROVED" && c.type !== "REFUND"));
-  if (through.length === 0) return null;
+  if (card.spentMinor === 0 && card.heldMinor === 0) return null;
+  const posting = card.charges.some(settling);
   const steps = [
     { label: "Signed", done: card.approvedBy !== null },
     { label: "Charged", done: true },
@@ -58,9 +67,9 @@ function Purchase({ card }: { card: CardView }) {
     <Tile className="rounded-[20px]! px-4 py-3.5">
       <div className="flex items-center justify-between gap-2">
         <Kicker>The purchase</Kicker>
-        {card.heldMinor > 0 ? (
+        {card.heldMinor > 0 && card.spentMinor === 0 ? (
           <Chip tone="warn" pulse>
-            Clearing
+            Authorised
           </Chip>
         ) : card.settlements.some((s) => !s.matches) ? (
           <Chip tone="bad">Does not match</Chip>
@@ -76,9 +85,9 @@ function Purchase({ card }: { card: CardView }) {
           </li>
         ))}
       </ol>
-      {card.heldMinor > 0 ? (
+      {card.heldMinor > 0 && card.spentMinor === 0 ? (
         <p className="mt-3 text-[12.5px] leading-relaxed text-fg/70">
-          Airwallex authorised {money(card.heldMinor, card.currency)} and is holding it from the wallet. Card charges clear in a batch, about half an hour on the sandbox. Tessera follows the charge and proves it against what you signed as soon as it clears.
+          Airwallex authorised {money(card.heldMinor, card.currency)} and is holding it from the wallet. Tessera proves the charge against what you signed as soon as the merchant captures it.
         </p>
       ) : null}
       {card.settlements.map((s) => (
@@ -100,6 +109,11 @@ function Purchase({ card }: { card: CardView }) {
           <p className="readout mt-2 truncate text-[10.5px] text-fg/40" title={s.transactionId}>
             Airwallex {s.transactionId} · proved {when(s.at)}
           </p>
+          {posting ? (
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-fg/50">
+              Airwallex posts card charges to the wallet in a batch, about half an hour on the sandbox. The proof does not wait for it.
+            </p>
+          ) : null}
         </div>
       ))}
     </Tile>
@@ -182,7 +196,7 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
               <Fact label="Cap">{money(card.amountMinor, card.currency)}</Fact>
               <Fact label="Spent">
                 {money(card.spentMinor, card.currency)}
-                {card.heldMinor > 0 ? <span className="text-fg/50"> · {money(card.heldMinor, card.currency)} clearing</span> : null}
+                {card.heldMinor > 0 ? <span className="text-fg/50"> · {money(card.heldMinor, card.currency)} authorised</span> : card.charges.some(settling) ? <span className="text-fg/50"> · settling</span> : null}
               </Fact>
               <Fact label="Merchant category">
                 <span title={card.mccs.join(", ")}>{card.categoryLabel}</span>
@@ -296,7 +310,7 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
         <Tile className="rounded-[20px]! px-4 py-3">
           <Kicker>History on the ledger</Kicker>
           {card.charges.length === 0 && card.checkouts.length === 0 ? (
-            <p className="mt-1.5 text-[12.5px] text-fg/50">No charges yet. Every charge and every decline Airwallex reports lands here, and each charge is followed until it clears.</p>
+            <p className="mt-1.5 text-[12.5px] text-fg/50">No charges yet. Every charge and every decline Airwallex reports lands here, and each charge is followed until Airwallex posts it.</p>
           ) : (
             <ul className="mt-2 divide-y divide-fg/[0.06]">
               {[
@@ -322,7 +336,7 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
                   row: (
                     <>
                       <span className="flex min-w-0 items-center gap-2">
-                        <Chip tone={c.status === "APPROVED" ? "solid" : c.status === "FAILED" ? "bad" : c.status === "PENDING" ? "warn" : "neutral"}>{chargeWord(c)}</Chip>
+                        <Chip tone={c.status === "FAILED" ? "bad" : settling(c) ? "warn" : c.type === "CLEARING" ? "solid" : "neutral"}>{chargeWord(c)}</Chip>
                         <span className={`readout shrink-0 text-[12.5px] ${c.status === "FAILED" ? "text-fg/45 line-through" : ""}`}>
                           {c.type === "REFUND" ? "+" : "−"}
                           {money(Math.abs(c.amountMinor), c.currency)}

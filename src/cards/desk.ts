@@ -13,7 +13,7 @@ import type { CardChargeSimulator, IssuingApi } from "../airwallex/issuing";
 import { lastFour } from "../airwallex/issuing";
 import { AwxHttpError, type BalanceApi } from "../airwallex/types";
 import { ApprovalRejected, StateConflict } from "../errors";
-import { chargeHoldsMinor, chargeTakesMinor, type CardCharge, type CardRow, type CardSettlement, type CardState, type SettlementCheck } from "../ledger/cards";
+import { chargeTakesMinor, heldFrom, type CardCharge, type CardRow, type CardSettlement, type CardState, type SettlementCheck } from "../ledger/cards";
 import type { Ledger } from "../ledger/ledger";
 import { formatMinor, fromMinor, toMinor } from "../money";
 import { SANDBOX_MERCHANT_ORIGIN, SandboxMerchant, type CheckoutResult } from "./merchant";
@@ -70,7 +70,8 @@ const merchantKey = (name: string): string => name.toLowerCase().replace(/[^a-z0
  */
 export function settle(card: CardRow, charge: CardCharge, charges: readonly CardCharge[]): CardSettlement {
   const amount = Math.abs(charge.amountMinor);
-  const spending = charges.filter((c) => chargeTakesMinor(c) > 0 || chargeHoldsMinor(c) > 0);
+  // Clearings only: a two-phase charge's authorisation and its clearing are one purchase, not two.
+  const spending = charges.filter((c) => chargeTakesMinor(c) > 0);
   const signed = card.merchant.trim();
   const named = charge.merchant ? merchantKey(charge.merchant) : "";
   const merchantOk = named.length > 0 && (named.includes(merchantKey(signed)) || merchantKey(signed).includes(named));
@@ -275,10 +276,10 @@ export class CardDesk {
 
   /**
    * Brings every card up to date with Airwallex: an ISSUING card is matched by nickname (or called lost after two
-   * minutes); each issued card's charges and declines are recorded, and followed until they clear (Airwallex reports a
-   * purchase PENDING when it is authorised and APPROVED once it clears, under the same id, about half an hour later on
-   * the sandbox); a single-use card that has used its one charge is closed at Airwallex and marked SPENT; and each
-   * cleared charge is proved against the terms a person signed (CARD_SETTLED).
+   * minutes); each issued card's charges and declines are recorded, and followed until they post (Airwallex reports a
+   * clearing PENDING, then APPROVED under the same id about half an hour later on the sandbox); a single-use card that
+   * has used its one charge is closed at Airwallex and marked SPENT; and each accepted charge is proved against the
+   * terms a person signed (CARD_SETTLED) at its CLEARING, without waiting for it to post.
    */
   async sync(): Promise<void> {
     const { ledger } = this.deps;
@@ -290,7 +291,7 @@ export class CardDesk {
       if (found) ledger.cardIssued(card.id, { awxCardId: found.card_id, last4: lastFour(found.card_number), brand: found.brand ?? "VISA", awxStatus: found.card_status });
       else if (this.now().getTime() - Date.parse(card.updatedAt) > LOST_ISSUE_MS) ledger.cardIssueFailed(card.id, "not_found", "Airwallex has no card for this request");
     }
-    // Live cards, and spent or closed ones whose charges have not all cleared yet.
+    // Live cards, and spent or closed ones with a charge Airwallex has not finished moving.
     const clearing = (id: string) => ledger.cardCharges(id).some((c) => c.status === "PENDING");
     const watched = [...ledger.cardsIn(["ACTIVE", "FROZEN"]), ...ledger.cardsIn(["SPENT", "CLOSED"]).filter((c) => clearing(c.id))];
     for (const card of watched) {
@@ -313,15 +314,15 @@ export class CardDesk {
       }
       const fresh = ledger.requireCard(card.id);
       const charges = ledger.cardCharges(card.id);
-      // A single-use card is used once a charge is through, cleared or still clearing; a decline does not use it.
-      const used = charges.some((c) => chargeTakesMinor(c) > 0 || chargeHoldsMinor(c) > 0);
+      // A single-use card is used once a charge is through, authorised or cleared; a decline does not use it.
+      const used = fresh.spentMinor > 0 || heldFrom(charges) > 0;
       if (fresh.singleUse && used && fresh.state === "ACTIVE") {
         const remote = await issuing.getCard(card.awxCardId);
-        // Airwallex closes a single-use card itself at authorisation. Tessera closes it only once the charge has cleared,
-        // so a close can never race the clearing.
+        // Airwallex closes a single-use card itself at authorisation. Tessera closes it only once the charge has cleared
+        // (a bare authorisation still needs its capture), so a close can never race the clearing.
         const closed = remote.card_status === "CLOSED" ? remote : fresh.spentMinor > 0 ? await issuing.updateCardStatus(card.awxCardId, "CLOSED") : null;
         if (closed) {
-          const why = fresh.spentMinor > 0 ? "single use: its one charge has cleared" : "single use: Airwallex closed it after its one charge, which is clearing";
+          const why = fresh.spentMinor > 0 ? "single use: its one charge has cleared" : "single use: Airwallex closed it after its one charge was authorised";
           ledger.setCardState(card.id, "SPENT", "tessera", why, closed.card_status);
         }
       }

@@ -11,10 +11,10 @@
  *                       -> CARD_ISSUED                                                    ACTIVE
  *                       -> CARD_ISSUE_FAILED                        (Airwallex said no)   FAILED
  *   CARD_CHARGE      every merchant charge or decline Airwallex reports, and again each time Airwallex moves it
- *                    (a charge is reported PENDING when authorised and APPROVED once it clears, under the same id)
+ *                    (a clearing is reported PENDING until it posts, then APPROVED, under the same id)
  *   CARD_STATUS      frozen, unfrozen, spent (a single-use card after its charge), closed
- *   CARD_SETTLED     a cleared charge proved against the terms a person signed: merchant, cap, category, currency,
- *                    single use. Once per charge; the purchase's receipt.
+ *   CARD_SETTLED     an accepted charge proved against the terms a person signed: merchant, cap, category, currency,
+ *                    single use. Once per charge, at its CLEARING; the purchase's receipt.
  */
 import { z } from "zod";
 import type { LedgerEvent } from "./ledger";
@@ -74,20 +74,35 @@ export interface CardCharge {
 }
 
 /**
- * What a charge has taken from the card, in minor units: a cleared, approved charge takes its amount, an approved refund
- * gives it back, and an authorisation or a charge still clearing takes nothing yet (Airwallex holds it; see
- * `chargeHoldsMinor`). Airwallex reports a purchase as a negative amount, so the sign comes from the type, never the amount.
+ * Airwallex's words for a clearing that has gone through. A purchase is a CLEARING transaction, and the REST read
+ * reports it PENDING until it posts in a batch (about half an hour on the sandbox), then APPROVED; the MCP read says
+ * CLEARED. Airwallex's builder guide says to treat the CLEARING itself as accepted and not to wait for APPROVED, so
+ * Tessera does: spent and proved at once, "settling" until Airwallex posts it.
+ */
+const THROUGH: ReadonlySet<string> = new Set(["PENDING", "APPROVED", "CLEARED"]);
+const POSTED: ReadonlySet<string> = new Set(["APPROVED", "CLEARED"]);
+
+/**
+ * What a charge has taken from the card, in minor units: an accepted clearing takes its amount, a posted refund gives it
+ * back, and a decline or a bare authorisation takes nothing. Airwallex reports a purchase as a negative amount, so the
+ * sign comes from the type, never the amount.
  */
 export function chargeTakesMinor(charge: Pick<CardCharge, "type" | "status" | "amountMinor">): number {
-  if (charge.status !== "APPROVED") return 0;
-  if (charge.type === "CLEARING") return Math.abs(charge.amountMinor);
-  if (charge.type === "REFUND") return -Math.abs(charge.amountMinor);
+  if (charge.type === "CLEARING" && THROUGH.has(charge.status)) return Math.abs(charge.amountMinor);
+  if (charge.type === "REFUND" && POSTED.has(charge.status)) return -Math.abs(charge.amountMinor);
   return 0;
 }
 
-/** What Airwallex is holding for a charge that is authorised but not yet cleared. */
-export function chargeHoldsMinor(charge: Pick<CardCharge, "type" | "status" | "amountMinor">): number {
-  return charge.status === "PENDING" && charge.type !== "REFUND" ? Math.abs(charge.amountMinor) : 0;
+/** Accepted, but not yet posted to the wallet at Airwallex. */
+export const chargeSettling = (charge: Pick<CardCharge, "type" | "status">): boolean => charge.type === "CLEARING" && charge.status === "PENDING";
+
+/**
+ * What Airwallex holds on a card for authorisations that have not cleared (a two-phase charge before its capture).
+ * Once the card has a clearing, the authorisation is that clearing's, so nothing more is held.
+ */
+export function heldFrom(charges: readonly Pick<CardCharge, "type" | "status" | "amountMinor">[]): number {
+  if (charges.some((c) => chargeTakesMinor(c) > 0)) return 0;
+  return charges.filter((c) => c.type === "AUTHORIZATION" && THROUGH.has(c.status)).reduce((sum, c) => sum + Math.abs(c.amountMinor), 0);
 }
 
 /** What a card has spent, from the latest word on each of its charges. */

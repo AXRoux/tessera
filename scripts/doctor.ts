@@ -2,7 +2,8 @@
  * `bun run doctor`: tells a new user, in one screen, what works, what does not, and the exact command to fix it.
  *
  *   bun run doctor              static checks only: no network, no keys used
- *   bun run doctor -- --live    also logs in to the Airwallex sandbox, finds the demo beneficiaries, and pings Claude
+ *   bun run doctor -- --live    also logs in to the Airwallex sandbox, finds the demo beneficiaries, checks their payloads
+ *                               against this account's beneficiary schema, and pings the model
  *
  * Two tracks, because most people only need the first:
  *   offline demo   `bun run demo`   needs only Bun, Node and the installed dependencies
@@ -11,8 +12,9 @@
  */
 import { existsSync } from "node:fs";
 import { z } from "zod";
-import { AirwallexClient } from "../src/airwallex/client";
-import { SPIKE_SUPPLIER } from "../src/airwallex/types";
+import { fitToSchema } from "../src/airwallex/beneficiary-schema";
+import { AirwallexClient, euBeneficiaryRequest, usBeneficiaryRequest } from "../src/airwallex/client";
+import { SPIKE_EU_SUPPLIER, SPIKE_SUPPLIER } from "../src/airwallex/types";
 import { type ConfiguredModel, modelFromEnv } from "../src/commander/model-env";
 import { parseHoldMs } from "../src/server/runtime";
 import { DEFAULT_WEBHOOK_PORT } from "../src/server/webhook-listener";
@@ -130,6 +132,24 @@ if (live && haveAirwallex && baseUrl.includes("sandbox")) {
     note(liveTrack, "ok", "Airwallex sandbox login works");
     const found = beneficiaries.some((b) => b.nickname === SPIKE_SUPPLIER.nickname) || Boolean(env.TESSERA_BENEFICIARY_ID);
     note(liveTrack, found ? "ok" : "fail", `demo beneficiary "${SPIKE_SUPPLIER.nickname}" exists`, "bun run setup  (creates it in the sandbox)");
+    // Required fields differ by account, not only by corridor: ask Airwallex's schema whether the payloads still fit.
+    for (const [corridor, request] of [
+      ["US LOCAL", usBeneficiaryRequest(SPIKE_SUPPLIER)],
+      ["DE SWIFT", euBeneficiaryRequest(SPIKE_EU_SUPPLIER)],
+    ] as const) {
+      try {
+        const fit = fitToSchema(request, await client.beneficiarySchema(request));
+        const dropped = fit.dropped.length > 0 ? ` (drops ${fit.dropped.map((f) => f.split(".").pop()).join(", ")}: not used by this account)` : "";
+        note(
+          liveTrack,
+          fit.problems.length > 0 ? "fail" : "ok",
+          fit.problems.length > 0 ? `${corridor} beneficiary payload does not fit this account's schema: ${fit.problems.join("; ")}` : `${corridor} beneficiary payload fits this account's schema${dropped}`,
+          "update usBeneficiaryRequest / euBeneficiaryRequest in src/airwallex/client.ts",
+        );
+      } catch (error) {
+        note(liveTrack, "warn", `${corridor} beneficiary schema unavailable (the endpoint is beta): ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     if (env.AWX_WEBHOOK_ID) {
       const subscription = (await client.listWebhooks()).find((s) => s.id === env.AWX_WEBHOOK_ID);
       note(

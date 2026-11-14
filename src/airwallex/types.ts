@@ -230,6 +230,8 @@ export interface NewUsBeneficiary {
   accountNumber: string;
   /** ABA routing number. */
   routingNumber: string;
+  /** The bank the routing number belongs to: Airwallex's schema requires it for US LOCAL. */
+  bankName: string;
 }
 
 /** The sandbox supplier the demos pay; account and ABA routing number are from Airwallex's create-beneficiary example. */
@@ -238,6 +240,7 @@ export const SPIKE_SUPPLIER: NewUsBeneficiary = {
   companyName: "Spike Supplies Inc",
   accountNumber: "50001121",
   routingNumber: "021000021",
+  bankName: "JPMorgan Chase Bank",
 };
 
 /** A German company account paid by SWIFT in EUR. */
@@ -246,6 +249,8 @@ export interface NewEuBeneficiary {
   companyName: string;
   iban: string;
   swiftCode: string;
+  /** The bank the BIC belongs to: Airwallex's schema requires it for DE SWIFT. */
+  bankName: string;
 }
 
 /** The EUR sandbox supplier. A synthetic IBAN with a valid checksum (the standard DE example) and a real-format BIC. */
@@ -254,6 +259,7 @@ export const SPIKE_EU_SUPPLIER: NewEuBeneficiary = {
   companyName: "Spike Lieferungen GmbH",
   iban: "DE89370400440532013000",
   swiftCode: "COBADEFFXXX",
+  bankName: "Commerzbank",
 };
 
 /** The two shapes `bun run setup` creates: US/USD/LOCAL and DE/EUR/SWIFT. */

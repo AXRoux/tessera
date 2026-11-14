@@ -419,9 +419,9 @@ export const CardViewSchema = z.object({
   approvedBy: z.string().nullable(),
   last4: z.string().nullable(),
   brand: z.string().nullable(),
-  /** What cleared charges have taken. */
+  /** What accepted (cleared) charges have taken, settled or still settling. */
   spentMinor: z.number().int(),
-  /** What Airwallex holds for charges authorised but not yet cleared. */
+  /** What Airwallex holds for authorisations not yet captured. */
   heldMinor: z.number().int(),
   lastError: z.string().nullable(),
   createdAt: z.string(),

@@ -37,15 +37,15 @@ describe("the card routes", () => {
     const cards = CardsSchema.parse((await call("GET", "/api/cards")).json);
     expect(cards).toMatchObject({ connected: true, canCharge: true });
     const card = cards.items.find((c) => c.id === id)!;
-    // Offline, a charge clears on the bank clock's beat, as on the sandbox: spent once it clears, held until then.
-    expect(card).toMatchObject({ state: "SPENT", brand: "VISA", spentMinor: 0, heldMinor: 4_500, approvedBy: "ops@tessera.demo", categoryLabel: "Software and SaaS" });
-    expect(card.charges.map((c) => [c.status, c.failureReason])).toEqual([["FAILED", "LIMIT_EXCEEDED"], ["PENDING", null]]);
-    expect(card.settlements).toEqual([]);
+    // Offline, a charge posts on the bank clock's beat, as on the sandbox; the CLEARING is accepted and proved at once.
+    expect(card).toMatchObject({ state: "SPENT", brand: "VISA", spentMinor: 4_500, heldMinor: 0, approvedBy: "ops@tessera.demo", categoryLabel: "Software and SaaS" });
+    expect(card.charges.map((c) => [c.type, c.status, c.failureReason])).toEqual([["AUTHORIZATION", "FAILED", "LIMIT_EXCEEDED"], ["CLEARING", "PENDING", null]]);
+    expect(card.settlements).toEqual([expect.objectContaining({ amountMinor: 4_500, matches: true })]);
     expect(card.checkouts).toEqual([expect.objectContaining({ status: "APPROVED", tapVerified: true, kid: cards.agentKeyId })]);
     expect(runtime.ledger.verifyChain().ok).toBe(true);
   });
 
-  it("shows a cleared charge as spent, with its proof against the signed terms", async () => {
+  it("shows a posted charge as spent, with one proof against the signed terms", async () => {
     const { call } = offlineApi({ TESSERA_BANK_CLOCK_MS: "0" });
     const id = (await call("POST", "/api/cards", { purpose: "Figma, two editor seats", merchant: "Figma", category: "software", amount: 45, reason: "Design team needs two more editor seats" })).json.id as string;
     await call("POST", `/api/cards/${id}/approve`, { note: "Approved for the design team" });
