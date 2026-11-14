@@ -16,7 +16,7 @@ import { PeelPage, usePeel } from "./peel";
 
 /*
  * The landing: one 16:9 poster wall, after the Swiss/brutalist reference. A text poster says what Tessera is; four
- * image posters say how a payout travels (agents act, code decides, a person signs, the ledger proves); the agents it
+ * image posters say how a payout travels (agents act, your policy decides, you sign, sealed then proved); the agents it
  * works with run beneath; the wordmark closes the page. Nothing here is a screenshot or a number we cannot stand behind.
  *
  * The whole wall is a sticker over the sign-in screen: lift its corner, or press a sign-in button, and it peels away
@@ -90,7 +90,7 @@ function Ruler({ className = "" }: { className?: string }) {
   );
 }
 
-/** Three interlocking rings, the reference's emblem, as Tessera's three parties: agent, code, person. */
+/** Three interlocking rings, the reference's emblem, as Tessera's three parties: agent, policy, person. */
 function Rings({ className = "" }: { className?: string }) {
   return (
     <svg aria-hidden viewBox="0 0 64 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.4">
@@ -415,8 +415,8 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
           </h1>
 
           <p className="relative mt-5 max-w-[520px] text-[clamp(14px,min(1vw,1.7vh),16.5px)] leading-relaxed text-fg/70 shorter:line-clamp-3">
-            Tessera is the control layer between your AI agents and your treasury. Agents read the inbox, chase failed payouts, draft the replies and buy only what a person signed for, on single-use Visa cards. Policy written in
-            code decides what may move, a person signs what matters, and every payout is sealed before it is sent and proved after it lands.
+            Tessera is the control layer between your AI agents and your treasury. Agents read the inbox, chase failed payouts, draft the replies, and buy only what a person signed for — on single-use Visa cards. Your policy,
+            written in code, settles what may move; a person signs what matters; and every payout is sealed before it leaves and proved once it lands.
           </p>
 
           <div className="relative mt-5 grid grid-cols-[auto_auto_1fr] items-end gap-6 short:hidden">
@@ -459,7 +459,7 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
 
           <dl className="relative mt-6 grid grid-cols-3 gap-2 short:hidden">
             {[
-              ["50/50", "attacks held by code"],
+              ["50/50", "attacks held by policy"],
               ["94/94", "mutations caught by tests"],
               ["1", "live payout per invoice, max"],
             ].map(([value, label]) => (
@@ -486,8 +486,8 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
             n="02"
             src="/landing/code.webp"
             alt="A wave of iridescent liquid chrome"
-            title={["Code", "decides."]}
-            lines={["Policy in code,", "not in prompts.", "50 attacks. 50 held."]}
+            title={["Your policy", "decides."]}
+            lines={["Written in code,", "not in a prompt.", "50 attacks. 50 held."]}
             stagger="down"
             delay={300}
           >
@@ -497,7 +497,7 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
             n="03"
             src="/landing/human.webp"
             alt="A woman in profile, eyes closed, in black and white"
-            title={["Humans", "sign."]}
+            title={["You", "sign."]}
             lines={["In the loop", "In writing", "By name"]}
             stagger="up"
             delay={380}
@@ -511,8 +511,8 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
             n="04"
             src="/landing/proof.webp"
             alt="Black glass mosaic tiles, one glowing electric blue"
-            title={["Proof,", "sealed."]}
-            lines={["Each line hashed", "to the one before"]}
+            title={["Sealed,", "then proved."]}
+            lines={["Each line hashed", "to the one before", "nothing rewritten."]}
             stagger="down"
             delay={460}
           >

@@ -175,7 +175,7 @@ const plain = (text: string): string => text.replace(/\*\*/g, "").replace(/`/g, 
 /** What each tool is, in the words an operator watching would use. The name alone means little on a screen. */
 const ACTION: Record<string, string> = {
   list_incidents: "Read the board",
-  assess_incident: "Ask the code what is safe",
+  assess_incident: "Ask what the policy allows",
   read_supplier_message: "Read the supplier's message",
   replace_payment: "Ask to replace the payment",
   fund_replacement: "Ask to fund the replacement",
@@ -238,7 +238,7 @@ function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n:
       {result ? (
         result.kind === "refused" ? (
           <div role="alert" className={`rounded-xl border border-bad/40 bg-bad/10 ${dense ? "mt-1.5 px-3 py-2" : "mt-3 px-4 py-3"}`}>
-            <Label className={`font-medium text-bad ${dense ? "text-[11px]" : ""}`}>Refused by code</Label>
+            <Label className={`font-medium text-bad ${dense ? "text-[11px]" : ""}`}>Refused by policy</Label>
             <p className={`leading-relaxed ${dense ? "mt-0.5 line-clamp-2 text-[12px] text-fg/75" : "mt-1.5 text-sm"}`} title={result.summary}>
               {result.summary}
             </p>
@@ -254,7 +254,7 @@ function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n:
           </div>
         )
       ) : (
-        <p className="mt-3 text-[13px] text-fg/55">Awaiting the code’s answer…</p>
+        <p className="mt-3 text-[13px] text-fg/55">Awaiting the verdict…</p>
       )}
       {handoff && result?.ok ? (
         <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-accent/45 bg-accent/10 ${dense ? "mt-2 px-3 py-2" : "mt-3 gap-x-4 gap-y-2 px-4 py-3"}`}>
@@ -271,7 +271,7 @@ function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n:
   );
 }
 
-/** What the agent said, each tool it reached for, and what the code answered. A vertical spine, refusals in red, handoffs in blue. */
+/** What the agent said, each tool it reached for, and what policy answered. A vertical spine, refusals in red, handoffs in blue. */
 /** `idFor` maps the reference a step names to its incident id, so a handoff can be opened from here. */
 export function AgentTimeline({
   state,
@@ -292,11 +292,11 @@ export function AgentTimeline({
   const calls = state.steps.filter((s) => s.kind === "tool").length;
 
   // Live, every step shows as it happens. Once the run ends, the outcome matters more than the routine: fold the
-  // calls that simply worked, and keep everything the code refused, the agent's closing report, and every handoff.
+  // calls that simply worked, and keep everything policy refused, the agent's closing report, and every handoff.
   const finished = state.status === "done";
   const lastText = state.steps.findLastIndex((s) => s.kind === "text");
   const visible = state.steps.flatMap((step, i) => {
-    // Everything the code refused, every handoff to a person, and the agent's closing report survive the fold.
+    // Everything policy refused, every handoff to a person, and the agent's closing report survive the fold.
     const matters = step.kind === "tool" && (step.result?.ok === false || (step.result?.ok === true && step.tool in HANDOFF));
     const keep = !finished || showAll || i === lastText || matters;
     return keep ? [{ step, i }] : [];
@@ -342,7 +342,7 @@ export function AgentTimeline({
       ) : null}
       {state.done ? (
         <p className="tnum mt-4 border-t border-fg/10 pt-4 text-[13px] text-fg/55">
-          {state.done.calls} tool call{state.done.calls === 1 ? "" : "s"} &middot; {refused} refused by code &middot; {state.done.steps} model turn
+          {state.done.calls} tool call{state.done.calls === 1 ? "" : "s"} &middot; {refused} refused by policy &middot; {state.done.steps} model turn
           {state.done.steps === 1 ? "" : "s"}
           {state.done.stoppedBecause === "step_limit" ? " · stopped at the step limit" : ""}
           {state.done.stoppedBecause === "call_limit" ? " · stopped at the tool call limit" : ""}

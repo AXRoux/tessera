@@ -7,9 +7,9 @@ export interface VerdictInput {
 }
 
 export interface Verdict {
-  /** "Replaced it", "Tried to close, refused by code". */
+  /** "Replaced it", "Tried to close, refused by policy". */
   label: string;
-  /** The code said no. Rendered in the loud black style the agent timeline uses for refusals. */
+  /** Policy said no. Rendered in the loud black style the agent timeline uses for refusals. */
   refused: boolean;
 }
 
@@ -29,15 +29,15 @@ const OK: Record<string, string> = {
 };
 
 const REFUSED: Record<string, string> = {
-  replace_payment: "Tried to replace, refused by code",
-  fund_replacement: "Tried to convert, refused by code",
-  reconcile_and_close: "Tried to close, refused by code",
+  replace_payment: "Tried to replace, refused by policy",
+  fund_replacement: "Tried to convert, refused by policy",
+  reconcile_and_close: "Tried to close, refused by policy",
 };
 
 export function agentVerdict({ tool, outcome }: Pick<VerdictInput, "tool" | "outcome">): Verdict {
   if (outcome === "ok") return { label: OK[tool] ?? toolLabel(tool), refused: false };
   if (outcome === "failed") return { label: `${toolLabel(tool)} failed`, refused: false };
-  // "refused" and "invalid" both mean the code turned the call away; anything unrecognised is treated the same way.
+  // "refused" and "invalid" both mean policy turned the call away; anything unrecognised is treated the same way.
   return { label: REFUSED[tool] ?? `${toolLabel(tool)} refused`, refused: true };
 }
 

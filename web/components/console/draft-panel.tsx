@@ -52,7 +52,7 @@ export function DraftPanel({ view, busy, run }: { view: IncidentView; busy: stri
       </div>
       <p suppressHydrationWarning className="mt-3 text-[12px] leading-relaxed text-fg/55">
         Written by {actorLabel(draft.actor)} {ago(draft.at)}. Tessera sends nothing on its own: copy it, send it from your mail, then mark it here. Drafts carrying account details,
-        links or a promise of another payment are refused by code.
+        links or a promise of another payment are refused by policy.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Btn tone="secondary" onClick={() => void copy()}>

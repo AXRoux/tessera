@@ -10,9 +10,9 @@ describe("agent verdict wording", () => {
     expect(agentVerdict({ tool: "reconcile_and_close", outcome: "ok" }).label).toBe("Certified it");
   });
 
-  it("marks a refusal loud and says it was the code that refused", () => {
-    expect(agentVerdict({ tool: "replace_payment", outcome: "refused" })).toEqual({ label: "Tried to replace, refused by code", refused: true });
-    expect(agentVerdict({ tool: "reconcile_and_close", outcome: "refused" })).toEqual({ label: "Tried to close, refused by code", refused: true });
+  it("marks a refusal loud and says it was policy that refused", () => {
+    expect(agentVerdict({ tool: "replace_payment", outcome: "refused" })).toEqual({ label: "Tried to replace, refused by policy", refused: true });
+    expect(agentVerdict({ tool: "reconcile_and_close", outcome: "refused" })).toEqual({ label: "Tried to close, refused by policy", refused: true });
   });
 
   it("falls back to the tool's name for any other refusal or invalid call, and never reads it as a success", () => {

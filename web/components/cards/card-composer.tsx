@@ -152,7 +152,7 @@ export function CardComposer({ open, cards, onClose }: { open: boolean; cards: C
         ) : null}
 
         <div className="flex items-center justify-between gap-3 px-1 pb-1">
-          <span className="text-[11.5px] leading-snug text-fg/50">Checked by code now. Issued only after a person signs it, with these terms as the card's controls.</span>
+          <span className="text-[11.5px] leading-snug text-fg/50">Checked by policy now. Issued only after a person signs it, with these terms as the card's controls.</span>
           <Btn size="md" disabled={!ready} busy={busy} onClick={() => void submit()}>
             Ask for the card
           </Btn>

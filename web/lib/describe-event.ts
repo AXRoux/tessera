@@ -54,7 +54,7 @@ const WAKE_WORDS: Record<string, string> = {
 /** What each tool call did, said of the agent in the past tense; and what it would have done, for a refusal. */
 const TOOL_DONE: Record<string, string> = {
   list_incidents: "read the board",
-  assess_incident: "asked the code what is safe here",
+  assess_incident: "asked what the policy allows here",
   read_supplier_message: "read the supplier's message",
   replace_payment: "replaced the payment",
   fund_replacement: "funded the replacement",
@@ -162,7 +162,7 @@ export function describeEvent(type: string, payload: unknown): string {
       const outcome = text(p.outcome);
       if (outcome === "ok") return `${who} ${TOOL_DONE[raw] ?? `used “${raw.replaceAll("_", " ")}”`}.`;
       const detail = bare(withoutIds(text(p.detail)));
-      return `${who} tried to ${TOOL_TRIED[raw] ?? raw.replaceAll("_", " ")}, and the code ${outcome === "refused" ? "refused" : "turned it away"}${detail ? `: ${detail}.` : "."}`;
+      return `${who} tried to ${TOOL_TRIED[raw] ?? raw.replaceAll("_", " ")}, and policy ${outcome === "refused" ? "refused" : "turned it away"}${detail ? `: ${detail}.` : "."}`;
     }
     case "DRAFT_REPLY":
       return `${text(p.actor) ?? "An agent"} drafted a ${(text(p.kind) ?? "reply").toLowerCase()} reply for the supplier. Nothing was sent; a person decides.`;
@@ -185,7 +185,7 @@ export function describeEvent(type: string, payload: unknown): string {
     case "INBOX_RECEIVED":
       return `A message from ${text(p.from) ?? "the supplier"} arrived in the inbox (${String(p.chars ?? "?")} characters). Only its fingerprint is in the ledger.`;
     case "PAYMENT_REFUSED":
-      return `A payment requested by ${text(p.by) ?? "someone"} was refused by code${text(p.message) ? `: ${bare(withoutIds(text(p.message)))}` : ""}.`;
+      return `A payment requested by ${text(p.by) ?? "someone"} was refused by policy${text(p.message) ? `: ${bare(withoutIds(text(p.message)))}` : ""}.`;
     case "WEBHOOK_RECEIVED": {
       const claimed = text(p.claimedStatus);
       const outcome = WEBHOOK_OUTCOME[text(p.outcome) ?? ""] ?? "it was recorded";
@@ -213,7 +213,7 @@ export function describeEvent(type: string, payload: unknown): string {
       const refused = typeof p.refused === "number" ? p.refused : 0;
       const why = text(p.stoppedBecause) === "finished" ? "finished" : `stopped (${(text(p.stoppedBecause) ?? "unknown").replaceAll("_", " ")})`;
       const report = bare(text(p.report));
-      return `The woken run ${why} after ${calls} tool call${calls === 1 ? "" : "s"}${refused > 0 ? `, ${refused} refused by code` : ""}${report ? `. Its report: "${report}".` : "."}`;
+      return `The woken run ${why} after ${calls} tool call${calls === 1 ? "" : "s"}${refused > 0 ? `, ${refused} refused by policy` : ""}${report ? `. Its report: "${report}".` : "."}`;
     }
     case "FUNDING_INTENT": {
       const t = record(p.terms);

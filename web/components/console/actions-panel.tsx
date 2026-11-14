@@ -147,7 +147,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
       <DraftPanel view={view} busy={busy} run={run} />
 
       <div>
-        <span className="kicker block">Moves the code can make</span>
+        <span className="kicker block">Moves policy allows</span>
         <ul className="mt-2.5 space-y-2">
           <Move
             title="Replace the payment"
@@ -278,10 +278,10 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
             </Fold>
           ) : null}
 
-          <Fold title="Pay again, in writing" sub={releasable ? "Release a replacement the code would not make alone" : "Opens once the last attempt has ended"}>
+          <Fold title="Pay again, in writing" sub={releasable ? "Release a replacement policy would not make alone" : "Opens once the last attempt has ended"}>
             <div className="space-y-3">
               <p className="text-[12px] leading-relaxed text-fg/60">
-                Some replacements the code will never make by itself. A named person may release one, in writing. You review first, and your approval is bound to the exact facts you
+                Some replacements policy will never make on its own. A named person may release one, in writing. You review first, and your approval is bound to the exact facts you
                 reviewed: if anything shifts in between, it is refused.
               </p>
               <Field label="Why is it safe to pay again?" htmlFor={noteId} hint={noteHint(note)}>

@@ -78,7 +78,7 @@ export function ControlPanel({
         <div className="grid min-h-0 grid-cols-2 content-center gap-x-2 gap-y-3 short:gap-y-1.5">
           <Meter label="Waiting on you" value={board.waiting} of={total} tone="warn" sub="Decisions the agent left for a person" />
           <Meter label="Replaced" value={metrics?.autoReplaced ?? 0} of={total} tone="accent" sub="Replaced on its own, inside the automatic limit" />
-          <Meter label="Stopped" value={metrics?.paymentsRefused ?? 0} of={Math.max(total, metrics?.paymentsRefused ?? 0)} tone="bad" sub={`${heldBackLine(metrics)} the code refused to move`} />
+          <Meter label="Stopped" value={metrics?.paymentsRefused ?? 0} of={Math.max(total, metrics?.paymentsRefused ?? 0)} tone="bad" sub={`${heldBackLine(metrics)} held by policy`} />
           <Meter label="Certified" value={metrics?.certified ?? 0} of={total} tone="solid" sub="Reconciled against Airwallex and sealed" />
         </div>
 

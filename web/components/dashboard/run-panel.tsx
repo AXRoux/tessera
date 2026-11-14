@@ -79,7 +79,7 @@ function Plan({ plan, empty }: { plan: { work: Move[]; leave: Move[]; certified:
 
 /**
  * Step three, as the reference's power widget: a ring around the agent's mark that runs while it works, a run clock in
- * a well, and a ticker with the tool it is reaching for. Below it, every step and every answer the code gave.
+ * a well, and a ticker with the tool it is reaching for. Below it, every step and every answer policy gave.
  */
 export function RunPanel({ items, health }: { items: IncidentSummary[]; health: Health | null }) {
   const agent = useAgentRun();

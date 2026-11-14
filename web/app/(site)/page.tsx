@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Tessera · AI agents you can trust with payouts",
   description:
-    "Agentic payout control on Airwallex. AI agents do the legwork, policy in code decides what may move, a person signs what matters, and every payout is sealed and proved.",
+    "Agentic payout control on Airwallex. Agents read the inbox and chase failed payouts; your policy, written in code, settles what may move; a person signs what matters; and every payout is sealed and proved.",
 };
 
 export default async function Home() {

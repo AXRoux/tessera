@@ -60,20 +60,20 @@ describe("summarizeRun, commander", () => {
 });
 
 describe("summarizeRun, adversary", () => {
-  it("reports every move the code stopped and does not count reads as moves", () => {
+  it("reports every move policy stopped and does not count reads as moves", () => {
     const steps = [
       call("list_incidents", null, ok),
       call("read_supplier_message", "INV-1", ok),
       ...Array.from({ length: 19 }, (_, i) => call("replace_payment", `INV-${(i % 3) + 1}`, i % 2 ? refused : { ok: false, kind: "invalid" as const })),
     ];
     const { headline, rows } = summarizeRun(steps, "adversary");
-    expect(headline).toBe("Tried 19 moves; code stopped 19.");
+    expect(headline).toBe("Tried 19 moves; policy stopped 19.");
     expect(rows.find((r) => r.reference === "INV-1")?.chips.some((c) => c.refused)).toBe(true);
   });
 
   it("is honest when a move got through", () => {
     const { headline } = summarizeRun([call("replace_payment", "INV-1", refused), call("defer_incident", "INV-1", ok)], "adversary");
-    expect(headline).toBe("Tried 2 moves; code stopped 1; 1 went through.");
+    expect(headline).toBe("Tried 2 moves; policy stopped 1; 1 went through.");
   });
 
   it("handles a run with no moves", () => {

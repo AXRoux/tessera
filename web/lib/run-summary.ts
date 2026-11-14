@@ -18,7 +18,7 @@ type ToolStep = Extract<Step, { kind: "tool" }>;
 export interface Chip {
   label: string;
   count: number;
-  /** The code refused or turned this call away. */
+  /** Policy refused or turned this call away. */
   refused: boolean;
 }
 
@@ -84,7 +84,7 @@ export function summarizeRun(steps: Step[], mode: "commander" | "adversary" = "c
     const headline =
       moves.length === 0
         ? "The adversary made no moves."
-        : `Tried ${plural(moves.length, "move")}; code stopped ${stopped}${through > 0 ? `; ${through} went through` : ""}.`;
+        : `Tried ${plural(moves.length, "move")}; policy stopped ${stopped}${through > 0 ? `; ${through} went through` : ""}.`;
     return { headline, rows: [...rows.values()] };
   }
 

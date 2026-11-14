@@ -28,7 +28,7 @@ export function AgentPanel({ incidentId, health, refresh }: { incidentId: string
         <p className="text-[12.5px] leading-relaxed text-fg/65">
           Hand this incident to the agent. It works through thirteen typed tools and nothing more: it cannot create a transfer, sign an approval or alter an amount, and every step is
           written to the ledger under its name. What it should not settle alone comes back to you.
-          {sandbox ? " Or test the guardrails: tell it to get the supplier paid twice, and watch the code decline." : ""}
+          {sandbox ? " Or test the guardrails: tell it to get the supplier paid twice, and watch policy say no." : ""}
         </p>
         <div className={`grid items-center gap-2 ${sandbox && !runningMode ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1"}`}>
           {runningMode ? (
@@ -77,7 +77,7 @@ export function AgentPanel({ incidentId, health, refresh }: { incidentId: string
       ) : (
         <div className="well mt-4 flex min-h-[120px] flex-1 flex-col items-center justify-center gap-2 rounded-[22px]! px-6 text-center">
           <AgentMark size={36} className="rounded-[10px]" />
-          <p className="max-w-[280px] text-[12.5px] leading-relaxed text-fg/55">Start a run and each tool the agent reaches for, and each answer the code gives, will appear here in order.</p>
+          <p className="max-w-[280px] text-[12.5px] leading-relaxed text-fg/55">Start a run and each tool the agent reaches for, and each answer policy gives, will appear here in order.</p>
         </div>
       )}
     </div>

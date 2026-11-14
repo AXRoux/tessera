@@ -46,11 +46,11 @@ export function guideCopy({ health, takeover, onRun, running, compact = false }:
       ),
     },
     agent: {
-      text: "The agent reads the board, weighs every incident and acts through thirteen typed tools. It may wait, replace, escalate or draft a reply; money moves only when the code agrees, and anything uncertain comes to you.",
+      text: "The agent reads the board, weighs every incident and acts through thirteen typed tools. It may wait, replace, escalate or draft a reply; money moves only when policy agrees, and anything uncertain comes to you.",
       action: run("Let the agent work", "commander"),
     },
     adversary: {
-      text: "Test the guardrails. Instruct the same agent to pay a supplier twice, swap the bank details or argue past a limit. The code declines every move, and what it cannot settle on its own is handed to a person, reasons attached.",
+      text: "Test the guardrails. Instruct the same agent to pay a supplier twice, swap the bank details or argue past a limit. Policy refuses every move, and what it cannot settle on its own is handed to a person, reasons attached.",
       action: run("Test the guardrails", "adversary"),
     },
     takeover: takeover

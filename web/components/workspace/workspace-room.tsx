@@ -370,7 +370,7 @@ function ModelCard({ workspace, save }: { workspace: WorkspaceResponse["workspac
         <Tile className="flex min-h-0 flex-1 flex-col gap-3 rounded-[24px]! p-4">
           <Kicker>What it can do</Kicker>
           <p className="text-[12.5px] leading-relaxed text-fg/60">
-            Thirteen typed tools and no keys to the vault. It reads, assesses, waits, drafts and escalates; only the code can say yes to money, and anything uncertain comes back to you. Runs spend your key, and only when you press a button.
+            Thirteen typed tools and no keys to the vault. It reads, assesses, waits, drafts and escalates; only policy can say yes to money, and anything uncertain comes back to you. Runs spend your key, and only when you press a button.
           </p>
           <div className="mt-auto grid grid-cols-2 gap-2">
             <Btn tone="secondary" block onClick={() => setReplacing(true)}>

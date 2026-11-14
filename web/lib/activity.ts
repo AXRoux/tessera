@@ -64,7 +64,7 @@ const BAND_OF: Record<string, Band> = {
 
 export const bandOf = (type: string): Band => BAND_OF[type] ?? "agent";
 
-/** Money the code refused to move, per currency, as one line. Used by the landing board and the control panel. */
+/** Money policy refused to move, per currency, as one line. Used by the landing board and the control panel. */
 export function heldBackLine(metrics: Metrics | null): string {
   if (!metrics) return "—";
   const lines = Object.entries(metrics.refusedAmountMinor).filter(([, minor]) => minor > 0);

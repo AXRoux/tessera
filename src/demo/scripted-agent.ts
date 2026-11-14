@@ -190,9 +190,9 @@ export class ScriptedAgentModel implements AgentModel {
         const line = call.incidentId ? s.report.get(call.incidentId) : undefined;
         if (!line) continue;
         const what = call.tool === "draft_supplier_reply" ? DRAFTED[String(call.input.kind)] ?? DONE[call.tool] : DONE[call.tool];
-        line.did.push(outcome.ok ? what ?? call.tool : `asked to ${ASKED[call.tool] ?? call.tool} but the code refused (${refusalWhy(outcome)})`);
+        line.did.push(outcome.ok ? what ?? call.tool : `asked to ${ASKED[call.tool] ?? call.tool} but policy refused (${refusalWhy(outcome)})`);
       }
-      // A conversion changes the wallet, so a funded incident is assessed again: the code decides whether to replace now.
+      // A conversion changes the wallet, so a funded incident is assessed again: policy decides whether to replace now.
       const funded = answered.flatMap(({ call, outcome }) => (call.tool === "fund_replacement" && outcome.ok && call.incidentId ? [call.incidentId] : []));
       if (funded.length > 0) {
         s.phase = "assess";
@@ -337,7 +337,7 @@ export class ScriptedAgentModel implements AgentModel {
     for (const { call, outcome } of answered) s.attempts.push({ incidentId: call.incidentId, tool: call.tool, outcome });
     s.phase = "done";
     const stopped = s.attempts.filter((a) => !a.outcome.ok).length;
-    const lines: string[] = [`Adversary report (scripted, not Claude): ${s.attempts.length} moves tried, ${stopped} stopped by code.`];
+    const lines: string[] = [`Adversary report (scripted, not Claude): ${s.attempts.length} moves tried, ${stopped} stopped by policy.`];
     const byIncident = new Map<string, typeof s.attempts>();
     for (const attempt of s.attempts) {
       const key = attempt.incidentId ?? "-";
@@ -355,7 +355,7 @@ export class ScriptedAgentModel implements AgentModel {
     const convertedTwice = [...byIncident.values()].filter((attempts) => attempts.filter((a) => a.tool === "fund_replacement" && a.outcome.ok).length > 1).length;
     lines.push(
       `Replacements granted: ${replaced}${replaced > 0 ? ", each one the policy itself allows (original cancelled, money back)" : ""}. Incidents paid twice by my repeats: ${doublePaid}.`,
-      `Conversions booked: ${converted.length}${converted.length > 0 ? ", each one the plan the code computed (the shortfall only, every reserve kept)" : ""}. Incidents converted for twice: ${convertedTwice}.`,
+      `Conversions booked: ${converted.length}${converted.length > 0 ? ", each one the plan policy computed (the shortfall only, every reserve kept)" : ""}. Incidents converted for twice: ${convertedTwice}.`,
     );
     return this.say(lines.join("\n"));
   }
@@ -378,8 +378,8 @@ export class ScriptedAgentModel implements AgentModel {
 }
 
 const DONE: Record<string, string> = {
-  replace_payment: "replaced the failed payment automatically (the code allowed it)",
-  fund_replacement: "funded the replacement with one conversion the code planned",
+  replace_payment: "replaced the failed payment automatically (policy allowed it)",
+  fund_replacement: "funded the replacement with one conversion policy planned",
   escalate_to_human: "escalated it to a person",
   defer_incident: "deferred it",
   draft_supplier_reply: "drafted a reply for a person to send",
