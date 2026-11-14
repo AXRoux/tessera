@@ -8,6 +8,7 @@ import { passwordStrength } from "@/lib/password-strength";
 import { safeNext } from "@/lib/safe-next";
 import { initialsOf } from "@/lib/initials";
 import { useSignedIn, type SignedIn } from "@/lib/use-account";
+import { storeFaceChoice } from "../kit/agent-mark";
 import { Btn, LinkBtn } from "../kit/metal";
 import { useTheme } from "../kit/theme";
 import { Capsule, Toggle, type ChipTone } from "../kit/widgets";
@@ -520,7 +521,11 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
                     <li key={option.id}>
                       <button
                         type="button"
-                        onClick={() => setAgent(option)}
+                        onClick={() => {
+                          setAgent(option);
+                          // The agent picked here is the face the console shows, until a model says otherwise.
+                          storeFaceChoice(option.id);
+                        }}
                         aria-pressed={on}
                         title={option.name}
                         className={`group relative flex size-12 cursor-pointer items-center justify-center overflow-hidden rounded-[15px] bg-[#0c0d10] shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_10px_20px_-12px_rgb(0_0_0/0.7)] transition-transform duration-200 hover:-translate-y-1 ${

@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import type { AgentFaceChoice } from "@/lib/agent-face";
 import { initialsOf } from "@/lib/initials";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IncidentListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
 import { api } from "@/lib/client-api";
 import { needsYou } from "@/lib/tour-steps";
 import { agentName, useAgentRun } from "./agent/agent-run";
+import { AgentFaceProvider } from "./kit/agent-mark";
 import { MetalCircle } from "./kit/metal";
 import { ThemeProvider, useTheme, type Theme } from "./kit/theme";
 import { Chip, Toggle } from "./kit/widgets";
@@ -282,7 +284,20 @@ function Menubar({ health, account }: { health: Health | null; account: Account 
   );
 }
 
-export function AppShell({ health, theme, account = null, children }: { health: Health | null; theme: Theme; account?: Account | null; children: ReactNode }) {
+export function AppShell({
+  health,
+  theme,
+  agentFace = "auto",
+  account = null,
+  children,
+}: {
+  health: Health | null;
+  theme: Theme;
+  /** The agent face this browser chose (cookie), or "auto" to follow the connected model. */
+  agentFace?: AgentFaceChoice;
+  account?: Account | null;
+  children: ReactNode;
+}) {
   const [query, setQuery] = useState("");
   const waiting = useWaiting();
   const [palette, setPalette] = useState(false);
@@ -306,6 +321,7 @@ export function AppShell({ health, theme, account = null, children }: { health: 
   const value = useMemo<ShellState>(() => ({ query, setQuery, waiting, openPalette }), [query, waiting, openPalette]);
   return (
     <ShellContext.Provider value={value}>
+      <AgentFaceProvider initialChoice={agentFace} modelName={health?.agent?.kind === "model" ? health.agent.name : null}>
       <ThemeProvider initial={theme}>
         {(current) => (
           <div data-theme={current} className="desk flex min-h-dvh flex-col font-ui antialiased xl:h-dvh xl:min-h-[640px]">
@@ -315,6 +331,7 @@ export function AppShell({ health, theme, account = null, children }: { health: 
           </div>
         )}
       </ThemeProvider>
+      </AgentFaceProvider>
     </ShellContext.Provider>
   );
 }

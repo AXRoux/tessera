@@ -5,7 +5,8 @@ import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { WorkspaceResponseSchema, type WorkspaceResponse } from "../../../src/server/wire";
 import { api, ApiProblem } from "@/lib/client-api";
 import { authClient } from "@/lib/auth-client";
-import { AgentMark } from "../kit/agent-mark";
+import { AGENT_FACES, faceForModel } from "@/lib/agent-face";
+import { AgentMark, FaceGlyph, useAgentFace } from "../kit/agent-mark";
 import { Btn, LinkBtn } from "../kit/metal";
 import { Chip, Kicker, RingSquare, Tile, Toggle, Tray, TrayHead } from "../kit/widgets";
 import { Icon } from "../landing/icons";
@@ -315,6 +316,50 @@ function AirwallexCard({ workspace, save }: { workspace: WorkspaceResponse["work
 
 const DEFAULT_MODEL = { anthropic: "claude-sonnet-4-5", openai: "" } as const;
 
+/**
+ * Which face the agent wears in the console: "Auto" follows the connected model (a Claude model shows Claude), or a
+ * person pins one. Remembered on this browser.
+ */
+function FacePicker() {
+  const { choice, auto, setChoice } = useAgentFace();
+  return (
+    <Tile className="rounded-[24px]! px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <Kicker>Shown in the console as</Kicker>
+        <span className="text-[11.5px] text-fg/50">{choice === "auto" ? `Auto follows your model: ${auto.name}` : "Pinned on this browser"}</span>
+      </div>
+      <div role="group" aria-label="Agent face" className="mt-2.5 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          aria-pressed={choice === "auto"}
+          onClick={() => setChoice("auto")}
+          title={`Follow the connected model (now ${auto.name})`}
+          className={`well flex h-10 cursor-pointer items-center gap-2 rounded-full! pl-1.5 pr-3.5 text-[12.5px] font-medium transition-shadow ${choice === "auto" ? "ring-2 ring-accent" : "text-fg/70 hover:text-fg"}`}
+        >
+          <FaceGlyph face={auto} size={28} />
+          Auto
+        </button>
+        {AGENT_FACES.map((face) => {
+          const on = choice === face.id;
+          return (
+            <button
+              key={face.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setChoice(face.id)}
+              title={face.name}
+              className={`cursor-pointer rounded-[12px] transition-transform duration-200 hover:-translate-y-0.5 ${on ? "-translate-y-0.5 ring-2 ring-accent ring-offset-2 ring-offset-canvas" : ""}`}
+            >
+              <FaceGlyph face={face} size={36} className="rounded-[12px]!" />
+              <span className="sr-only">{face.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </Tile>
+  );
+}
+
 function ModelCard({ workspace, save }: { workspace: WorkspaceResponse["workspace"]; save: (path: string, body: unknown) => Promise<string | null> }) {
   const modelId = useId();
   const keyId = useId();
@@ -327,6 +372,7 @@ function ModelCard({ workspace, save }: { workspace: WorkspaceResponse["workspac
   const [error, setError] = useState<string | null>(null);
   const [replacing, setReplacing] = useState(false);
   const connected = workspace.model;
+  const { setChoice } = useAgentFace();
   const ready = model.trim().length > 0 && apiKey.trim().length > 0 && (provider === "anthropic" || baseUrl.trim().startsWith("https://"));
 
   async function connect(event: FormEvent) {
@@ -340,6 +386,8 @@ function ModelCard({ workspace, save }: { workspace: WorkspaceResponse["workspac
     else {
       setApiKey("");
       setReplacing(false);
+      // A model that says who it is takes its own face (connect Claude, see Claude); an unnamed one keeps the pinned face.
+      if (faceForModel(model.trim()) ?? (provider === "anthropic" ? "claude" : null)) setChoice("auto");
     }
   }
 
@@ -365,6 +413,8 @@ function ModelCard({ workspace, save }: { workspace: WorkspaceResponse["workspac
           )}
         </div>
       </Tile>
+
+      <FacePicker />
 
       {connected && !replacing ? (
         <Tile className="flex min-h-0 flex-1 flex-col gap-3 rounded-[24px]! p-4">
