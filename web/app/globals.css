@@ -46,6 +46,8 @@
     text-rendering: optimizeLegibility;
     min-height: 100vh;
     background: var(--color-paper);
+    /* Long unbroken tokens (hashes, ids, URLs) wrap instead of spilling out of their box. */
+    overflow-wrap: break-word;
   }
   ::selection {
     background: var(--color-blue);

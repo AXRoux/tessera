@@ -305,7 +305,7 @@ export function AgentTimeline({
 
   return (
     <DenseContext.Provider value={dense}>
-    <div className={`thin-scroll overflow-y-auto overscroll-contain ${className}`}>
+    <div className={`thin-scroll overflow-x-hidden overflow-y-auto overscroll-contain [overflow-wrap:anywhere] ${className}`}>
       <ol>
         {visible.map(({ step, i }, position) =>
           step.kind === "text" ? (

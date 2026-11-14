@@ -415,7 +415,7 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
           </h1>
 
           <p className="relative mt-5 max-w-[520px] text-[clamp(14px,min(1vw,1.7vh),16.5px)] leading-relaxed text-fg/70 shorter:line-clamp-3">
-            Tessera is the control layer between your AI agents and your treasury. Agents read the inbox, chase failed payouts, draft the replies, and buy only what a person signed for — on single-use Visa cards. Your policy,
+            Tessera is the control layer between your AI agents and your treasury. Agents read the inbox, chase failed payouts, draft the replies, and buy only what a person signed for, on single-use Visa cards. Your policy,
             written in code, settles what may move; a person signs what matters; and every payout is sealed before it leaves and proved once it lands.
           </p>
 
