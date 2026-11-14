@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { isMetalFxSupported, MetalFx, type MaskFn } from "metal-fx";
 import { useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { authClient } from "@/lib/auth-client";
 import { passwordStrength } from "@/lib/password-strength";
@@ -41,13 +40,18 @@ function sentence(error: { code?: string; message?: string; status?: number } | 
 
 /* ── Agents: any of them can hold the card ──────────────────────────────────────────────────────────────────────── */
 
+/**
+ * Each agent's card has its own plate: artwork generated with fal.ai and upscaled (scripts/gen-card-art.ts), after
+ * two references, a set of dark art cards and a series of grainy editorial posters. `scrim` is how much the plate
+ * needs darkening on the left for the writing to read; `mirror` flips a plate whose calm side is on the right.
+ */
 const AGENTS = [
-  { id: "hermes", name: "Hermes", src: "/agents/hermes-agent-on-dark.svg", full: true },
-  { id: "claude", name: "Claude", src: "/agents/claude.svg" },
-  { id: "openai", name: "OpenAI", src: "/agents/openai-on-dark.svg" },
-  { id: "gemini", name: "Gemini", src: "/agents/gemini.svg" },
-  { id: "cursor", name: "Cursor", src: "/agents/cursor-on-dark.svg" },
-  { id: "copilot", name: "Copilot", src: "/agents/githubcopilot-on-dark.svg" },
+  { id: "hermes", name: "Hermes", src: "/agents/hermes-agent-on-dark.svg", full: true, plate: "Liquid chrome", scrim: 0.6, mirror: true },
+  { id: "claude", name: "Claude", src: "/agents/claude.svg", plate: "Lava field", scrim: 0.55 },
+  { id: "openai", name: "OpenAI", src: "/agents/openai-on-dark.svg", plate: "Lunar", scrim: 0.45 },
+  { id: "gemini", name: "Gemini", src: "/agents/gemini.svg", plate: "Spectrum", scrim: 0.4 },
+  { id: "cursor", name: "Cursor", src: "/agents/cursor-on-dark.svg", plate: "Radiograph", scrim: 0.3 },
+  { id: "copilot", name: "Copilot", src: "/agents/githubcopilot-on-dark.svg", plate: "Ember", scrim: 0.45 },
 ] as const;
 type Agent = (typeof AGENTS)[number];
 
@@ -66,46 +70,71 @@ function AgentGlyph({ agent, size }: { agent: Agent; size: number }) {
   );
 }
 
-/* ── The liquid-metal card ─────────────────────────────────────────────────────────────────────────────────────── */
+/* ── The card: an art plate per agent ─────────────────────────────────────────────────────────────────────────── */
 
 const CARD_RADIUS = 26;
-const fill =
-  (radius: number): MaskFn =>
-  (ctx, w, h, dpr) => {
-    ctx.beginPath();
-    ctx.roundRect(0, 0, w, h, radius * dpr);
-    ctx.fill();
-  };
 
-/** A surface of liquid metal: the shader fills the whole card (metal-fx `mask`), darkened so writing on it reads. */
-function LiquidSurface({ children, tint }: { children: ReactNode; tint: string }) {
-  const [live, setLive] = useState(false);
-  // After hydration, and only where WebGL2 works: elsewhere the black marble below stands in for the shader.
-  useEffect(() => setLive(isMetalFxSupported()), []);
-  const face = (
-    <div className="relative h-full w-full overflow-hidden" style={{ borderRadius: CARD_RADIUS }}>
-      {live ? null : (
-        <div aria-hidden className="absolute inset-0 bg-[radial-gradient(120%_90%_at_80%_10%,#3a3d49_0%,transparent_45%),radial-gradient(90%_80%_at_10%_100%,#2b2f3b_0%,transparent_50%),linear-gradient(135deg,#0b0c10,#16171c)]" />
+/** The plate's image: the 1000 px file for phones and 1x screens, the 2000 px one for retina at full size. */
+function plateProps(agent: Agent) {
+  return {
+    src: `/cards/${agent.id}-1000.webp`,
+    srcSet: `/cards/${agent.id}-1000.webp 1000w, /cards/${agent.id}.webp 2000w`,
+    sizes: "(min-width: 640px) 500px, 86vw",
+  };
+}
+
+/**
+ * The art plate under a face, in layers: the picture (drifting against the tilt, so it sits behind the glass), a scrim
+ * on the left where the writing goes, film grain, and a holographic sheen that follows the pointer. Every agent's
+ * plate is stacked and only the chosen one shows, so switching agents crossfades instead of popping.
+ */
+function Plate({ agent, seen, tilt, back = false, children }: { agent: Agent; seen: ReadonlySet<string>; tilt: Tilt; back?: boolean; children: ReactNode }) {
+  const drift = (a: Agent) =>
+    `translate3d(${(-tilt.y * 0.55).toFixed(2)}px, ${(tilt.x * 0.55).toFixed(2)}px, 0) scale(${back ? 1.18 : 1.07})${"mirror" in a ? " scaleX(-1)" : ""}`;
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-[#0b0c10]" style={{ borderRadius: CARD_RADIUS }}>
+      {AGENTS.filter((a) => seen.has(a.id)).map((a) => (
+        // eslint-disable-next-line @next/next/no-img-element -- pre-sized local WebP plates with their own srcset
+        <img
+          key={a.id}
+          {...plateProps(a)}
+          alt=""
+          aria-hidden
+          draggable={false}
+          decoding="async"
+          fetchPriority={a.id === agent.id ? "high" : "low"}
+          className="absolute inset-0 h-full w-full select-none object-cover"
+          style={{ opacity: a.id === agent.id ? 1 : 0, transform: drift(a), transition: "opacity 700ms ease-out, transform 250ms ease-out", filter: back ? "blur(16px) brightness(0.42) saturate(1.15)" : undefined }}
+        />
+      ))}
+      {back ? null : (
+        <div
+          aria-hidden
+          className="absolute inset-0 transition-opacity duration-700"
+          style={{
+            background: `linear-gradient(90deg, rgb(3 4 7 / ${agent.scrim}) 0%, rgb(3 4 7 / ${agent.scrim * 0.45}) 50%, transparent 78%), linear-gradient(0deg, rgb(3 4 7 / 0.55) 0%, transparent 42%), linear-gradient(180deg, rgb(3 4 7 / 0.35) 0%, transparent 28%)`,
+          }}
+        />
       )}
-      <div aria-hidden className="absolute inset-0" style={{ background: tint }} />
+      <div aria-hidden className="film-grain absolute inset-0" />
+      <div
+        aria-hidden
+        className="holo-sheen absolute inset-0 transition-opacity duration-500"
+        // While the pointer is on the card the sheen follows it; the idle drift (an animation) would override it.
+        style={{ opacity: tilt.on ? 0.55 : 0.22, ...(tilt.on ? { animation: "none", backgroundPosition: `${tilt.gx}% ${tilt.gy}%` } : {}) }}
+      />
       {children}
     </div>
   );
-  if (!live) return face;
+}
+
+/** A thin registration cross, after the posters. */
+function Crosshair({ className = "" }: { className?: string }) {
   return (
-    <MetalFx
-      preset="chromatic"
-      theme="dark"
-      mask={fill(CARD_RADIUS)}
-      glowMode="ring"
-      disableGlow
-      strength={0.9}
-      shaderScale={3.2}
-      borderRadius={CARD_RADIUS}
-      className="mfx-card absolute! inset-0 flex!"
-    >
-      {face}
-    </MetalFx>
+    <svg aria-hidden viewBox="0 0 20 20" className={`size-4 text-white/55 ${className}`} fill="none" stroke="currentColor" strokeWidth="1">
+      <path d="M10 0v20M0 10h20" />
+      <circle cx="10" cy="10" r="4" />
+    </svg>
   );
 }
 
@@ -120,8 +149,8 @@ function Chip() {
 }
 
 /**
- * One face of the card, shown only while it faces the viewer; the swap lands as the card turns edge-on. Opacity, not
- * visibility: the metal inside sets its own `visibility: visible` once its first frame lands, which would show through.
+ * One face of the card, shown only while it faces the viewer; the swap lands as the card turns edge-on. Safari does not
+ * always honour backface-visibility on a face with filtered layers, so the hidden face is also made transparent.
  */
 const face = (showing: boolean) => ({ opacity: showing ? 1 : 0, transition: "opacity 0s linear 90ms" });
 
@@ -131,6 +160,8 @@ function digitsFor(text: string): string {
   for (const char of text.toLowerCase()) hash = (hash * 31 + char.charCodeAt(0)) % 10_000;
   return String(hash).padStart(4, "0");
 }
+
+type Tilt = { x: number; y: number; gx: number; gy: number; on: boolean };
 
 function Card({
   mode,
@@ -152,7 +183,17 @@ function Card({
   /** Already signed in: the card is theirs, by name. */
   account: SignedIn | null;
 }) {
-  const [tilt, setTilt] = useState({ x: 0, y: 0, gx: 50, gy: 30, on: false });
+  const [tilt, setTilt] = useState<Tilt>({ x: 0, y: 0, gx: 50, gy: 30, on: false });
+  // Plates load as agents are picked (the first at once), and the rest quietly once the page is idle.
+  const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set([agent.id]));
+  useEffect(() => setSeen((s) => (s.has(agent.id) ? s : new Set([...s, agent.id]))), [agent.id]);
+  useEffect(() => {
+    const warm = () => setSeen(new Set(AGENTS.map((a) => a.id)));
+    const idle = window.requestIdleCallback?.(warm, { timeout: 2500 });
+    const timer = idle === undefined ? window.setTimeout(warm, 1500) : undefined;
+    return () => (idle === undefined ? window.clearTimeout(timer) : window.cancelIdleCallback(idle));
+  }, []);
+  const plateNo = String(AGENTS.findIndex((a) => a.id === agent.id) + 1).padStart(2, "0");
   const strength = passwordStrength(password);
   const signingUp = mode === "sign-up" && !account;
   const holder = account ? account.name || account.email : mode === "operator" ? "Operator" : signingUp ? name.trim() || "Your name" : email.trim() || "you@company.com";
@@ -177,14 +218,19 @@ function Card({
             that holds a WebGL canvas (the metal), and showed the back, mirrored, in place of the front. */}
         <div className="chroma-edge absolute inset-0 p-[1.5px] [backface-visibility:hidden]" style={{ ...face(!flipped), borderRadius: CARD_RADIUS + 1.5, boxShadow: "0 40px 70px -35px rgb(0 0 0 / 0.75), 0 8px 18px -8px rgb(0 0 0 / 0.35)" }}>
           <div className="relative h-full w-full">
-          <LiquidSurface tint="linear-gradient(120deg, rgb(4 5 8 / 0.8) 0%, rgb(4 5 8 / 0.56) 45%, rgb(4 5 8 / 0.34) 100%)">
+          <Plate agent={agent} seen={seen} tilt={tilt}>
             <div className="relative flex h-full flex-col justify-between p-7 text-white">
               <div className="flex items-start justify-between">
-                <span className="flex items-center gap-2.5">
-                  <Logo size={26} />
-                  <span className="text-[15px] font-bold italic tracking-[0.06em]">TESSERA</span>
-                </span>
-                <span className="flex items-center gap-2 rounded-full bg-white/10 py-1 pl-1 pr-3 backdrop-blur-md" title={`Issued for ${agent.name}`}>
+                <div className="flex flex-col gap-2">
+                  <span className="flex items-center gap-2.5">
+                    <Logo size={26} />
+                    <span className="cond text-[22px] leading-none tracking-[0.02em]">Tessera</span>
+                  </span>
+                  <span className="readout text-[9.5px] uppercase tracking-[0.18em] text-white/60 [text-shadow:0_1px_8px_rgb(0_0_0/0.6)]">
+                    Plate {plateNo} / {agent.plate}
+                  </span>
+                </div>
+                <span className="flex items-center gap-2 rounded-full bg-black/35 py-1 pl-1 pr-3 ring-1 ring-white/15 backdrop-blur-md" title={`Issued for ${agent.name}`}>
                   <span className="flex size-7 items-center justify-center overflow-hidden rounded-full bg-black/60">
                     <AgentGlyph agent={agent} size={"full" in agent ? 28 : 16} />
                   </span>
@@ -192,26 +238,31 @@ function Card({
                 </span>
               </div>
 
-              <div>
-                <span className="text-[12px] text-white/55">{signingUp ? "New workspace" : "Control room"}</span>
-                <p className="mt-0.5 truncate text-[30px] font-semibold leading-none tracking-[-0.03em]">
-                  {signingUp ? (name.trim() ? `${name.trim().split(" ")[0]}’s workspace` : "Your workspace") : "Welcome back"}
-                </p>
+              <div className="flex items-end justify-between gap-4">
+                <div className="min-w-0">
+                  <span className="readout text-[10px] uppercase tracking-[0.2em] text-white/55">{signingUp ? "New workspace" : "Control room"}</span>
+                  <p className="mt-1 truncate text-[30px] font-semibold leading-none tracking-[-0.035em] [text-shadow:0_1px_18px_rgb(0_0_0/0.45)]">
+                    {signingUp ? (name.trim() ? `${name.trim().split(" ")[0]}’s workspace` : "Your workspace") : "Welcome back"}
+                  </p>
+                </div>
+                <Crosshair className="mb-1 shrink-0" />
               </div>
 
               <div className="flex items-end justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="readout whitespace-nowrap text-[min(19px,4.3vw)] tracking-[0.12em] text-white/95">1X00 ···· ···· {digitsFor(account ? account.email : mode === "operator" ? "operator" : email)}</p>
+                  <p className="tnum whitespace-nowrap text-[min(21px,4.6vw)] font-medium tracking-[0.06em] text-white [text-shadow:0_1px_14px_rgb(0_0_0/0.5)]">
+                    1X00 ···· ···· {digitsFor(account ? account.email : mode === "operator" ? "operator" : email)}
+                  </p>
                   <p className="mt-1.5 flex items-baseline gap-3 text-[12.5px]">
-                    <span className="max-w-[260px] truncate text-white/85">{holder}</span>
-                    <span className="readout text-white/45">{since}</span>
+                    <span className="max-w-[260px] truncate text-white/90">{holder}</span>
+                    <span className="readout text-white/50">{since}</span>
                   </p>
                 </div>
                 <Chip />
               </div>
             </div>
-          </LiquidSurface>
-          {/* Glare that follows the pointer, so the metal reads as metal. */}
+          </Plate>
+          {/* Glare that follows the pointer, so the plate reads as glass over a picture. */}
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 transition-opacity duration-300"
@@ -223,7 +274,7 @@ function Card({
         {/* Back: what happens to what you type */}
         <div className="chroma-edge absolute inset-0 p-[1.5px] [backface-visibility:hidden] [transform:rotateY(180deg)]" style={{ ...face(flipped), borderRadius: CARD_RADIUS + 1.5, boxShadow: "0 40px 70px -35px rgb(0 0 0 / 0.75)" }}>
           <div className="relative h-full w-full">
-          <LiquidSurface tint="linear-gradient(200deg, rgb(4 5 8 / 0.8), rgb(4 5 8 / 0.6))">
+          <Plate agent={agent} seen={seen} tilt={tilt} back>
             <div className="relative flex h-full flex-col text-white">
               <div aria-hidden className="mt-7 h-12 w-full bg-black/85" />
               <div className="flex flex-1 flex-col justify-between p-7 pt-5">
@@ -247,7 +298,7 @@ function Card({
                 </div>
               </div>
             </div>
-          </LiquidSurface>
+          </Plate>
           </div>
         </div>
       </div>
