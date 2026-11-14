@@ -1,8 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { actorLabel, reasonText } from "@/lib/agent-verdict";
+import { Acknowledged, api } from "@/lib/client-api";
+import type { RunAction } from "@/lib/use-incident";
 import { ago } from "@/lib/format";
 import type { IncidentView } from "../../../src/server/wire";
+import { Btn } from "../kit/metal";
 import { Battery, Chip, clock, Kicker, Readout, Tile, useTick } from "../kit/widgets";
 
 type Decision = NonNullable<IncidentView["assessment"]>["decision"];
@@ -78,8 +82,13 @@ const clean = (reason: string): string => reason.replace(/agent:[\w-]+:\s*/g, ""
  * moment the room watches: when it empties, the sweep looks again and the recommendation may change.
  */
 function Window({ recheckAt, since }: { recheckAt: string; since: string | null }) {
-  const now = useTick(1000);
+  const tick = useTick(1000);
+  // The server's clock and the browser's differ by the time the page took to arrive, so the first paint shows the full
+  // window and the live count starts once the page is in the browser (otherwise hydration never matches).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const end = Date.parse(recheckAt);
+  const now = mounted ? tick : since ? Date.parse(since) : end;
   const start = since ? Date.parse(since) : null;
   const left = end - now;
   const span = start !== null && end > start ? end - start : null;
@@ -104,7 +113,7 @@ function Window({ recheckAt, since }: { recheckAt: string; since: string | null 
  * Step one on an incident, and its one inverted tile: what is going on and what Tessera recommends. A handoff leads in
  * the agent's own words; then the window being waited out, the reasons, and what is held back and why. Said once each.
  */
-export function DecisionPanel({ view, step = 1 }: { view: IncidentView; step?: number }) {
+export function DecisionPanel({ view, step = 1, act }: { view: IncidentView; step?: number; act?: { busy: string | null; run: RunAction } }) {
   const { assessment, assessmentError } = view;
   return (
     <Tile invert as="section" className="flex min-h-0 min-w-0 flex-col rounded-[30px]!">
@@ -119,18 +128,19 @@ export function DecisionPanel({ view, step = 1 }: { view: IncidentView; step?: n
             <p className="mt-3 max-w-xl text-[13.5px] leading-relaxed text-fg/65">{assessmentError ?? "The assessment could not be reached."} The history alongside remains the record of truth.</p>
           </>
         ) : (
-          <Recommendation view={view} decision={assessment.decision} />
+          <Recommendation view={view} decision={assessment.decision} act={act} />
         )}
       </div>
     </Tile>
   );
 }
 
-function Recommendation({ view, decision: d }: { view: IncidentView; decision: Decision }) {
+function Recommendation({ view, decision: d, act }: { view: IncidentView; decision: Decision; act?: { busy: string | null; run: RunAction } }) {
   const escalated = view.obligation.status === "ESCALATED";
   const closed = view.obligation.status === "CLOSED";
   const handoff = escalated ? escalatedBy(view.events) : null;
   const latest = view.attempts.at(-1) ?? null;
+  const unread = view.inbox.filter((m) => !m.read).length;
   // A handed-over incident already says why in the handoff; the playbook's "already with a person" line would repeat it.
   const reasons = [...new Set(d.reasons.map(clean))].filter((reason) => !(escalated && /^already with a person/i.test(reason)));
   const blocked: { action: Action; reasons: string[] }[] = [];
@@ -154,6 +164,32 @@ function Recommendation({ view, decision: d }: { view: IncidentView; decision: D
           </Chip>
         ))}
       </div>
+
+      {act && !closed && d.recommended === "CLOSE" && d.allowed.includes("CLOSE") ? (
+        // Paid is not the end: the last step is a person's (or the agent's), and it belongs next to the recommendation.
+        <Tile className="mt-5 rounded-[22px]! px-4 py-4">
+          <p className="text-[13px] leading-relaxed text-fg/80">
+            {unread > 0
+              ? `The money has arrived, but the supplier wrote and nobody has read ${unread === 1 ? "it" : "them"} yet. Read ${unread === 1 ? "their message" : "their messages"} under The evidence, Supplier, before you certify.`
+              : "The money has arrived. One step is left: Tessera matches every wallet line against Airwallex, then seals a certificate that closes this invoice for good."}
+          </p>
+          <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Btn
+              tone={unread > 0 ? "secondary" : "primary"}
+              busy={act.busy === "close"}
+              onClick={() =>
+                act.run("close", async () => {
+                  const result = await api(`obligations/${view.obligation.id}/close`, Acknowledged, { method: "POST" });
+                  return { tone: "ok", title: "Reconciled and certified", lines: [`Certificate ${String(result.hash).slice(0, 16)}…, under The evidence.`] };
+                })
+              }
+            >
+              Certify and close
+            </Btn>
+            <span className="text-[11.5px] text-fg/50">Moves no money.</span>
+          </div>
+        </Tile>
+      ) : null}
 
       <div className="mt-5 space-y-2.5">
         {d.recheckAt ? <Window recheckAt={d.recheckAt} since={latest?.createdAt ?? null} /> : null}

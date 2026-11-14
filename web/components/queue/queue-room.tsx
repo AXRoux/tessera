@@ -163,7 +163,7 @@ export function QueueRoom({ initial, health, selected }: { initial: IncidentSumm
 
         <div className="flex min-h-[520px] flex-col xl:min-h-0 [&>*]:flex-1">
           {view && current && view.obligation.id === current.id ? (
-            <DecisionPanel view={view} step={2} />
+            <DecisionPanel view={view} step={2} act={{ busy, run }} />
           ) : (
             <Tile className="flex items-center justify-center rounded-[30px]! text-[13px] text-fg/45">{current ? "Reading the incident…" : "Pick something from the queue."}</Tile>
           )}

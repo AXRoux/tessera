@@ -4,6 +4,7 @@ import failureCodes from "../fixtures/failure-codes.json";
 import { AwxHttpError, AwxNetworkError } from "../src/airwallex/types";
 import { Closer } from "../src/closer/closer";
 import { Commander } from "../src/commander/commander";
+import { ModelError } from "../src/commander/model";
 import { DEFAULT_POLICY } from "../src/commander/policy";
 import type { ExtractRequest, StructuredModel } from "../src/commander/evidence";
 import { createHmac } from "node:crypto";
@@ -383,6 +384,20 @@ describe("supplier evidence", () => {
     expect(view.get("evidence.source")).toBe("model");
     expect(view.get("evidence.enteredBy")).toBe("ops@acme.example");
     expect(view.get("assessment.decision.recommended")).toBe("ESCALATE");
+  });
+
+  it("answers a failing model (no credit, a bad key) with 502 in the provider's words, not a crash", async () => {
+    const broke: StructuredModel = {
+      extract: async () => {
+        throw new ModelError("model API 400: Your credit balance is too low to access the Anthropic API.", 400);
+      },
+    };
+    const a = apiWorld({ model: broke });
+    const id = await openIncident(a);
+    const read = await a.call("POST", `/api/obligations/${id}/evidence/read`, { email: "hello" });
+
+    expect(read.status).toBe(502);
+    expect(read.get("message")).toBe("The model could not answer: Your credit balance is too low to access the Anthropic API.");
   });
 
   it("answers 503 when no model is configured", async () => {

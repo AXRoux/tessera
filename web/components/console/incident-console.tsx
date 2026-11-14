@@ -17,11 +17,10 @@ import { ActionsPanel } from "./actions-panel";
 import { AttemptsRail } from "./attempts-rail";
 import { CertificatePanel } from "./certificate-panel";
 import { DecisionPanel } from "./decision-panel";
-import { EvidencePanel } from "./evidence-panel";
 import { NoticeBox } from "./fields";
-import { InboxPanel } from "./inbox-panel";
 import { LedgerLog } from "./ledger-log";
 import { SandboxPanel } from "./sandbox-panel";
+import { SupplierPanel, supplierCount } from "./supplier-panel";
 
 function Figure({ label, value, tone = "" }: { label: string; value: string; tone?: string }) {
   return (
@@ -100,7 +99,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
 
       <div className="grid min-h-0 gap-4 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(340px,390px)] 2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)_430px]">
         <div className="flex min-h-[520px] flex-col xl:min-h-0 [&>section]:flex-1">
-          <DecisionPanel view={view} />
+          <DecisionPanel view={view} act={{ busy, run }} />
         </div>
 
         <Tray label="The evidence" className="min-h-[560px] gap-3 p-3 xl:min-h-0">
@@ -114,7 +113,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
               options={[
                 { id: "history", label: "History", count: view.events.length },
                 { id: "attempts", label: "Attempts", count: view.attempts.length },
-                { id: "supplier", label: "Supplier", count: view.inbox.length },
+                { id: "supplier", label: "Supplier", count: supplierCount(view) },
                 { id: "certificate", label: "Certificate" },
               ]}
             />
@@ -122,12 +121,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
           <div role="tabpanel" className="thin-scroll min-h-0 flex-1 overflow-y-auto p-1">
             {evidence === "history" ? <LedgerLog events={view.events} chain={view.chain} /> : null}
             {evidence === "attempts" ? <AttemptsRail attempts={view.attempts} /> : null}
-            {evidence === "supplier" ? (
-              <div className="space-y-5">
-                <EvidencePanel view={view} reader={reader} busy={busy} run={run} />
-                <InboxPanel view={view} reader={reader} busy={busy} run={run} />
-              </div>
-            ) : null}
+            {evidence === "supplier" ? <SupplierPanel view={view} reader={reader} busy={busy} run={run} /> : null}
             {evidence === "certificate" ? <CertificatePanel view={view} /> : null}
           </div>
         </Tray>

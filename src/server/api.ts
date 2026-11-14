@@ -1,3 +1,4 @@
+import { ModelError } from "../commander/model";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { WRITTEN_NOTE_MIN_CHARS } from "../approval/approval";
@@ -223,6 +224,10 @@ function problem(error: unknown): Response {
   if (error instanceof ApprovalRejected) return json({ error: error.name, message: error.message, code: error.reason }, 409);
   if (error instanceof z.ZodError) return json({ error: "BadRequest", message: z.prettifyError(error) }, 400);
   if (error instanceof EmlNotPlainText) return json({ error: "BadRequest", message: error.message }, 400);
+  // The model's provider refused or failed (no credit, a bad key, an outage): say so in its words, not as a crash.
+  if (error instanceof ModelError) {
+    return json({ error: "ModelUnavailable", message: `The model could not answer: ${error.message.replace(/^model API \d+:\s*/, "")}` }, 502);
+  }
   for (const [type, status] of KNOWN) {
     if (error instanceof type) return json({ error: error.name, message: error.message }, status);
   }
