@@ -3,7 +3,7 @@ import { interpolate, useCurrentFrame } from "remotion";
 import { Shell } from "../Shell";
 import { cue, sceneFrames } from "../lib";
 import { C, F } from "../theme";
-import { Card, Mono, PannedShot, Pill, Reveal, Sfx, useEnter } from "../ui";
+import { Camera, Card, Mono, Pill, Reveal, Sfx, useEnter } from "../ui";
 
 const id = "incident" as const;
 const T_GOAL = cue(id, "the goal");
@@ -129,7 +129,7 @@ export const Incident: React.FC = () => {
   const mockOut = interpolate(frame, [T_FLIP - 10, T_FLIP + 4], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const shot = useEnter(T_FLIP);
   return (
-    <Shell id={id} eyebrow="03 · One incident, changing">
+    <Shell id={id} eyebrow="04 · One incident, changing">
       <div style={{ position: "absolute", left: 0, top: 0, width: 560 }}>
         {STEPS.map((_, i) => (
           <Step key={i} i={i} />
@@ -149,15 +149,18 @@ export const Incident: React.FC = () => {
             boxShadow: "0 30px 80px rgba(0,0,0,0.6)",
           }}
         >
-          <PannedShot
-            src="img/incident-escalated.png"
-            imgW={1800}
-            imgH={1525}
+          <Camera
+            src="img/v2/incident-1044.jpg"
+            imgW={3200}
+            imgH={2000}
             w={1150}
             h={780}
-            start={T_FLIP + 70}
-            end={END - 20}
-            style={{ borderRadius: 0 }}
+            radius={0}
+            keys={[
+              { at: 0, x: 40, y: 320, width: 1180 },
+              { at: T_FLIP + 80, x: 40, y: 1140, width: 1180, dur: 60 },
+              { at: END - 70, x: 150, y: 0, width: 2900, dur: 50 },
+            ]}
           />
         </div>
       </div>

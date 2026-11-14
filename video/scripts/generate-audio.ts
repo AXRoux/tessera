@@ -100,7 +100,7 @@ for (const [id, prompt] of Object.entries(SFX)) {
 const musicFile = `${OUT}/music.mp3`;
 if (FORCE || !existsSync(musicFile)) {
   console.log("music");
-  const res = await call("/music", { prompt: MUSIC_PROMPT, music_length_ms: 180_000, force_instrumental: true }, "?output_format=mp3_44100_128");
+  const res = await call("/music", { prompt: MUSIC_PROMPT, music_length_ms: 270_000, force_instrumental: true }, "?output_format=mp3_44100_128");
   await Bun.write(musicFile, await res.arrayBuffer());
 }
 

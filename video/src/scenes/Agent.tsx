@@ -128,7 +128,7 @@ const Item: React.FC<{ r: Row }> = ({ r }) => {
 };
 
 export const Agent: React.FC = () => (
-  <Shell id={id} eyebrow="05 · The agent works">
+  <Shell id={id} eyebrow="06 · The agent works">
     <div style={{ display: "flex", gap: 40 }}>
       <Reveal at={6} y={30}>
         <Terminal />

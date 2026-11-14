@@ -10,15 +10,19 @@ import { Idea } from "./scenes/Idea";
 import { Incident } from "./scenes/Incident";
 import { Outro } from "./scenes/Outro";
 import { Proof } from "./scenes/Proof";
+import { Room } from "./scenes/Room";
+import { Visa } from "./scenes/Visa";
 import { Webhook } from "./scenes/Webhook";
 
 const COMPONENTS: Record<SceneId, React.FC> = {
   hook: Hook,
   idea: Idea,
+  room: Room,
   incident: Incident,
   webhook: Webhook,
   agent: Agent,
   break: Break,
+  visa: Visa,
   proof: Proof,
   outro: Outro,
 };

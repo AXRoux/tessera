@@ -151,3 +151,50 @@ export const PannedShot: React.FC<{
     </div>
   );
 };
+
+/** Where the camera looks on a screenshot, in the image's own pixels. It starts moving there at scene frame `at`. */
+export type Focus = { at: number; x: number; y: number; width: number; dur?: number };
+
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/**
+ * A large screenshot seen through a moving camera: from each keyframe's `at` it eases to that region over `dur` frames
+ * (default 32), then holds, so a 2x capture of the console can show the whole board and lean in on one panel on the word
+ * that names it, without ever upscaling past its pixels. A slow drift keeps a held shot alive.
+ */
+export const Camera: React.FC<{
+  src: string;
+  imgW: number;
+  imgH: number;
+  w: number;
+  h: number;
+  keys: Focus[];
+  radius?: number;
+  style?: React.CSSProperties;
+}> = ({ src, imgW, imgH, w, h, keys, radius = 18, style }) => {
+  const frame = useCurrentFrame();
+  let x = keys[0]!.x;
+  let y = keys[0]!.y;
+  let width = keys[0]!.width;
+  for (let i = 1; i < keys.length; i++) {
+    const k = keys[i]!;
+    const t = easeInOut(interpolate(frame, [k.at, k.at + (k.dur ?? 32)], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }));
+    x += (k.x - x) * t;
+    y += (k.y - y) * t;
+    width += (k.width - width) * t;
+  }
+  const drift = 1 + Math.min(frame, 900) * 0.00004;
+  width /= drift;
+  const scale = w / width;
+  const viewH = h / scale;
+  const cx = Math.max(0, Math.min(x, imgW - width));
+  const cy = Math.max(0, Math.min(y, imgH - viewH));
+  return (
+    <div style={{ width: w, height: h, overflow: "hidden", borderRadius: radius, position: "relative", background: "#0b0c10", ...style }}>
+      <Img
+        src={staticFile(src)}
+        style={{ position: "absolute", left: 0, top: 0, width: imgW * scale, height: imgH * scale, maxWidth: "none", transform: `translate(${-cx * scale}px, ${-cy * scale}px)` }}
+      />
+    </div>
+  );
+};

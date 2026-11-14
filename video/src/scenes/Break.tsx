@@ -36,7 +36,7 @@ const Counter: React.FC = () => {
 export const Break: React.FC = () => {
   const done = useEnter(T.db);
   return (
-    <Shell id={id} eyebrow="06 · Try to break it">
+    <Shell id={id} eyebrow="07 · Try to break it">
       <div style={{ display: "flex", gap: 56 }}>
         <Reveal at={6} y={30}>
           <div style={{ position: "relative", boxShadow: "0 30px 80px rgba(0,0,0,0.6)" }}>

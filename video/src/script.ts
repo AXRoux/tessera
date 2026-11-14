@@ -3,7 +3,7 @@
 export const VOICE_ID = "cjVigY5qzO86Huf0OWal"; // Eric: smooth, trustworthy
 export const TTS_MODEL = "eleven_multilingual_v2";
 
-export type SceneId = "hook" | "idea" | "incident" | "webhook" | "agent" | "break" | "proof" | "outro";
+export type SceneId = "hook" | "idea" | "room" | "incident" | "webhook" | "agent" | "break" | "visa" | "proof" | "outro";
 
 export const SCENES: { id: SceneId; text: string }[] = [
   {
@@ -13,6 +13,10 @@ export const SCENES: { id: SceneId; text: string }[] = [
   {
     id: "idea",
     text: "This is Tessera, built on the Airwallex sandbox. The model reads the messy email. A few hundred lines of plain, tested code decide what is allowed. Nothing the agent says, not a clever prompt, not a retry, not a crash, can argue with that code.",
+  },
+  {
+    id: "room",
+    text: "Here is the control room. Seven supplier payouts on Airwallex, each one a different kind of trouble. Every invoice shows its next safe move, what is waiting on you, and what the agent will work.",
   },
   {
     id: "incident",
@@ -31,12 +35,16 @@ export const SCENES: { id: SceneId; text: string }[] = [
     text: "Now the same toolbox, the same model, told to get a supplier paid twice, forge a message, and certify a payment still in flight. Every move is refused. By code, not by the model being polite. The model cannot argue with a database.",
   },
   {
+    id: "visa",
+    text: "Agents also need to buy things. So every purchase gets its own single-use Visa card, issued by Airwallex. Code checks the request, a named person signs it, and the signed terms become the card's own controls. The agent pays through Visa's Trusted Agent Protocol: it signs the checkout, and the merchant verifies that signature before it charges. A charge the card was not signed for, the network declines. And the moment a charge clears, Tessera proves it against what the person signed. Charged by a different merchant? It is flagged, even though the card let it through.",
+  },
+  {
     id: "proof",
-    text: "Fifty adversarial attacks, all held. Five hundred twenty-seven tests. Ninety-four guards, each removed one at a time to prove something breaks. And on the real sandbox, we kill the process with signal nine in the middle of a payment, restart it, and Airwallex holds exactly one transfer.",
+    text: "Fifty adversarial attacks, all held. Six hundred twenty tests. Ninety-four guards, each removed one at a time to prove something breaks. And on the real sandbox, we kill the process with signal nine in the middle of a payment, restart it, and Airwallex holds exactly one transfer.",
   },
   {
     id: "outro",
-    text: "It speaks MCP, with no SDK. Claude Code, Codex, Cursor, Gemini, Copilot and Hermes Agent all get the same ten tools, and the same refusals. It is sandbox only, one operator, tamper-evident, not tamper-proof, and the limits are written down. Tessera. Money that moves once, and can prove it.",
+    text: "It speaks MCP, with no SDK. Claude Code, Codex, Cursor, Gemini, Copilot and Hermes Agent all get the same thirteen tools, and the same refusals. And it is live: sign up, pick your agent, and bring your own Airwallex sandbox keys. Sandbox only, tamper-evident, not tamper-proof, and the limits are written down. Tessera. Money that moves once, and can prove it.",
   },
 ];
 
@@ -48,6 +56,7 @@ export const SFX = {
   impact: "Deep cinematic impact hit with a short reverb tail, tech trailer",
   keys: "Fast soft mechanical keyboard typing burst, quiet room",
   alert: "Soft warning pulse, two low electronic beeps, subtle",
+  tap: "Contactless card tap on a payment terminal, one short clean confirmation beep, modern product UI sound",
 } as const;
 export type SfxId = keyof typeof SFX;
 

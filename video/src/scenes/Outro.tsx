@@ -3,14 +3,18 @@ import { Img, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { Shell } from "../Shell";
 import { cue } from "../lib";
 import { C, F } from "../theme";
-import { Mark, Mono, Reveal, Sfx, Typed } from "../ui";
+import { Camera, Mark, Mono, Pill, Reveal, Sfx, Typed } from "../ui";
 
 const id = "outro" as const;
 const T = {
   mcp: cue(id, "it speaks mcp"),
   logos: cue(id, "claude code"),
-  tools: cue(id, "the same ten tools"),
-  limits: cue(id, "it is sandbox only"),
+  tools: cue(id, "the same thirteen tools"),
+  live: cue(id, "and it is live"),
+  signup: cue(id, "sign up"),
+  pick: cue(id, "pick your agent"),
+  keys: cue(id, "bring your own"),
+  limits: cue(id, "sandbox only"),
   end: cue(id, "money that moves once"),
 };
 
@@ -25,21 +29,22 @@ const AGENTS = [
 
 const LIMITS = [
   { label: "Sandbox only", at: cue(id, "sandbox only") },
-  { label: "One operator", at: cue(id, "one operator") },
   { label: "Tamper-evident, not tamper-proof", at: cue(id, "tamper-evident") },
+  { label: "Limits written down", at: cue(id, "the limits are written down") },
 ];
 
 export const Outro: React.FC = () => {
   const frame = useCurrentFrame();
-  const body = interpolate(frame, [T.end - 16, T.end - 2], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const body = interpolate(frame, [T.live - 14, T.live], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const live = interpolate(frame, [T.live - 6, T.live + 12, T.end - 16, T.end - 2], [0, 1, 1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const endIn = interpolate(frame, [T.end - 2, T.end + 18], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   return (
-    <Shell id={id} eyebrow="08 · Plug it in">
+    <Shell id={id} eyebrow="10 · Plug it in">
       <div style={{ position: "relative", width: 1740, height: 780 }}>
         <div style={{ position: "absolute", inset: 0, opacity: body }}>
           <Reveal at={T.mcp - 6}>
             <div style={{ fontFamily: F.display, fontSize: 72 }}>
-              Any MCP agent<span style={{ color: C.blue }}>.</span> Same ten tools<span style={{ color: C.blue }}>.</span>
+              Any MCP agent<span style={{ color: C.blue }}>.</span> Same thirteen tools<span style={{ color: C.blue }}>.</span>
             </div>
           </Reveal>
 
@@ -70,16 +75,55 @@ export const Outro: React.FC = () => {
             </div>
           </Reveal>
 
-          <div style={{ display: "flex", gap: 22, marginTop: 44 }}>
-            {LIMITS.map((l) => (
-              <Reveal key={l.label} at={l.at} y={16}>
-                <div style={{ border: `2px solid ${C.amber}`, color: C.amber, padding: "10px 24px", fontFamily: F.mono, fontSize: 25, fontWeight: 700 }}>
-                  {l.label}
+        </div>
+
+        {live > 0 ? (
+          <div style={{ position: "absolute", inset: 0, opacity: live, display: "flex", gap: 56, alignItems: "flex-start" }}>
+            <div style={{ borderRadius: 18, border: `1px solid ${C.line}`, boxShadow: "0 40px 100px rgba(0,0,0,0.65)", overflow: "hidden", flex: "none" }}>
+              <Camera
+                src="img/v2/signup.jpg"
+                imgW={2880}
+                imgH={1800}
+                w={1100}
+                h={690}
+                keys={[
+                  { at: 0, x: 0, y: 0, width: 2880 },
+                  { at: T.pick - 10, x: 300, y: 500, width: 1400, dur: 40 },
+                ]}
+              />
+            </div>
+            <div style={{ flex: 1, paddingTop: 10 }}>
+              <Reveal at={T.live}>
+                <div style={{ fontFamily: F.display, fontSize: 64, lineHeight: 1.05 }}>
+                  It is live<span style={{ color: C.blue }}>.</span>
                 </div>
               </Reveal>
-            ))}
+              {[
+                { at: T.signup, text: "Sign up" },
+                { at: T.pick, text: "Pick your agent" },
+                { at: T.keys, text: "Bring your own Airwallex sandbox keys" },
+              ].map((step, i) => (
+                <Reveal key={step.text} at={step.at} y={16} style={{ marginTop: i === 0 ? 40 : 18 }}>
+                  <div style={{ display: "flex", gap: 18, alignItems: "baseline" }}>
+                    <Mono size={22} color={C.soft}>
+                      0{i + 1}
+                    </Mono>
+                    <div style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.25 }}>{step.text}</div>
+                  </div>
+                </Reveal>
+              ))}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 14, marginTop: 44 }}>
+                {LIMITS.map((l) => (
+                  <Reveal key={l.label} at={l.at} y={16}>
+                    <div style={{ border: `2px solid ${C.amber}`, color: C.amber, padding: "10px 22px", fontFamily: F.mono, fontSize: 22, fontWeight: 700 }}>
+                      {l.label}
+                    </div>
+                  </Reveal>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div
           style={{
@@ -111,6 +155,8 @@ export const Outro: React.FC = () => {
         <Sfx key={a.name} id="tick" at={a.at} volume={0.4} />
       ))}
       <Sfx id="keys" at={T.tools + 4} volume={0.3} />
+      <Sfx id="whoosh" at={T.live - 6} volume={0.3} />
+      <Sfx id="tap" at={T.pick + 8} volume={0.35} />
       {LIMITS.map((l) => (
         <Sfx key={l.label} id="tick" at={l.at} volume={0.4} />
       ))}

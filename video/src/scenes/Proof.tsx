@@ -7,7 +7,7 @@ import { Mono, PannedShot, Reveal, Sfx, Typed, useEnter } from "../ui";
 const id = "proof" as const;
 const T = {
   attacks: cue(id, "fifty adversarial"),
-  tests: cue(id, "five hundred twenty-seven"),
+  tests: cue(id, "six hundred twenty"),
   guards: cue(id, "ninety-four guards"),
   kill: cue(id, "we kill the process"),
   one: cue(id, "exactly one transfer"),
@@ -16,7 +16,7 @@ const END = sceneFrames(id);
 
 const STATS = [
   { big: "50/50", small: "attacks held", at: T.attacks, color: C.green },
-  { big: "527", small: "tests passing", at: T.tests, color: "#fff" },
+  { big: "620", small: "tests passing", at: T.tests, color: "#fff" },
   { big: "94", small: "guards removed, every one caught", at: T.guards, color: C.soft },
 ];
 
@@ -38,7 +38,7 @@ const LINES = [
 export const Proof: React.FC = () => {
   const stamp = useEnter(T.one + 10);
   return (
-    <Shell id={id} eyebrow="07 · Proof">
+    <Shell id={id} eyebrow="09 · Proof">
       <div style={{ display: "flex", gap: 48 }}>
         <Reveal at={6} y={30}>
           <div style={{ position: "relative", boxShadow: "0 30px 80px rgba(0,0,0,0.6)" }}>
