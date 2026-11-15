@@ -447,13 +447,14 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
   const [busy, setBusy] = useState(false);
   const [swiping, setSwiping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [agreed, setAgreed] = useState(false);
   const signUp = mode === "sign-up";
   // Signed in already, and not in the middle of signing in (the store learns of a new session before the card swipes).
   const known = account && !busy ? account : null;
   const strength = passwordStrength(password);
   const matches = confirm.length > 0 && confirm === password;
   const mismatch = confirm.length > 0 && !password.startsWith(confirm) && confirm !== password;
-  const ready = email.includes("@") && password.length >= (signUp ? 10 : 1) && (!signUp || (name.trim().length > 0 && matches));
+  const ready = email.includes("@") && password.length >= (signUp ? 10 : 1) && (!signUp || (name.trim().length > 0 && matches && agreed));
   // A new account always meets its workspace first (rehearsal, keys); a returning one goes where it was headed.
   const destination = signUp ? "/workspace?welcome=1" : safeNext(next, "/dashboard");
   const otherHref = `${signUp ? "/sign-in" : "/sign-up"}${next ? `?next=${encodeURIComponent(next)}` : ""}`;
@@ -471,7 +472,7 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
     setError(null);
     setFlipped(false);
     const result = signUp
-      ? await authClient.signUp.email({ name: name.trim(), email: email.trim(), password })
+      ? await authClient.signUp.email({ name: name.trim(), email: email.trim(), password, termsAcceptedAt: new Date().toISOString() })
       : await authClient.signIn.email({ email: email.trim(), password });
     if (result.error) {
       setError(sentence(result.error));
@@ -657,6 +658,42 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
                       className={`${FIELD} ${mismatch ? "ring-2 ring-bad/40" : matches ? "ring-2 ring-accent/35" : ""}`}
                     />
                   </Field>
+                ) : null}
+
+                {signUp ? (
+                  <label className="flex cursor-pointer items-start gap-2.5 text-[12px] leading-snug text-fg/65">
+                    <input
+                      type="checkbox"
+                      checked={agreed}
+                      onChange={(e) => setAgreed(e.target.checked)}
+                      required
+                      className="mt-[3px] size-4 shrink-0 rounded-[5px]"
+                      style={{ accentColor: "var(--accent)" }}
+                    />
+                    <span>
+                      I agree to the{" "}
+                      <Link
+                        href="/terms"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+                      >
+                        Terms of Service
+                      </Link>{" "}
+                      and the{" "}
+                      <Link
+                        href="/privacy"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+                      >
+                        Privacy Policy
+                      </Link>
+                      .
+                    </span>
+                  </label>
                 ) : null}
 
                 {error ? (

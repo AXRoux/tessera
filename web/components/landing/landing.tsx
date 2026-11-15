@@ -53,7 +53,7 @@ function Crosshair({ className = "" }: { className?: string }) {
 }
 
 /** Bars drawn from a string, so the same words always print the same code. */
-function Barcode({ text, className = "" }: { text: string; className?: string }) {
+export function Barcode({ text, className = "" }: { text: string; className?: string }) {
   const bars: { x: number; w: number }[] = [];
   let x = 0;
   for (const char of text) {
@@ -340,6 +340,12 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
           <a href="https://github.com/AXRoux/tessera" className="hover:text-fg">
             <span className="text-accent">04</span> Source
           </a>
+          <Link href="/terms" className="hidden hover:text-fg lg:inline-flex lg:items-center lg:gap-2">
+            <span className="text-accent">05</span> Terms
+          </Link>
+          <Link href="/privacy" className="hidden hover:text-fg lg:inline-flex lg:items-center lg:gap-2">
+            <span className="text-accent">06</span> Privacy
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-3">
           <span className="micro well hidden h-8 items-center gap-2 rounded-full! px-3 text-fg/70 lg:inline-flex">
@@ -559,7 +565,15 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
               <span aria-hidden className="ml-1 inline-block transition-transform group-hover:-translate-y-px group-hover:translate-x-px">↗</span>
             </span>
           </a>
-          <p className="mt-3">{rail === "offline" ? "Simulated Airwallex" : "Airwallex sandbox"} · no real money</p>
+          <p className="mt-3 flex justify-end gap-3">
+            <Link href="/terms" className="hover:text-fg">
+              Terms
+            </Link>
+            <Link href="/privacy" className="hover:text-fg">
+              Privacy
+            </Link>
+          </p>
+          <p className="mt-2">{rail === "offline" ? "Simulated Airwallex" : "Airwallex sandbox"} · no real money</p>
           <Barcode text="TESSERA-2026" className="mt-3 ml-auto h-6 w-36 text-fg/60" />
         </div>
       </footer>

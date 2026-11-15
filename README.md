@@ -791,6 +791,7 @@ About 6,100 lines of core (including 650 for the offline demo), 4,400 of tests, 
 - The operator token lives in the Next.js server process, and browsers talk to a same-origin proxy that adds it.
 - Every human approval is stamped server-side with the configured operator identity, never with one sent by the browser.
 - The model never holds a credential, an approval secret, or a database handle. It sees booleans.
+- **Sign-up carries the terms.** The card will not submit until the box is ticked, the account records when it was accepted, and both documents are pages on the site (`/terms`, `/privacy`), linked from the masthead, the footer and the checkbox itself.
 
 ---
 

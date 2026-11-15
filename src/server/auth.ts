@@ -39,6 +39,12 @@ export function authOptions(config: AuthConfig, database: Database) {
       // A short cookie cache: every API call resolves the person, and this keeps that off the database most of the time.
       cookieCache: { enabled: true, maxAge: 60 },
     },
+    user: {
+      additionalFields: {
+        // When the person ticked the box on the sign-up card. Optional, so rows that predate it stay valid.
+        termsAcceptedAt: { type: "string", required: false, input: true },
+      },
+    },
     // Brute force on the sign-in form is the realistic attack on an open sign-up; these hold per client address.
     rateLimit: {
       enabled: true,
