@@ -158,7 +158,7 @@ describe("scripted agent", () => {
     expect(ledger.conversionsFor(fund!).map((c) => c.state)).toEqual(["SETTLED"]);
     expect(ledger.attemptsFor(fund!)).toHaveLength(2);
     expect(run.calls.filter((c) => c.tool === "fund_replacement" && c.outcome.ok)).toHaveLength(1);
-    expect(run.finalText).toContain("not Claude");
+    expect(run.finalText).toContain("not a model");
     expect(run.finalText.split("\n").filter((l) => l.startsWith("ACME-"))).toHaveLength(7);
     expect((await checkInvariant(ledger, api, seeded.map((s) => s.id), new Date(0).toISOString())).ok).toBe(true);
   });

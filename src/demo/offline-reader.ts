@@ -1,12 +1,12 @@
 /**
- * The evidence reader for the offline demo: deterministic keyword and pattern extraction, not Claude. It fills the same
+ * The evidence reader for the offline demo: deterministic keyword and pattern extraction, not a model. It fills the same
  * schema the model fills, and its answer goes through the same code cross-check (`readSupplierMessage`), so the policy
  * cannot tell the two apart. Its summary says what it is.
  */
 import { ExtractedEvidenceSchema, type ExtractedEvidence, type ExtractRequest, type StructuredModel } from "../commander/evidence";
 import { toMinor } from "../money";
 
-export const OFFLINE_READER_LABEL = "offline reader, not Claude";
+export const OFFLINE_READER_LABEL = "offline reader, not a model";
 
 const NON_RECEIPT = [
   /\b(?:hasn'?t|has not|haven'?t|have not|not|never|cannot|can'?t|couldn'?t|didn'?t|did not)\b[^.\n]{0,60}\b(?:arriv\w*|receiv\w*|shown? up|turned up|land\w*|find|found|see|seen|reach\w*)\b/i,

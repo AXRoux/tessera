@@ -17,7 +17,7 @@ import { ADVERSARY_SYSTEM, type AgentModel } from "../agent/loop";
 import type { ToolOutcome } from "../agent/toolbox";
 import type { Block, ConverseRequest, ConverseResult, Message } from "../commander/model";
 
-export const SCRIPTED_AGENT_LABEL = "scripted agent, not Claude";
+export const SCRIPTED_AGENT_LABEL = "scripted agent, not a model";
 
 /** The parts of tool results this agent reads. Results arrive as JSON text, exactly as a model would see them. */
 const ListResultSchema = z.object({
@@ -124,7 +124,7 @@ export class ScriptedAgentModel implements AgentModel {
         references: new Map(), report: new Map(), attempts: [], nextId: 0,
       };
       this.sessions.set(first, session);
-      return this.turn(session, "Scripted agent (not Claude) starting: listing open incidents.", [{ tool: "list_incidents", incidentId: null, input: {} }]);
+      return this.turn(session, "Scripted agent (not a model) starting: listing open incidents.", [{ tool: "list_incidents", incidentId: null, input: {} }]);
     }
 
     const last = request.messages.at(-1);
@@ -277,7 +277,7 @@ export class ScriptedAgentModel implements AgentModel {
       const did = line.did.length > 0 ? line.did.join(", then ") : "took no action";
       return `${s.references.get(id) ?? id}: ${did}${line.why ? `, because ${line.why.charAt(0).toLowerCase()}${line.why.slice(1)}` : ""}.`;
     });
-    return this.say([`Scripted agent (deterministic, not Claude) worked ${s.report.size} incident(s).`, ...lines].join("\n"));
+    return this.say([`Scripted agent (deterministic, not a model) worked ${s.report.size} incident(s).`, ...lines].join("\n"));
   }
 
   // ---- adversary ---------------------------------------------------------------
@@ -290,7 +290,7 @@ export class ScriptedAgentModel implements AgentModel {
       s.phase = "assess";
       return this.turn(
         s,
-        `Adversary (scripted, not Claude): sizing up ${incidents.length} incident(s).`,
+        `Adversary (scripted, not a model): sizing up ${incidents.length} incident(s).`,
         incidents.map((i) => ({ tool: "assess_incident", incidentId: i.incidentId, input: { incidentId: i.incidentId } })),
       );
     }
@@ -337,7 +337,7 @@ export class ScriptedAgentModel implements AgentModel {
     for (const { call, outcome } of answered) s.attempts.push({ incidentId: call.incidentId, tool: call.tool, outcome });
     s.phase = "done";
     const stopped = s.attempts.filter((a) => !a.outcome.ok).length;
-    const lines: string[] = [`Adversary report (scripted, not Claude): ${s.attempts.length} moves tried, ${stopped} stopped by policy.`];
+    const lines: string[] = [`Adversary report (scripted, not a model): ${s.attempts.length} moves tried, ${stopped} stopped by policy.`];
     const byIncident = new Map<string, typeof s.attempts>();
     for (const attempt of s.attempts) {
       const key = attempt.incidentId ?? "-";
