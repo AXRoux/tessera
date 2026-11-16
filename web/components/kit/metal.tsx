@@ -119,7 +119,7 @@ export function Btn({ tone = "primary", size = "sm", busy = false, block = false
   return (
     <Metal fill={tone} preset={tone === "secondary" ? "silver" : "chromatic"} strength={tone === "secondary" ? 0.75 : 0.9} disabled={Boolean(disabled)} block={block}>
       <button {...props} disabled={off} className={`${BASE} ${SIZE[size]} ${TONE[tone]} ${block ? "w-full" : ""} ${className}`}>
-        {busy ? <span aria-hidden className="size-3.5 rounded-full border-2 border-current border-t-transparent spin-slow" /> : icon}
+        {busy ? <span aria-hidden className="size-3.5 shrink-0 aspect-square rounded-full border-2 border-current border-t-transparent spin-slow" /> : icon}
         {children}
       </button>
     </Metal>
