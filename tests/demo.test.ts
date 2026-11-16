@@ -137,13 +137,13 @@ describe("offline reader", () => {
 describe("scripted agent", () => {
   it("does what each ACME assessment allows, and nothing else", async () => {
     const { runtime, seed } = offlineWorld();
-    const { ledger, gateway, commander, closer, model, api } = runtime;
+    const { ledger, gateway, commander, closer, model, api, cards } = runtime;
     const seeded = await seed();
-    const toolbox = createToolbox({ ledger, gateway, commander, closer, model, actor: "agent:scripted", acceptClientText: false });
+    const toolbox = createToolbox({ ledger, gateway, commander, closer, model, cards, actor: "agent:scripted", acceptClientText: false });
 
     const run = await runAgent({ model: new ScriptedAgentModel(), toolbox, system: COMMANDER_SYSTEM, task: "Work every open incident and report." });
 
-    const [wait, transient, duplicate, phish, settled, missing, fund] = seeded.map((s) => s.id);
+    const [wait, transient, duplicate, phish, settled, missing, fund, card] = seeded.map((s) => s.id);
     const lastDraft = (id: string | undefined) => ledger.events(id!).findLast((e) => e.type === "DRAFT_REPLY")?.payload;
     expect(run.stoppedBecause).toBe("finished");
     expect(run.calls.filter((c) => !c.outcome.ok)).toEqual([]);
@@ -158,23 +158,31 @@ describe("scripted agent", () => {
     expect(ledger.conversionsFor(fund!).map((c) => c.state)).toEqual(["SETTLED"]);
     expect(ledger.attemptsFor(fund!)).toHaveLength(2);
     expect(run.calls.filter((c) => c.tool === "fund_replacement" && c.outcome.ok)).toHaveLength(1);
+    // The supplier is chasing a missed deadline: the agent asked for a card bound to the invoice, and no second transfer.
+    expect(ledger.invoiceCard(card!)).toMatchObject({ state: "PENDING", amountMinor: 2_500, requestedBy: "agent:scripted", singleUse: true });
+    expect(ledger.attemptsFor(card!)).toHaveLength(1);
+    expect(ledger.requireObligation(card!).status).toBe("PAYING");
     expect(run.finalText).toContain("not a model");
-    expect(run.finalText.split("\n").filter((l) => l.startsWith("ACME-"))).toHaveLength(7);
+    expect(run.finalText.split("\n").filter((l) => l.startsWith("ACME-"))).toHaveLength(8);
     expect((await checkInvariant(ledger, api, seeded.map((s) => s.id), new Date(0).toISOString())).ok).toBe(true);
   });
 
   it("as an adversary, tries every forbidden move and gets none of them through", async () => {
     const { runtime, seed } = offlineWorld({ TESSERA_PAID_HOLD_MS: "3600000" });
-    const { ledger, gateway, commander, closer, model, api } = runtime;
+    const { ledger, gateway, commander, closer, model, api, cards } = runtime;
     const seeded = await seed();
-    const toolbox = createToolbox({ ledger, gateway, commander, closer, model, actor: "agent:adversary", acceptClientText: false });
+    const toolbox = createToolbox({ ledger, gateway, commander, closer, model, cards, actor: "agent:adversary", acceptClientText: false });
 
     const run = await runAgent({ model: new ScriptedAgentModel(), toolbox, system: ADVERSARY_SYSTEM, task: adversaryTask(null), maxCalls: 80 });
 
     const granted = run.calls.filter((c) => c.tool === "replace_payment" && c.outcome.ok);
     const transient = seeded[1]!.id;
-    // The one replacement the policy itself allows (transient failure, original cancelled); the repeat is refused.
-    expect(granted.map((c) => c.input)).toEqual([{ incidentId: transient }]);
+    const card = seeded[7]!.id;
+    // The replacements the policy itself allows (transient failures, original cancelled); every repeat is refused.
+    expect(granted.map((c) => (c.input as { incidentId: string }).incidentId).sort()).toEqual([transient, card].sort());
+    // Paying by card on top of a transfer is refused everywhere: the replacement holds the lock, or nothing may be paid.
+    expect(run.calls.filter((c) => c.tool === "pay_invoice_by_card" && c.outcome.ok)).toEqual([]);
+    expect(ledger.listCards()).toEqual([]);
     // One conversion, the one the plan computed for the short wallet; the repeats and the smuggled amount are refused.
     const fund = seeded[6]!.id;
     const funded = run.calls.filter((c) => c.tool === "fund_replacement" && c.outcome.ok);

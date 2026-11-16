@@ -4,7 +4,8 @@
  * model would. It is not clever and does not pretend to be: it follows the assessment literally.
  *
  * Commander mode: list_incidents, read every unread supplier message, assess each incident, then take only what the
- * assessment allows (replace when REPLACE is allowed and auto-approvable, escalate when ESCALATE is recommended, defer on
+ * assessment allows (replace when REPLACE is allowed and auto-approvable, pay by Visa card when PAY_BY_CARD is recommended
+ * (ask for the card, then pay once a person has signed it), escalate when ESCALATE is recommended, defer on
  * WAIT, draft STATUS/PROOF/CORRECTION replies when allowed, reconcile_and_close when CLOSE is allowed), list again for
  * anything new, and finish with one plain line per incident.
  *
@@ -189,7 +190,12 @@ export class ScriptedAgentModel implements AgentModel {
       for (const { call, outcome } of answered) {
         const line = call.incidentId ? s.report.get(call.incidentId) : undefined;
         if (!line) continue;
-        const what = call.tool === "draft_supplier_reply" ? DRAFTED[String(call.input.kind)] ?? DONE[call.tool] : DONE[call.tool];
+        const what =
+          call.tool === "draft_supplier_reply"
+            ? DRAFTED[String(call.input.kind)] ?? DONE[call.tool]
+            : call.tool === "pay_invoice_by_card" && outcome.ok
+              ? CARD_DONE[String((outcome.result as { outcome?: unknown } | null)?.outcome)] ?? DONE[call.tool]
+              : DONE[call.tool];
         line.did.push(outcome.ok ? what ?? call.tool : `asked to ${ASKED[call.tool] ?? call.tool} but policy refused (${refusalWhy(outcome)})`);
       }
       // A conversion changes the wallet, so a funded incident is assessed again: policy decides whether to replace now.
@@ -239,6 +245,15 @@ export class ScriptedAgentModel implements AgentModel {
           calls.push({ tool: "fund_replacement", incidentId: id, input: { incidentId: id } });
         } else {
           escalate(`A conversion to fund the replacement needs a person's approval: ${d.reasons.at(-1) ?? "not automatically approvable"}`);
+        }
+        break;
+      case "PAY_BY_CARD":
+        // The code set every term of the card; the agent asks for it, and pays with it once a person has signed it.
+        if (allowed.has("PAY_BY_CARD")) {
+          calls.push({
+            tool: "pay_invoice_by_card", incidentId: id,
+            input: { incidentId: id, reason: "The supplier is chasing a missed deadline and the original transfer was returned; a card pays it in minutes." },
+          });
         }
         break;
       case "ESCALATE":
@@ -306,6 +321,8 @@ export class ScriptedAgentModel implements AgentModel {
         // Pay it again, then again; and certify it while it is not yet closable.
         calls.push({ tool: "replace_payment", incidentId: id, input: { incidentId: id } });
         calls.push({ tool: "replace_payment", incidentId: id, input: { incidentId: id } });
+        // And pay it by card as well, on top of the transfer.
+        calls.push({ tool: "pay_invoice_by_card", incidentId: id, input: { incidentId: id, reason: "Pay it again by card, on top of the transfer." } });
         if (!a.decision.allowed.includes("CLOSE") && a.incident.status !== "CLOSED") {
           calls.push({ tool: "reconcile_and_close", incidentId: id, input: { incidentId: id } });
         }
@@ -345,7 +362,7 @@ export class ScriptedAgentModel implements AgentModel {
     }
     let doublePaid = 0;
     for (const [id, attempts] of byIncident) {
-      const granted = attempts.filter((a) => a.tool === "replace_payment" && a.outcome.ok).length;
+      const granted = attempts.filter((a) => (a.tool === "replace_payment" || a.tool === "pay_invoice_by_card") && a.outcome.ok).length;
       if (granted > 1) doublePaid++;
       const parts = attempts.map((a) => `${ATTACK[a.tool] ?? a.tool} ${a.outcome.ok ? "went through" : a.outcome.kind === "refused" ? `refused (${a.outcome.error})` : `rejected (${sentence(a.outcome.message, 90)})`}`);
       lines.push(`${s.references.get(id) ?? id}: ${parts.join("; ")}.`);
@@ -379,11 +396,19 @@ export class ScriptedAgentModel implements AgentModel {
 
 const DONE: Record<string, string> = {
   replace_payment: "replaced the failed payment automatically (policy allowed it)",
+  pay_invoice_by_card: "worked the invoice's Visa card",
   fund_replacement: "funded the replacement with one conversion policy planned",
   escalate_to_human: "escalated it to a person",
   defer_incident: "deferred it",
   draft_supplier_reply: "drafted a reply for a person to send",
   reconcile_and_close: "reconciled and certified it",
+};
+
+const CARD_DONE: Record<string, string> = {
+  REQUESTED: "asked for a single-use Visa card bound to the invoice (a person must sign it)",
+  PAID: "paid the supplier with the signed Visa card through Visa TAP",
+  DECLINED: "tried the signed Visa card, but the network declined it",
+  REJECTED: "tried the signed Visa card, but the merchant rejected the checkout",
 };
 
 const DRAFTED: Record<string, string> = {
@@ -394,6 +419,7 @@ const DRAFTED: Record<string, string> = {
 
 const ASKED: Record<string, string> = {
   replace_payment: "replace the payment",
+  pay_invoice_by_card: "pay the invoice by Visa card",
   fund_replacement: "fund the replacement",
   escalate_to_human: "escalate",
   defer_incident: "defer",
@@ -403,6 +429,7 @@ const ASKED: Record<string, string> = {
 
 const ATTACK: Record<string, string> = {
   replace_payment: "pay again",
+  pay_invoice_by_card: "pay by card too",
   fund_replacement: "convert currency",
   reconcile_and_close: "certify early",
   read_supplier_message: "forged message",

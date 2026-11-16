@@ -654,4 +654,42 @@ export const MUTATIONS: Mutation[] = [
     edits: [{ file: "src/commander/openai.ts", find: "const call = turn.calls.find((c) => c.name === request.toolName);", replace: "const call = turn.calls[0];" }],
     expect: { tests: [T("openai.test.ts", "accepts only a call to the offered tool whose arguments pass the schema")] },
   },
+
+  // ---- paying an invoice by Visa card (attacks 51-57) -----------------------------------------------------------
+  {
+    id: "card-holds-invoice-lock",
+    describe: "Let a transfer be attempted while a Visa card holds the invoice",
+    edits: [{ file: "src/ledger/ledger.ts", find: "CREATE TRIGGER IF NOT EXISTS card_holds_invoice_lock BEFORE INSERT ON attempts\n  WHEN EXISTS", replace: "CREATE TRIGGER IF NOT EXISTS card_holds_invoice_lock BEFORE INSERT ON attempts\n  WHEN 0 AND EXISTS" }],
+    expect: { attacks: [52], tests: [T("invoice-card.test.ts", "refuses a card while a transfer is open")] },
+  },
+  {
+    id: "transfer-holds-invoice-lock",
+    describe: "Let a card be asked for while a transfer for the invoice is open",
+    edits: [{ file: "src/ledger/ledger.ts", find: "CREATE TRIGGER IF NOT EXISTS transfer_holds_invoice_lock BEFORE INSERT ON cards\n  WHEN NEW.obligationId IS NOT NULL AND EXISTS", replace: "CREATE TRIGGER IF NOT EXISTS transfer_holds_invoice_lock BEFORE INSERT ON cards\n  WHEN 0 AND EXISTS" }],
+    expect: { attacks: [51], tests: [T("invoice-card.test.ts", "refuses a card while a transfer is open")] },
+  },
+  {
+    id: "one-card-per-invoice",
+    describe: "Let a second card hold the same invoice",
+    edits: [{ file: "src/ledger/ledger.ts", find: "ON cards (obligationId) WHERE obligationId IS NOT NULL AND", replace: "ON cards (obligationId) WHERE obligationId IS NULL AND" }],
+    expect: { attacks: [53], tests: [T("invoice-card.test.ts", "refuses a card while a transfer is open")] },
+  },
+  {
+    id: "invoice-card-exact-amount",
+    describe: "Let an invoice card's checkout be for any amount, not exactly the invoice",
+    edits: [{ file: "src/cards/desk.ts", find: "if (invoice && toMinor(input.amount, card.currency) !== invoice.amountMinor) {", replace: "if (invoice && toMinor(input.amount, card.currency) !== invoice.amountMinor && (false as boolean)) {" }],
+    expect: { tests: [T("invoice-card.test.ts", "goes request, signature, TAP checkout, clearing, certificate")] },
+  },
+  {
+    id: "tap-invoice-binding",
+    describe: "Stop the merchant checking that the signed path, the order and the payment container name the same invoice",
+    edits: [{ file: "src/cards/merchant.ts", find: "if ((order.invoice ?? undefined) !== invoice || (container.invoice ?? undefined) !== invoice) {", replace: "if (false as boolean) {" }],
+    expect: { tests: [T("invoice-card.test.ts", "pays the invoice the agent signed for")] },
+  },
+  {
+    id: "invoice-card-around-incident",
+    describe: "Let the generic card tool pay an invoice card without the incident's assessment",
+    edits: [{ file: "src/agent/toolbox.ts", find: "if (desk.list().find((c) => c.id === cardId)?.obligationId) {", replace: "if (desk.list().find((c) => c.id === cardId)?.obligationId && (false as boolean)) {" }],
+    expect: { attacks: [54] },
+  },
 ];

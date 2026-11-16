@@ -1,5 +1,5 @@
 /**
- * Twenty-nine ways to make Tessera pay a supplier twice, pay the wrong party, or lie about it. Each one is the move a
+ * Ways to make Tessera pay a supplier twice, pay the wrong party, or lie about it. Each one is the move a
  * compromised agent, a sloppy retry, a crashed process or a hostile supplier would make, run against the real gateway,
  * Commander, Closer and toolbox over a fake Airwallex that behaves like the sandbox.
  *
@@ -18,6 +18,7 @@ import type { ChainVerification } from "../../src/ledger/ledger";
 import { approve, killedAttempt, SECRET, world, type World } from "../helpers/world";
 import { FUNDING_ATTACKS } from "./funding-attacks";
 import { WEBHOOK_ATTACKS } from "./webhook-attacks";
+import { CARD_ATTACKS } from "./card-attacks";
 
 export type Layer = "Database" | "Approvals" | "Playbook" | "Policy" | "Quarantine" | "Gateway" | "Closer" | "Hash chain" | "Outbound";
 
@@ -772,5 +773,6 @@ export const ATTACKS: Attack[] = [
   },
   ...FUNDING_ATTACKS,
   ...WEBHOOK_ATTACKS,
+  ...CARD_ATTACKS,
 ];
 

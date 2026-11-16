@@ -6,8 +6,11 @@ import type { ConversionAttempt } from "../ledger/conversions";
 import { paidObservedAt } from "../ledger/events";
 import type { Attempt, Ledger, Obligation } from "../ledger/ledger";
 import { toMinor } from "../money";
+import { CardCheckoutPayloadSchema } from "../cards/checkout-event";
+import type { CardRow } from "../ledger/cards";
 import {
   SignedCertificateSchema,
+  type CertificateCard,
   type CertificateFunding,
   type ClosureCertificateBody,
   type SignedCertificate,
@@ -43,6 +46,8 @@ export interface Reconciliation {
   attempts: AttemptReconciliation[];
   /** Conversions that funded a replacement for this invoice, each leg checked against Airwallex's wallet lines. */
   funding: FundingReconciliation[];
+  /** The Visa card that paid the invoice, proved against the signed terms; null when a transfer paid it (or nothing yet). */
+  card: CertificateCard | null;
   totals: Totals;
   untrackedTransfers: string[];
   checkedAt: string;
@@ -104,12 +109,16 @@ function sumLines(rows: FinancialTransaction[], currency: string): { lines: Wall
 }
 
 /** The ledger state a reconciliation saw: obligation status, every attempt and every conversion. `close` refuses if any moved. */
-const fingerprintOf = (obligation: Obligation, attempts: Attempt[], conversions: ConversionAttempt[]): string =>
+const fingerprintOf = (obligation: Obligation, attempts: Attempt[], conversions: ConversionAttempt[], cards: CardRow[] = []): string =>
   [
     `${obligation.status}:${obligation.updatedAt}`,
     ...attempts.map((a) => `${a.id}:${a.state}:${a.awxStatus}:${a.updatedAt}`),
     ...conversions.map((c) => `${c.id}:${c.state}:${c.awxStatus}:${c.updatedAt}`),
+    ...cards.map((c) => `${c.id}:${c.state}:${c.spentMinor}:${c.updatedAt}`),
   ].join("|");
+
+/** A card that has paid, or is paying, its invoice: it spent, or it is the single-use card whose one charge went through. */
+const cardPaid = (card: CardRow): boolean => card.state === "SPENT" || card.spentMinor > 0;
 
 /**
  * What a conversion must have booked: the bought currency in, the sold currency out, nothing else. An ABANDONED one was
@@ -162,11 +171,20 @@ export class Closer {
     for (const item of funding) for (const problem of item.problems) blockers.push(`conversion ${item.conversionId ?? item.fundingId}: ${problem}`);
 
     const paid = attempts.filter((a) => a.state === "PAID");
-    if (paid.length !== 1) blockers.push(`expected exactly one PAID attempt, found ${paid.length}`);
-    else this.checkHoldWindow(paid[0]!, blockers);
+    const invoiceCard = this.ledger.invoiceCard(obligationId);
+    let card: CertificateCard | null = null;
+    if (invoiceCard && cardPaid(invoiceCard)) {
+      // Paid by Visa card: every transfer must be over (and tie out, above), and none may have paid as well.
+      if (paid.length > 0) blockers.push(`a transfer is PAID and a Visa card also paid this invoice: the supplier may have been paid twice`);
+      card = this.reconcileCard(invoiceCard, obligation, blockers);
+    } else {
+      if (invoiceCard) blockers.push(`the Visa card for this invoice is ${invoiceCard.state} and has not paid it`);
+      if (paid.length !== 1) blockers.push(`expected exactly one PAID attempt, found ${paid.length}`);
+      else this.checkHoldWindow(paid[0]!, blockers);
+    }
 
-    const totals = this.totals(reconciled);
-    if (paid.length === 1 && totals.paidMinor !== obligation.amountMinor) {
+    const totals = this.totals(reconciled, card?.amountMinor ?? 0);
+    if ((paid.length === 1 || card) && totals.paidMinor !== obligation.amountMinor) {
       blockers.push(`the wallet shows ${totals.paidMinor} minor units left for the supplier, but ${obligation.amountMinor} are owed`);
     }
 
@@ -186,10 +204,11 @@ export class Closer {
       blockers,
       attempts: reconciled,
       funding,
+      card,
       totals,
       untrackedTransfers: untracked,
       checkedAt: this.now().toISOString(),
-      fingerprint: fingerprintOf(obligation, attempts, conversions),
+      fingerprint: fingerprintOf(obligation, attempts, conversions, this.ledger.cardsFor(obligationId)),
     };
   }
 
@@ -214,26 +233,28 @@ export class Closer {
         throw new NotClosable(obligationId, [`obligation is escalated: ${obligation.escalationReason}`]);
       }
       const attempts = this.ledger.attemptsFor(obligationId);
-      if (fingerprintOf(obligation, attempts, this.ledger.conversionsFor(obligationId)) !== reconciliation.fingerprint) {
+      if (fingerprintOf(obligation, attempts, this.ledger.conversionsFor(obligationId), this.ledger.cardsFor(obligationId)) !== reconciliation.fingerprint) {
         throw new NotClosable(obligationId, ["the ledger changed while reconciling; run it again"]);
       }
-      const settled = attempts.find((a) => a.state === "PAID");
-      if (!settled || settled.awxStatus !== "PAID" || settled.transferId === null) {
+      const card = reconciliation.card;
+      const settled = card ? null : attempts.find((a) => a.state === "PAID");
+      if (!card && (!settled || settled.awxStatus !== "PAID" || settled.transferId === null)) {
         throw new NotClosable(obligationId, ["Airwallex does not currently report the settled transfer as PAID"]);
       }
       const chain = this.ledger.verifyChain();
       if (!chain.ok) throw new NotClosable(obligationId, [`event chain is broken: ${chain.reason}`]);
 
       const body: ClosureCertificateBody = {
-        version: 3,
+        version: card ? 4 : 3,
         obligationId,
         reference: obligation.reference,
         currency: obligation.currency,
         amountMinor: obligation.amountMinor,
-        beneficiaryId: settled.beneficiaryId,
-        settledAttemptId: settled.id,
-        settledTransferId: settled.transferId,
-        settledAwxStatus: "PAID",
+        beneficiaryId: settled?.beneficiaryId ?? obligation.beneficiaryId,
+        settledAttemptId: settled?.id ?? null,
+        settledTransferId: settled?.transferId ?? null,
+        ...(settled ? { settledAwxStatus: "PAID" as const } : {}),
+        ...(card ? { card } : {}),
         attempts: reconciliation.attempts.map(({ seq, attemptId, requestId, transferId, state, awxStatus, failureCode, expected, actual }) => ({
           seq, attemptId, requestId, transferId, state, awxStatus, failureCode, expected, actual,
         })),
@@ -247,7 +268,7 @@ export class Closer {
 
       this.ledger.saveCertificate(obligationId, hash, JSON.stringify(certificate));
       this.ledger.setObligationStatus(obligationId, "CLOSED");
-      this.ledger.append(obligationId, "CLOSED", { certificateHash: hash, settledTransferId: settled.transferId });
+      this.ledger.append(obligationId, "CLOSED", { certificateHash: hash, settledTransferId: settled?.transferId ?? null, ...(card ? { paidByCard: card.cardId } : {}) });
       return certificate;
     });
   }
@@ -314,6 +335,41 @@ export class Closer {
     return { ...base, actual: lines, problems };
   }
 
+  /**
+   * The card that paid the invoice, against what it must be: one cleared charge proved against the signed terms, for
+   * exactly the amount owed, in the invoice's currency, held through the hold window (a card charge can be reversed too).
+   */
+  private reconcileCard(card: CardRow, obligation: Obligation, blockers: string[]): CertificateCard | null {
+    const settled = this.ledger.cardSettlements(card.id);
+    const proof = settled.at(-1);
+    if (!proof) {
+      blockers.push("the Visa card was charged, but the charge has not cleared and been proved against the signed terms yet");
+      return null;
+    }
+    if (settled.length !== 1) blockers.push(`the Visa card carries ${settled.length} cleared charges; an invoice card pays once`);
+    if (!proof.matches) blockers.push(`the card charge does not match what was signed: ${proof.checks.filter((c) => !c.ok).map((c) => c.detail).join("; ")}`);
+    if (proof.currency !== obligation.currency) blockers.push(`the card was charged in ${proof.currency}, the invoice is in ${obligation.currency}`);
+    if (proof.amountMinor !== obligation.amountMinor || card.spentMinor !== obligation.amountMinor) {
+      blockers.push(`the card took ${card.spentMinor} minor units, but ${obligation.amountMinor} are owed`);
+    }
+    const heldMs = this.now().getTime() - Date.parse(proof.at);
+    if (this.paidHoldMs > heldMs) {
+      const left = this.paidHoldMs - heldMs;
+      const remaining = left < 120_000 ? `${Math.ceil(left / 1000)}s` : `${Math.ceil(left / 60_000)} min`;
+      blockers.push(`the card charge is not final: hold window has ${remaining} left (a card charge can still be reversed)`);
+    }
+    const checkout = this.ledger
+      .events(obligation.id)
+      .flatMap((e) => (e.type === "CARD_CHECKOUT" ? [CardCheckoutPayloadSchema.safeParse(e.payload).data].filter((p) => p !== undefined) : []))
+      .findLast((p) => p.cardId === card.id && p.status === "APPROVED");
+    return {
+      cardId: card.id, awxCardId: card.awxCardId, last4: card.last4, merchant: card.merchant, approvedBy: card.approvedBy,
+      transactionId: proof.transactionId, amountMinor: proof.amountMinor, currency: proof.currency, settledAt: proof.at,
+      checks: proof.checks.map(({ check, ok }) => ({ check, ok })),
+      tap: checkout ? { orderId: checkout.orderId, kid: checkout.tap.kid ?? null, verified: checkout.tap.verified } : null,
+    };
+  }
+
   private checkHoldWindow(paid: Attempt, blockers: string[]): void {
     const paidAt = paidObservedAt(this.ledger.events(paid.obligationId), paid.id);
     if (!paidAt) {
@@ -328,8 +384,9 @@ export class Closer {
     }
   }
 
-  private totals(items: AttemptReconciliation[]): Totals {
-    let payout = 0;
+  /** The transfers' wallet lines, plus what a Visa card paid the supplier (`cardMinor`), which leaves the wallet too. */
+  private totals(items: AttemptReconciliation[], cardMinor = 0): Totals {
+    let payout = -cardMinor;
     let fee = 0;
     let reversal = 0;
     for (const item of items) {

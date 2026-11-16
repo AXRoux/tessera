@@ -11,7 +11,8 @@ import type { Attempt, Ledger, LedgerEvent, Method, Obligation } from "../ledger
 import { formatMinor, fromMinor, toMinor } from "../money";
 import { z } from "zod";
 import type { SupplierEvidence } from "./evidence";
-import { DEFAULT_POLICY, decide, type CommanderPolicy, type Decision, type FundingPlan, type IncidentFacts } from "./policy";
+import { heldFrom } from "../ledger/cards";
+import { DEFAULT_POLICY, decide, type CommanderPolicy, type Decision, type FundingPlan, type IncidentFacts, type InvoiceCardFacts } from "./policy";
 
 export interface CommanderConfig {
   ledger: Ledger;
@@ -25,6 +26,13 @@ export interface CommanderConfig {
   /** Signs approvals. Held by this process only; the model never receives it. */
   secret: string;
   policy?: CommanderPolicy;
+  /**
+   * Whether an invoice may be paid by Visa card here: Issuing is connected and the agent can pay a merchant through Visa
+   * TAP. False (the default): PAY_BY_CARD is never offered.
+   */
+  cardsOffered?: boolean;
+  /** Brings Visa cards up to date with Airwallex; called by `assess` for an invoice that has a card. */
+  syncCards?: () => Promise<void>;
   now?: () => Date;
 }
 
@@ -159,6 +167,8 @@ export class Commander {
   /** The thresholds this Commander decides with. Read-only: callers (the demo, the console) show them, never change them. */
   readonly policy: CommanderPolicy;
   private readonly now: () => Date;
+  private readonly cardsOffered: boolean;
+  private readonly syncCards: (() => Promise<void>) | null;
 
   constructor(config: CommanderConfig) {
     this.ledger = config.ledger;
@@ -168,6 +178,26 @@ export class Commander {
     this.secret = config.secret;
     this.policy = config.policy ?? DEFAULT_POLICY;
     this.now = config.now ?? (() => new Date());
+    this.cardsOffered = config.cardsOffered ?? false;
+    this.syncCards = config.syncCards ?? null;
+  }
+
+  /** The card that holds the invoice, as the policy reads it: its state, what it spent, its proof, and failed checkouts. */
+  private invoiceCardFacts(obligationId: string, events: LedgerEvent[]): InvoiceCardFacts | null {
+    const card = this.ledger.invoiceCard(obligationId);
+    if (!card) return null;
+    const settled = this.ledger.cardSettlements(card.id).at(-1) ?? null;
+    const failedCheckouts = events.filter((e) => {
+      if (e.type !== "CARD_CHECKOUT") return false;
+      const p = e.payload as { cardId?: unknown; status?: unknown } | null;
+      return p?.cardId === card.id && p.status !== "APPROVED";
+    }).length;
+    return {
+      id: card.id, state: card.state, amountMinor: card.amountMinor, currency: card.currency, spentMinor: card.spentMinor,
+      heldMinor: heldFrom(this.ledger.cardCharges(card.id)),
+      settlement: settled ? { amountMinor: settled.amountMinor, currency: settled.currency, matches: settled.matches, at: settled.at } : null,
+      failedCheckouts,
+    };
   }
 
   /**
@@ -178,6 +208,8 @@ export class Commander {
     await this.gateway.sync(obligationId);
     // A booked conversion may have settled since the last look; this adopts what Airwallex says and sends nothing.
     await this.funding?.executor.sync(obligationId);
+    // A card paying this invoice may have been charged or cleared since the last look.
+    if (this.syncCards && this.ledger.cardsFor(obligationId).length > 0) await this.syncCards();
     const snapshot = this.snapshot(obligationId);
     const wallets = await this.readWallets();
     let facts = this.factsFrom(snapshot, evidence, wallets, {});
@@ -237,6 +269,8 @@ export class Commander {
           }
         : null,
       evidence,
+      cardsOffered: this.cardsOffered,
+      card: this.invoiceCardFacts(obligation.id, events),
       now: this.now(),
     };
   }
@@ -289,6 +323,7 @@ export class Commander {
         },
         attempts: attempts.map((a) => ({ id: a.id, state: a.state, failureCode: a.failureCode })),
         conversions: this.ledger.conversionsFor(obligation.id).map((c) => ({ id: c.id, state: c.state })),
+        cards: this.ledger.cardsFor(obligation.id).map((c) => ({ id: c.id, state: c.state, spentMinor: c.spentMinor })),
       }),
     );
   }

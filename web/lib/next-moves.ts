@@ -36,6 +36,13 @@ export function moveOf(item: IncidentSummary, options: { reader?: boolean } = {}
     return { ...base, who: "you", label: "Decide", line: `Handed to you: ${said(item.attention.reason)}.`, rank: RANK.ESCALATED };
   }
   if (item.attention?.kind === "NEEDS_ACTION") {
+    // A Visa card for the invoice waits for a signature: only a person can give it.
+    if (item.status === "PAYING" && /Visa card/.test(item.attention.reason)) {
+      return { ...base, who: "you", label: "Sign card", line: "The agent asked for a single-use Visa card to pay it. Sign it, or decline it.", rank: RANK.NEEDS_ACTION };
+    }
+    if (item.next?.action === "PAY_BY_CARD" && item.next.allowed.includes("PAY_BY_CARD")) {
+      return { ...base, who: "you", agentCan: true, label: "Pay by card", line: "Failed, the money is back, and the supplier is chasing it. Pay by single-use Visa card: the agent asks, you sign.", rank: RANK.NEEDS_ACTION };
+    }
     // A failed payment is back in the wallet. Within the automatic limit the replacement needs no signature, so the agent
     // may send it as well as you; otherwise (or when Tessera would rather hand it over) it is yours alone.
     if (item.next?.action === "REPLACE" && item.next.allowed.includes("REPLACE") && item.next.autoReplace) {
@@ -71,6 +78,8 @@ export function moveOf(item: IncidentSummary, options: { reader?: boolean } = {}
         : { ...base, who: "you", label: "Decide", line: "Failed; replacing it needs your signature.", rank: RANK.NEEDS_ACTION };
     case "FUND":
       return agent("Fund", "Failed, and its wallet is short for the replacement. One conversion first, then the new payment.", RANK.MONEY);
+    case "PAY_BY_CARD":
+      return agent("Pay by card", "Its single-use Visa card is signed. The agent pays the supplier's checkout through Visa TAP.", RANK.MONEY);
     case "RECOVER_INTENT":
       return agent("Settle", "A request Airwallex never answered. Settle it by its request ID; it can never be sent twice.", RANK.MONEY);
     case "SEND_PROOF_TO_SUPPLIER":

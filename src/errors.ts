@@ -1,6 +1,6 @@
 export class DuplicateLockError extends Error {
-  constructor(readonly obligationId: string) {
-    super(`obligation ${obligationId} already has an open payout attempt`);
+  constructor(readonly obligationId: string, detail = "already has an open payout attempt") {
+    super(`obligation ${obligationId} ${detail}`);
     this.name = "DuplicateLockError";
   }
 }

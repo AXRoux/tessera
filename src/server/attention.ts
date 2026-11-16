@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { AgentWakeSchema, IncidentReactionSchema } from "../ledger/events";
 import { pendingDraft } from "../commander/drafts";
+import type { CardRow } from "../ledger/cards";
 import type { Attempt, LedgerEvent, Obligation } from "../ledger/ledger";
 import type { IncidentSummary } from "./wire";
 
@@ -13,6 +14,7 @@ const ToolCallSchema = z.object({ actor: z.string(), tool: z.string(), outcome: 
 /** The calls that decide something about an incident. Reading and assessing are not verdicts. */
 const VERDICT_TOOLS: Record<string, true> = {
   replace_payment: true,
+  pay_invoice_by_card: true,
   escalate_to_human: true,
   defer_incident: true,
   draft_supplier_reply: true,
@@ -32,9 +34,17 @@ export function lastAgentAction(events: LedgerEvent[]): IncidentSummary["lastAge
 }
 
 /** Why a person is needed, most urgent reason first; null when nothing is waiting for one. */
-export function attentionOf(obligation: Obligation, latest: Attempt | undefined, events: LedgerEvent[]): IncidentSummary["attention"] {
+export function attentionOf(
+  obligation: Obligation,
+  latest: Attempt | undefined,
+  events: LedgerEvent[],
+  card: Pick<CardRow, "state"> | null = null,
+): IncidentSummary["attention"] {
   if (obligation.status === "ESCALATED") {
     return { kind: "ESCALATED", reason: obligation.escalationReason ?? "Handed to a person." };
+  }
+  if (obligation.status !== "CLOSED" && card?.state === "PENDING") {
+    return { kind: "NEEDS_ACTION", reason: "A single-use Visa card to pay this invoice is waiting for your signature." };
   }
   if (obligation.status === "NEEDS_ACTION" && latest) {
     const code = latest.failureCode ? ` with failure ${latest.failureCode}` : "";

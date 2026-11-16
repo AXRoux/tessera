@@ -41,7 +41,7 @@ const SECTIONS: LegalSection[] = [
     heading: "What the agent may do",
     body: (
       <p>
-        The agent can only reach thirteen typed tools, and only where policy allows. Anything risky waits for a named person
+        The agent can only reach fourteen typed tools, and only where policy allows. Anything risky waits for a named person
         with a written reason. Drafts to suppliers are prepared for you; Tessera never sends mail on its own.
       </p>
     ),

@@ -12,6 +12,9 @@
  *   missing     paid, but the supplier says nothing arrived                           -> draft proof of payment
  *   fund        EUR over SWIFT, CHANNEL_TIMEOUT, funds returned, but the EUR wallet    -> convert from USD (one conversion),
  *               cannot cover the replacement and its fee above the reserve floor         then replace
+ *   card        CHANNEL_TIMEOUT, funds returned, and the supplier is chasing a missed  -> pay by single-use Visa card: the
+ *               deadline                                                                  agent asks, a person signs, the
+ *                                                                                         agent pays through Visa TAP
  */
 import type { Commander } from "../commander/commander";
 import type { PayoutGateway } from "../gateway/gateway";
@@ -19,7 +22,7 @@ import type { Ledger, Method, Obligation } from "../ledger/ledger";
 import { formatMinor, fromMinor } from "../money";
 import type { Simulator } from "../server/api";
 
-export const INCIDENT_KINDS = ["wait", "transient", "duplicate", "correction", "phish", "settled", "missing", "fund"] as const;
+export const INCIDENT_KINDS = ["wait", "transient", "duplicate", "correction", "phish", "settled", "missing", "fund", "card"] as const;
 export type IncidentKind = (typeof INCIDENT_KINDS)[number];
 
 /** What a careful operator (or agent) should end up doing with each kind. Shown next to the seeded incident. */
@@ -32,10 +35,11 @@ export const EXPECTED: Record<IncidentKind, string> = {
   settled: "certify once the hold window passes",
   missing: "draft proof of payment",
   fund: "fund the replacement with one conversion from USD, then replace",
+  card: "pay by single-use Visa card: the agent asks, a person signs, the agent pays through Visa TAP",
 };
 
-/** The seven incidents of the ACME demo, in order: ACME-1041 .. ACME-1047. */
-export const ACME_KINDS: readonly IncidentKind[] = ["wait", "transient", "duplicate", "phish", "settled", "missing", "fund"];
+/** The eight incidents of the ACME demo, in order: ACME-1041 .. ACME-1048. */
+export const ACME_KINDS: readonly IncidentKind[] = ["wait", "transient", "duplicate", "phish", "settled", "missing", "fund", "card"];
 
 export interface ScenarioDeps {
   ledger: Ledger;
@@ -123,6 +127,15 @@ export async function seedIncident(deps: ScenarioDeps, kind: IncidentKind, terms
       await move(deps, o, "FAILED", "CHANNEL_TIMEOUT");
       await settleDead(deps, o);
       break;
+    case "card":
+      await move(deps, o, "SENT");
+      await move(deps, o, "FAILED", "CHANNEL_TIMEOUT");
+      await settleDead(deps, o);
+      deps.ledger.addInboxMessage({
+        incidentId: o.id, from: "ar@contoso-freight.example",
+        email: `Hello, the ${amount} for invoice ${reference} has not arrived and our deadline passed yesterday. We cannot release your shipment until it is paid. Regards, Lena (Contoso Freight AR)`,
+      });
+      break;
     case "duplicate":
       await move(deps, o, "SENT");
       await move(deps, o, "FAILED", "DUPLICATION_RETURN");
@@ -171,8 +184,8 @@ export interface DemoBeneficiaries {
 }
 
 /**
- * The seven ACME incidents, references ACME-1041-<tag> .. ACME-1047-<tag>: six for $25.00 USD over LOCAL, and the
- * funding incident for €25.00 EUR over SWIFT, paid from a EUR wallet staged short.
+ * The eight ACME incidents, references ACME-1041-<tag> .. ACME-1048-<tag>: seven for $25.00 USD over LOCAL, and the
+ * funding incident (ACME-1047) for €25.00 EUR over SWIFT, paid from a EUR wallet staged short.
  */
 export async function seedAcme(deps: ScenarioDeps, beneficiaries: DemoBeneficiaries, tag: string = runTag()): Promise<SeededIncident[]> {
   const seeded: SeededIncident[] = [];

@@ -1,5 +1,5 @@
 /**
- * The capability boundary for any agent that works an incident: thirteen typed tools, and nothing else.
+ * The capability boundary for any agent that works an incident: fourteen typed tools, and nothing else.
  *
  * What is missing is the point. There is no tool that creates a transfer, signs an approval, changes an amount or a
  * beneficiary, picks a currency or a rate, or releases a payment a policy forbids. An agent can read, record what a
@@ -11,6 +11,10 @@
  * Three more tools reach Visa virtual cards (src/cards/desk.ts): list them, ask for one (code checks it, a person must
  * sign it before it exists), and pay with one at the merchant the person named, through Visa's Trusted Agent Protocol.
  * There is still no tool that signs a card, raises its limit, or changes its merchant.
+ *
+ * One more pays a supplier invoice by card (src/cards/invoice-card.ts) where a replacement transfer would be allowed: it
+ * asks for a card whose every term is the invoice's, and once a person has signed it, pays the supplier's checkout
+ * through Visa TAP. The card shares the invoice's duplicate lock with the transfers, so the supplier is never paid twice.
  *
  * The same toolbox backs the in-process Claude loop (`loop.ts`) and the MCP server (`mcp.ts`).
  */
@@ -39,6 +43,7 @@ import { paidObservedAt } from "../ledger/events";
 import type { CardDesk } from "../cards/desk";
 import { chargeSettling, heldFrom } from "../ledger/cards";
 import { CARD_CATEGORIES } from "../cards/policy";
+import { CardPaymentRefused, payInvoiceByCard } from "../cards/invoice-card";
 import { StateConflict } from "../errors";
 
 export interface ToolboxDeps {
@@ -328,12 +333,16 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
         const a = await commander.assess(id, recordedEvidence(id));
         const latest = ledger.requireObligation(id);
         const { decision } = a;
+        const card = a.facts.card ?? null;
         return {
           incident: {
             incidentId: id, reference: o.reference, amount: formatMinor(o.amountMinor, o.currency),
             status: latest.status, escalationReason: escalationView(latest),
           },
           attempts: a.facts.attempts.map((x) => ({ seq: x.seq, state: x.state, awxStatus: x.awxStatus, failureCode: x.failureCode })),
+          invoiceCard: card
+            ? { state: card.state, cap: formatMinor(card.amountMinor, card.currency), spent: formatMinor(card.spentMinor, card.currency), cleared: card.settlement !== null, failedCheckouts: card.failedCheckouts }
+            : null,
           supplierEvidence: evidenceView(recordedEvidence(id)),
           decision: {
             recommended: decision.recommended,
@@ -522,6 +531,37 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       },
     }),
 
+    ...(deps.cards
+      ? [
+          tool({
+            ...decorator({ schema: z.strictObject({ incidentId: IncidentId, reason: z.string().min(12).max(300) }) }),
+            name: "pay_invoice_by_card",
+            description:
+              "When assess_incident allows PAY_BY_CARD: pay this supplier invoice with a single-use Visa card instead of a second bank transfer. The first call asks for the card: every term comes from the invoice (the exact amount and currency, the invoice's supplier as the only merchant, single use), it takes the invoice's duplicate lock so no transfer can be made while it holds, and it waits for a named person to sign it (you cannot). Once assess_incident shows the card ACTIVE and recommends PAY_BY_CARD, call again: Tessera pays the supplier's checkout for exactly the invoice amount through Visa's Trusted Agent Protocol, signed with your agent key and verified by the merchant before it charges. You give only the incident and a reason: no amount, no merchant, no card.",
+            // Strict: an amount, a merchant or a card in the input is refused, not silently ignored.
+            schema: z.strictObject({
+              incidentId: IncidentId,
+              reason: z.string().min(12).max(300).describe("Why a card, in a sentence a person will read when they sign it."),
+            }),
+            annotations: hints({ destructiveHint: true, openWorldHint: true }),
+            operatorOnly: true,
+            run: async ({ incidentId, reason }) => {
+              const id = requireIncident(incidentId).id;
+              const result = await payInvoiceByCard({ ledger, commander, desk: deps.cards! }, id, { actor, reason, evidence: recordedEvidence(id) });
+              const { card, checkout } = result;
+              return {
+                outcome: result.outcome,
+                card: { state: card.state, merchant: card.merchant, cap: formatMinor(card.amountMinor, card.currency), last4: card.last4, singleUse: card.singleUse },
+                checkout: checkout
+                  ? { status: checkout.status, orderId: checkout.orderId, tapVerified: checkout.tap.ok, ...(checkout.reason ? { reason: checkout.reason } : {}) }
+                  : null,
+                next: result.next,
+              };
+            },
+          }),
+        ]
+      : []),
+
     ...(deps.cards && !deps.scope ? cardTools(deps.cards, actor) : []),
 
     tool({
@@ -590,6 +630,9 @@ async function run(found: Tool, input: unknown): Promise<ToolOutcome> {
     }
     if (error instanceof AutoReplacementRefused) {
       return { ok: false, kind: "refused", error: error.name, message: error.message, details: { reasons: error.decision.reasons } };
+    }
+    if (error instanceof CardPaymentRefused) {
+      return { ok: false, kind: "refused", error: error.name, message: error.message, details: { reasons: error.reasons } };
     }
     if (error instanceof FundingRefused) {
       return {
@@ -683,6 +726,10 @@ function cardTools(desk: CardDesk, actor: string): Tool[] {
       annotations: hints({ openWorldHint: true }),
       operatorOnly: true,
       run: async ({ cardId, amount, merchant }) => {
+        // An invoice card is paid only through its invoice, so the incident's own assessment decides first.
+        if (desk.list().find((c) => c.id === cardId)?.obligationId) {
+          throw new CardRefused("this card pays a supplier invoice; use pay_invoice_by_card with the incident, which checks the incident first");
+        }
         const { card, result } = await desk.agentCheckout(cardId, { amount, merchant }, actor);
         if (result.status !== "APPROVED") {
           throw new CardRefused(result.status === "REJECTED" ? `the merchant rejected the checkout: ${result.reason}` : `the card declined the charge: ${result.reason}`);

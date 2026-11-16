@@ -1,5 +1,5 @@
 /**
- * `bun run agent`: an agent works seven incidents through Tessera's toolbox (src/demo/scenario.ts).
+ * `bun run agent`: an agent works eight incidents through Tessera's toolbox (src/demo/scenario.ts).
  *
  *   ACME-1041  supplier says nothing arrived, but the transfer is inside its window     -> wait
  *   ACME-1042  transient bank timeout                                                    -> replace automatically
@@ -8,10 +8,11 @@
  *   ACME-1045  paid, hold window passed, wallet lines reconcile                          -> certify
  *   ACME-1046  paid, but the supplier says nothing arrived                               -> draft proof of payment
  *   ACME-1047  EUR over SWIFT, transient failure, the EUR wallet is staged short         -> fund from USD, then replace
+ *   ACME-1048  transient failure, the supplier chasing a missed deadline                 -> ask for a single-use Visa card
  *
  *   bun run agent                  the model on the Airwallex sandbox (needs TESSERA_MODEL and a provider key or base URL)
  *   bun run agent -- --adversary   the same toolbox, but the agent is told to get a supplier paid twice
- *   bun run agent -- --seed-only   set the seven incidents up and stop; then watch them in the console:
+ *   bun run agent -- --seed-only   set the eight incidents up and stop; then watch them in the console:
  *                                    TESSERA_DB=.data/agent-demo.db bun run dev
  *   TESSERA_OFFLINE=1 bun run agent  simulated Airwallex in memory; the scripted agent unless a model is configured
  *
@@ -70,7 +71,7 @@ const walletLine = async (): Promise<string> => {
   const balances = await api.getBalances();
   return fundingCurrencies.map((c) => `${c} ${balances.find((b) => b.currency === c)?.available_amount ?? 0}`).join("  ·  ");
 };
-rule(`Setting up seven incidents ${offline ? "on the offline simulator" : "on the Airwallex sandbox"}`);
+rule(`Setting up eight incidents ${offline ? "on the offline simulator" : "on the Airwallex sandbox"}`);
 const beneficiaries = { USD: await resolveBeneficiary(api, env), EUR: await resolveBeneficiary(api, env, "EUR") };
 const seeded = await seedAcme({ ledger, gateway, commander, simulator }, beneficiaries, tag);
 for (const s of seeded) console.log(`  ${green("✓")} ${s.reference.padEnd(16)} ${dim(`expected: ${s.expected}`)}`);

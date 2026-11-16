@@ -1,4 +1,5 @@
 import { lookupFailure, type FailureClass, type ReplacePolicy } from "../domain/playbook";
+import type { CardState } from "../ledger/cards";
 import type { ConversionState } from "../ledger/conversions";
 import type { Attempt, Method, Obligation } from "../ledger/ledger";
 import { currencyExponent, formatMinor, fromMinor } from "../money";
@@ -80,6 +81,22 @@ export interface FundingFacts {
   sellMinor: number;
 }
 
+/** The Visa card that holds an invoice's lock (see INVOICE_LOCK_STATES): what it may still do, or what it did. */
+export interface InvoiceCardFacts {
+  id: string;
+  state: CardState;
+  amountMinor: number;
+  currency: string;
+  /** What cleared charges have taken. */
+  spentMinor: number;
+  /** Authorised at Airwallex but not cleared yet. */
+  heldMinor: number;
+  /** The cleared charge proved against the terms a person signed (CARD_SETTLED); null until a charge clears. */
+  settlement: { amountMinor: number; currency: string; matches: boolean; at: string } | null;
+  /** Agent checkouts the merchant rejected or the network declined. */
+  failedCheckouts: number;
+}
+
 export interface IncidentFacts {
   obligation: Pick<Obligation, "id" | "amountMinor" | "currency" | "status" | "escalationReason">;
   /** Ordered by seq. */
@@ -99,8 +116,18 @@ export interface IncidentFacts {
   fxRates: Record<string, number | null>;
   funding: FundingFacts | null;
   evidence: SupplierEvidence | null;
+  /**
+   * Whether this server can pay an invoice by Visa card (Issuing connected and a merchant the agent can pay through Visa
+   * TAP). Absent or false: PAY_BY_CARD is never offered, though a card that already holds the invoice is still decided on.
+   */
+  cardsOffered?: boolean;
+  /** The card that holds this invoice's lock, if one does. */
+  card?: InvoiceCardFacts | null;
   now: Date;
 }
+
+/** Checkouts that may fail on one card before the agent must stop trying and hand it to a person. */
+const MAX_FAILED_CHECKOUTS = 2;
 
 export interface ReplacementAssessment {
   failureClass: FailureClass;
@@ -272,10 +299,119 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
       if (forced === null && fromState === "FUND") forced = "ESCALATE";
       candidates.push("ESCALATE");
     }
-    const recommended = forced ?? fromState;
+    let recommended = forced ?? fromState;
     const refused = new Set(blocked.map((b) => b.action));
-    const allowed = [...new Set([recommended, ...candidates])].filter((a) => a === "NONE" || !refused.has(a));
+    let allowed = [...new Set([recommended, ...candidates])].filter((a) => a === "NONE" || !refused.has(a));
+    // A card is offered only where a replacement transfer would be allowed: the same lock, the same funds, the same
+    // failure rules. It is the faster rail when the supplier is already chasing the money, so it is recommended then.
+    if (facts.cardsOffered && !facts.card && latest?.state === "DEAD" && allowed.includes("REPLACE") && !refused.has("PAY_BY_CARD")) {
+      if (recommended === "REPLACE" && evidence?.claimsNonReceipt) {
+        recommended = "PAY_BY_CARD";
+        allowed = ["PAY_BY_CARD", ...allowed];
+        reasons.push(
+          `The supplier is chasing the money now, and a replacement transfer would take another ${span(policy.settlementSlaMs[latest.method])} on ${latest.method}. A single-use Visa card for exactly ${formatMinor(obligation.amountMinor, obligation.currency)}, bound to this invoice and this supplier, pays it in minutes. A person signs the card; the agent then pays the supplier's checkout through Visa's Trusted Agent Protocol.`,
+        );
+      } else {
+        allowed = [...allowed, "PAY_BY_CARD"];
+      }
+    }
     return { recommended, allowed, blocked, reasons, severity, recheckAt, replacement, funding };
+  };
+
+  /** The invoice is held by a Visa card: no transfer may be made, and the card's own state decides what is next. */
+  const decideCard = (card: InvoiceCardFacts): void => {
+    const money = (minor: number) => formatMinor(minor, card.currency);
+    refuse("REPLACE", "A Visa card holds this invoice. A transfer now could pay the supplier twice.");
+    refuse("FUND", "A Visa card holds this invoice, so there is no replacement transfer to fund.");
+    const open = facts.attempts.find((a) => a.state === "INTENT" || a.state === "LIVE" || a.state === "PAID");
+    if (open) {
+      forced = "ESCALATE";
+      raise("CRITICAL");
+      candidates.push("ESCALATE");
+      reasons.push(`Transfer attempt ${open.seq} is ${open.state} while a Visa card also holds this invoice. The supplier could be paid twice; a person must look now.`);
+      refuse("PAY_BY_CARD", "A transfer for this invoice is open.");
+      refuse("CLOSE", "A transfer and a card both hold this invoice.");
+      return;
+    }
+    if (card.spentMinor > 0 || card.state === "SPENT") {
+      const s = card.settlement;
+      if (!s) {
+        fromState = "WAIT";
+        candidates.push("WAIT");
+        recheckAt = new Date(now.getTime() + 60_000).toISOString();
+        reasons.push(`The Visa card has been charged ${money(card.spentMinor)}; the charge has not been proved against the signed terms yet.`);
+        return;
+      }
+      const problems = [
+        !s.matches && "it does not match the terms the person signed",
+        (s.amountMinor !== obligation.amountMinor || card.spentMinor !== obligation.amountMinor) && `it took ${money(card.spentMinor)} for an invoice of ${formatMinor(obligation.amountMinor, obligation.currency)}`,
+        s.currency !== obligation.currency && `it was charged in ${s.currency}, not ${obligation.currency}`,
+      ].filter((p): p is string => typeof p === "string");
+      if (problems.length > 0) {
+        forced = "ESCALATE";
+        raise("CRITICAL");
+        candidates.push("ESCALATE");
+        reasons.push(`The Visa card charge for this invoice is wrong: ${problems.join("; ")}. A person must look.`);
+        refuse("CLOSE", "The card charge does not match the invoice.");
+        return;
+      }
+      // The supplier ran the charge at its own checkout, so a claim of non-receipt is answered by the card itself.
+      const heldMs = now.getTime() - Date.parse(s.at);
+      if (heldMs >= policy.paidHoldMs) {
+        fromState = "CLOSE";
+        candidates.push("CLOSE");
+        reasons.push(`Paid by Visa card: the supplier's charge cleared for exactly ${money(s.amountMinor)}, matched every signed term, and has held through the hold window. It can now be reconciled and certified.`);
+      } else {
+        fromState = "WAIT";
+        candidates.push("WAIT");
+        recheckAt = new Date(Date.parse(s.at) + policy.paidHoldMs).toISOString();
+        reasons.push(`Paid by Visa card: the supplier's charge cleared for exactly ${money(s.amountMinor)} and matched every signed term. A card charge can still be reversed, so wait out the hold before closing.`);
+      }
+      return;
+    }
+    switch (card.state) {
+      case "PENDING":
+        fromState = "WAIT";
+        candidates.push("WAIT", "ESCALATE");
+        raise("ATTENTION");
+        reasons.push(`A single-use Visa card for exactly ${money(card.amountMinor)} waits for a person's signature. It can pay only this invoice, only at this supplier; the agent cannot sign it.`);
+        refuse("PAY_BY_CARD", "The card has not been signed yet.");
+        break;
+      case "ISSUING":
+        fromState = "WAIT";
+        candidates.push("WAIT");
+        recheckAt = new Date(now.getTime() + 60_000).toISOString();
+        reasons.push("A person signed the card and Airwallex is issuing it.");
+        refuse("PAY_BY_CARD", "The card is not issued yet.");
+        break;
+      case "FROZEN":
+        fromState = "ESCALATE";
+        candidates.push("ESCALATE", "WAIT");
+        raise("ATTENTION");
+        reasons.push("A person froze this invoice's card, so it declines every charge. Only a person can unfreeze or close it.");
+        refuse("PAY_BY_CARD", "The card is frozen.");
+        break;
+      default:
+        if (card.heldMinor > 0) {
+          fromState = "WAIT";
+          candidates.push("WAIT");
+          recheckAt = new Date(now.getTime() + 60_000).toISOString();
+          reasons.push(`Airwallex has authorised ${money(card.heldMinor)} on the card; waiting for it to clear.`);
+          refuse("PAY_BY_CARD", "A charge on the card is already authorised.");
+        } else if (card.failedCheckouts >= MAX_FAILED_CHECKOUTS) {
+          fromState = "ESCALATE";
+          candidates.push("ESCALATE");
+          raise("ATTENTION");
+          reasons.push(`${card.failedCheckouts} checkouts with this invoice's card failed. A person should look before anyone tries again.`);
+          refuse("PAY_BY_CARD", `${card.failedCheckouts} checkouts with this card already failed.`);
+        } else {
+          fromState = "PAY_BY_CARD";
+          candidates.push("PAY_BY_CARD", "ESCALATE");
+          reasons.push(
+            `The invoice's Visa card is signed and active. Pay the supplier's checkout with it through Visa's Trusted Agent Protocol: exactly ${money(card.amountMinor)}, signed with the agent's key and verified by the merchant before it charges.${card.failedCheckouts > 0 ? ` ${card.failedCheckouts} checkout already failed.` : ""}`,
+          );
+        }
+    }
   };
 
   if (obligation.status === "CLOSED") {
@@ -294,6 +430,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
     candidates.push("ESCALATE");
     reasons.push(`Already with a person: ${(obligation.escalationReason ?? "no reason recorded").replace(/[.\s]+$/, "")}.`);
     refuse("REPLACE", "Only a named person can release an escalated invoice.");
+    refuse("PAY_BY_CARD", "Only a named person can release an escalated invoice.");
     refuse("CLOSE", "An escalated invoice cannot be closed until a person resolves the escalation.");
   }
   if (evidence?.requestsDetailChange) {
@@ -302,6 +439,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
     candidates.push("ESCALATE");
     reasons.push("The supplier's message asks to change bank details. Confirm by calling a number you already hold. A bank-detail change by message is the classic payment-fraud pattern.");
     refuse("REPLACE", "New bank details arrived by message and have not been verified.");
+    refuse("PAY_BY_CARD", "A supplier asking to change how it is paid must be verified first.");
   }
   if (evidence?.containsEmbeddedInstructions) {
     raise("ATTENTION");
@@ -319,7 +457,13 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
   // arrived by message can be spoofed, so on a PAID transfer it never lifts a supplier's non-receipt claim.
   const creditConfirmsReceipt = statementShowsCredit && evidence?.creditSource === "manual";
 
-  // 2. The state of the latest attempt.
+  // 2. A Visa card holds the invoice: it is the payment now, whatever the latest transfer says.
+  if (facts.card) {
+    decideCard(facts.card);
+    return finish();
+  }
+
+  // 3. The state of the latest attempt.
   switch (latest.state) {
     case "INTENT":
       fromState = "RECOVER_INTENT";

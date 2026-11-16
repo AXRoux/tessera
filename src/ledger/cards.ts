@@ -15,6 +15,10 @@
  *   CARD_STATUS      frozen, unfrozen, spent (a single-use card after its charge), closed
  *   CARD_SETTLED     an accepted charge proved against the terms a person signed: merchant, cap, category, currency,
  *                    single use. Once per charge, at its CLEARING; the purchase's receipt.
+ *
+ * An invoice card (`obligationId` set) pays one supplier invoice whose transfer failed: its terms come from the invoice,
+ * never from whoever asked, and it shares the invoice's duplicate lock with the transfers (see `INVOICE_LOCK_STATES`).
+ * Its events are written on the invoice's own line of the chain, so the incident's history tells the whole story.
  */
 import { z } from "zod";
 import type { LedgerEvent } from "./ledger";
@@ -39,8 +43,20 @@ export interface CardTerms {
   activeTo: string;
 }
 
+/**
+ * The card states that hold an invoice's duplicate lock: while one of these cards exists (or any card that has spent),
+ * no transfer may be attempted for that invoice, and while a transfer is open no card may be asked for. A refused,
+ * declined, failed or unused closed card releases it.
+ */
+export const INVOICE_LOCK_STATES: readonly CardState[] = ["PENDING", "ISSUING", "ACTIVE", "FROZEN", "SPENT"];
+
+/** Whether a card holds its invoice's lock: it may still pay, or it has paid. */
+export const holdsInvoiceLock = (card: Pick<CardRow, "state" | "spentMinor">): boolean => INVOICE_LOCK_STATES.includes(card.state) || card.spentMinor > 0;
+
 export interface CardRow extends CardTerms {
   id: string;
+  /** The supplier invoice this card pays, when it is an invoice card; null for any other purchase. */
+  obligationId: string | null;
   state: CardState;
   /** `operator:<name>` style actor for a person, `agent:<name>` for an agent. */
   requestedBy: string;
@@ -142,7 +158,14 @@ const TermsSchema = z.object({
   singleUse: z.boolean(),
   activeTo: z.string(),
 });
-export const CardRequestedSchema = TermsSchema.extend({ cardId: z.string(), requestId: z.string(), requestedBy: z.string(), reason: z.string() });
+export const CardRequestedSchema = TermsSchema.extend({
+  cardId: z.string(),
+  requestId: z.string(),
+  requestedBy: z.string(),
+  reason: z.string(),
+  /** An invoice card's invoice. Absent on cards written before invoice cards existed. */
+  obligationId: z.string().nullable().optional(),
+});
 export const CardRefusedSchema = z.object({ cardId: z.string(), reasons: z.array(z.string()) });
 export const CardDecidedSchema = z.object({ cardId: z.string(), decision: z.enum(["APPROVED", "DECLINED"]), by: z.string(), note: z.string() });
 export const CardIssueIntentSchema = z.object({ cardId: z.string(), requestId: z.string(), cardholderId: z.string() });
@@ -179,6 +202,7 @@ export const CardStatusSchema = z.object({
 });
 
 export interface ReplayedCard {
+  obligationId: string | null;
   state: CardState;
   terms: CardTerms;
   requestId: string;
@@ -196,8 +220,8 @@ export function replayCards(events: LedgerEvent[]): Map<string, ReplayedCard> {
     if (event.type === "CARD_REQUESTED") {
       const p = CardRequestedSchema.safeParse(event.payload);
       if (!p.success) continue;
-      const { cardId, requestId, requestedBy: _by, reason: _reason, ...terms } = p.data;
-      cards.set(cardId, { state: "PENDING", terms, requestId, awxCardId: null, spentMinor: 0 });
+      const { cardId, requestId, requestedBy: _by, reason: _reason, obligationId, ...terms } = p.data;
+      cards.set(cardId, { obligationId: obligationId ?? null, state: "PENDING", terms, requestId, awxCardId: null, spentMinor: 0 });
       continue;
     }
     const cardId = z.object({ cardId: z.string() }).safeParse(event.payload).data?.cardId;
@@ -253,6 +277,7 @@ export function replayCards(events: LedgerEvent[]): Map<string, ReplayedCard> {
 
 /** The first way a card row disagrees with what its own events say, or null. */
 export function cardMismatch(row: CardRow, replayed: ReplayedCard): string | null {
+  if (row.obligationId !== replayed.obligationId) return `pays invoice ${row.obligationId ?? "none"} in its table but ${replayed.obligationId ?? "none"} by its events`;
   if (row.state !== replayed.state) return `is ${row.state} in its table but ${replayed.state} by its events`;
   if (row.awxCardId !== replayed.awxCardId) return `names Airwallex card ${row.awxCardId ?? "none"} in its table but ${replayed.awxCardId ?? "none"} by its events`;
   if (row.spentMinor !== replayed.spentMinor) return `has spent ${row.spentMinor} in its table but ${replayed.spentMinor} by its events`;

@@ -308,7 +308,7 @@ async function whenReady(): Promise<void> {
   const agent = health.agent?.kind === "model" ? `${health.agent.name} (your key)` : health.agent?.kind === "scripted" ? "a deterministic script, not a model" : "none configured";
   console.log(`\n  \x1b[1mReady.\x1b[0m  Open  \x1b[1m${consoleUrl}\x1b[0m`);
   if (offline) {
-    console.log(`  New here? The page opens with a "Start here" checklist: load seven incidents, watch the agent work them, try to break it.`);
+    console.log(`  New here? The page opens with a "Start here" checklist: load eight incidents, watch the agent work them, try to break it.`);
     console.log(`  Agent in this demo: ${agent}.${health.agent?.kind === "scripted" ? " Configure a model in .env (Claude or any OpenAI-compatible one) to use it instead." : ""}`);
     if (health.agentOnEvent) console.log(`  Open an incident and press "Fail the transfer": the simulated Airwallex sends a signed webhook, the decision changes, and the agent wakes for that incident on its own.`);
   }

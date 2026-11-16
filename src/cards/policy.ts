@@ -20,7 +20,12 @@ export const CARD_CATEGORIES: Readonly<Record<string, CardCategory>> = {
   advertising: { label: "Advertising", mccs: ["7311"] },
   travel: { label: "Travel", mccs: ["4511", "7011", "4722"] },
   office: { label: "Office supplies", mccs: ["5111", "5943", "5044"] },
+  /** An invoice card pays a supplier for an invoice whose transfer failed (src/cards/invoice-card.ts). */
+  supplier: { label: "Supplier invoices", mccs: ["7399", "8999", "5099"] },
 };
+
+/** The category every invoice card is cut in. */
+export const INVOICE_CARD_CATEGORY = "supplier";
 
 export interface CardPolicy {
   /** The most one card may carry, per currency, in minor units. A currency missing here cannot have cards. */

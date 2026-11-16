@@ -8,6 +8,7 @@ import { AttemptResolvedSchema, EscalationResolvedSchema, type IncidentView } fr
 
 import { DraftPanel } from "./draft-panel";
 import { Field, Fold, TextArea, TextInput, type Notice } from "./fields";
+import { CardPanel } from "./card-panel";
 import { FundingPanel } from "./funding-panel";
 import { Btn } from "../kit/metal";
 
@@ -145,6 +146,8 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
   return (
     <div className="space-y-5">
       <DraftPanel view={view} busy={busy} run={run} />
+
+      <CardPanel view={view} operator={operator} busy={busy} run={run} />
 
       <div>
         <span className="kicker block">Moves policy allows</span>

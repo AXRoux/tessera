@@ -53,24 +53,49 @@ export const CertificateFundingSchema = z.object({
 export type CertificateFunding = z.infer<typeof CertificateFundingSchema>;
 
 /**
+ * The Visa card that paid the invoice (version 4): the charge Airwallex Issuing reported, proved against the terms the
+ * person signed, and the Trusted Agent Protocol checkout the agent made with it.
+ */
+export const CertificateCardSchema = z.object({
+  cardId: z.string(),
+  awxCardId: z.string().nullable(),
+  last4: z.string().nullable(),
+  merchant: z.string(),
+  approvedBy: z.string().nullable(),
+  transactionId: z.string(),
+  amountMinor: z.number().int(),
+  currency: z.string(),
+  /** When the charge cleared and was proved (CARD_SETTLED); the hold window runs from here. */
+  settledAt: z.string(),
+  checks: z.array(z.object({ check: z.string(), ok: z.boolean() })),
+  /** The agent's checkout at the supplier, as the merchant verified it; null when the card was charged another way. */
+  tap: z.object({ orderId: z.string().nullable(), kid: z.string().nullable(), verified: z.boolean() }).nullable(),
+});
+export type CertificateCard = z.infer<typeof CertificateCardSchema>;
+
+/**
  * Version 2 adds the Airwallex status of every attempt and of the settled transfer; version 3 adds the conversions that
- * funded a replacement. Version 1 and 2 certificates still verify.
+ * funded a replacement; version 4 adds the Visa card for an invoice paid by card (its settled transfer is then null).
+ * Earlier certificates still verify.
  */
 export const ClosureCertificateBodySchema = z.object({
-  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   obligationId: z.string(),
   reference: z.string(),
   currency: z.string(),
   amountMinor: z.number().int(),
   beneficiaryId: z.string(),
-  settledAttemptId: z.string(),
-  settledTransferId: z.string(),
+  /** Null when a Visa card paid the invoice (version 4): see `card`. */
+  settledAttemptId: z.string().nullable(),
+  settledTransferId: z.string().nullable(),
   /** Re-read from Airwallex inside the close: a certificate is only issued while the transfer is PAID there. */
   settledAwxStatus: z.literal("PAID").optional(),
   attempts: z.array(CertificateAttemptSchema),
   totals: TotalsSchema,
   /** Version 3: every conversion made for this invoice, reconciled leg by leg. Totals stay in the invoice's currency. */
   funding: z.array(CertificateFundingSchema).optional(),
+  /** Version 4: the Visa card that paid the invoice instead of a transfer. */
+  card: CertificateCardSchema.optional(),
   /** Head of the event chain just before this certificate; pins the whole history to it. */
   eventChainHead: z.string(),
   issuedAt: z.string(),

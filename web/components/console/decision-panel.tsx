@@ -22,6 +22,7 @@ const HEADLINE: Record<Action, string> = {
   REQUEST_CORRECTION: "Ask for corrected details",
   REPLACE: "Replace the payment",
   FUND: "Fund the replacement",
+  PAY_BY_CARD: "Pay it by Visa card",
   CLOSE: "Close and certify",
   ESCALATE: "This needs a person",
 };
@@ -36,6 +37,7 @@ export const SHORT: Record<Action, string> = {
   REQUEST_CORRECTION: "Correct details",
   REPLACE: "Replace",
   FUND: "Fund",
+  PAY_BY_CARD: "Pay by card",
   CLOSE: "Certify",
   ESCALATE: "Hand off",
 };

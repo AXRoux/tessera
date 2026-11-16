@@ -2,7 +2,7 @@
  * `bun run mcp`: Tessera's tools over stdio for any MCP client. Logs to stderr; stdout is protocol only.
  *
  * With TESSERA_OFFLINE=1 the server runs on the simulated Airwallex with no keys and no money, and starts with the
- * seven ACME demo incidents already in the ledger, so a client has something to work. TESSERA_MCP_SEED=0 starts it empty.
+ * eight ACME demo incidents already in the ledger, so a client has something to work. TESSERA_MCP_SEED=0 starts it empty.
  */
 import { seedAcme } from "../demo/scenario";
 import { buildRuntime, resolveBeneficiary } from "../server/runtime";

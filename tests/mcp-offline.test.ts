@@ -39,12 +39,12 @@ async function connect(env: Record<string, string>) {
 }
 
 describe("mcp server with no keys", () => {
-  test("offline serves thirteen tools over seven seeded incidents, and the code still refuses a forbidden replacement", async () => {
+  test("offline serves fourteen tools over eight seeded incidents, and the code still refuses a forbidden replacement", async () => {
     const server = await connect({ TESSERA_OFFLINE: "1" });
     try {
       const tools = (await server.request("tools/list")).result.tools as { name: string }[];
-      expect(tools).toHaveLength(13);
-      expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["list_virtual_cards", "request_virtual_card", "pay_with_virtual_card"]));
+      expect(tools).toHaveLength(14);
+      expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["list_virtual_cards", "request_virtual_card", "pay_with_virtual_card", "pay_invoice_by_card"]));
       // An agent can ask for a Visa card, but it waits for a person; paying with it before then is refused.
       const asked = (await server.call("request_virtual_card", { purpose: "Figma, two editor seats", merchant: "Figma", category: "software", amount: 45, reason: "The design team needs two more seats" })).result as { cardId: string; state: string };
       expect(asked.state).toBe("PENDING");
@@ -53,7 +53,7 @@ describe("mcp server with no keys", () => {
       expect(JSON.stringify(early)).toContain("only an active card can pay");
       const { incidents } = (await server.call("list_incidents")).result as { incidents: { incidentId: string; reference: string }[] };
       expect(incidents.map((i) => i.reference.slice(0, 9)).sort()).toEqual(
-        ["ACME-1041", "ACME-1042", "ACME-1043", "ACME-1044", "ACME-1045", "ACME-1046", "ACME-1047"],
+        ["ACME-1041", "ACME-1042", "ACME-1043", "ACME-1044", "ACME-1045", "ACME-1046", "ACME-1047", "ACME-1048"],
       );
       const inFlight = incidents.find((i) => i.reference.startsWith("ACME-1041"))!;
       const refused = await server.call("replace_payment", { incidentId: inFlight.incidentId });

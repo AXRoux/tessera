@@ -1,6 +1,8 @@
 import { ModelError } from "../commander/model";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { CardCheckoutPayloadSchema } from "../cards/checkout-event";
+import { CardPaymentRefused, payInvoiceByCard } from "../cards/invoice-card";
 import { WRITTEN_NOTE_MIN_CHARS } from "../approval/approval";
 import { AwxHttpError } from "../airwallex/types";
 import { sha256Hex } from "../canonical";
@@ -164,14 +166,9 @@ const StageWalletsBody = z.object({
 const CardStatusBody = z.object({ why: z.string().max(300).default("") });
 const CardChargeBody = z.object({ amount: z.number().positive().max(1_000_000), merchantCategoryCode: z.string().regex(/^\d{4}$/), merchant: z.string().trim().max(60).optional() });
 const CardCheckoutBody = z.object({ amount: z.number().positive().max(1_000_000) });
-const CardCheckoutEventSchema = z.looseObject({
-  cardId: z.string(),
-  actor: z.string(),
-  status: z.enum(["APPROVED", "DECLINED", "REJECTED"]),
-  orderId: z.string().nullable(),
-  reason: z.string().nullable(),
-  tap: z.looseObject({ verified: z.boolean(), kid: z.string().optional() }),
-});
+/** An invoice's card: no amount, no merchant, no card. Only why, in a sentence the signer will read. */
+const CardForInvoiceBody = z.strictObject({ reason: z.string().trim().min(12).max(300).optional() });
+const CardCheckoutEventSchema = CardCheckoutPayloadSchema;
 const AgentRunBody = z.object({
   incidentId: z.string().min(1).max(64).optional(),
   /** A run over exactly these invoices (the board's "work these"), and nothing else. */
@@ -226,6 +223,7 @@ function problem(error: unknown): Response {
     return json({ error: error.name, message: error.message, reasons: error.decision.reasons }, 409);
   }
   if (error instanceof FundingRefused) return json({ error: error.name, message: error.message, reasons: error.reasons }, 409);
+  if (error instanceof CardPaymentRefused) return json({ error: error.name, message: error.message, reasons: error.reasons }, 409);
   if (error instanceof ApprovalRejected) return json({ error: error.name, message: error.message, code: error.reason }, 409);
   if (error instanceof z.ZodError) return json({ error: "BadRequest", message: z.prettifyError(error) }, 400);
   if (error instanceof EmlNotPlainText) return json({ error: "BadRequest", message: error.message }, 400);
@@ -300,7 +298,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       status: o.status, attemptCount: attempts.length, updatedAt: o.updatedAt,
       latest: latest ? { seq: latest.seq, state: latest.state, awxStatus: latest.awxStatus, failureCode: latest.failureCode } : null,
       lastAgentAction: lastAgentAction(events),
-      attention: attentionOf(o, latest, events),
+      attention: attentionOf(o, latest, events, ledger.invoiceCard(o.id)),
       lastReaction: lastReaction(events),
       next: await nextFor(o, attempts, events, wallets),
       unread: ledger.inboxMessages(o.id).filter((m) => !read.has(m.id)).length,
@@ -335,7 +333,15 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       certificate: stored ? SignedCertificateSchema.parse(JSON.parse(stored)) : null,
       chain: { ok: chain.ok, brokenAt: chain.ok ? null : chain.brokenAt },
       paidHoldMs: deps.paidHoldMs,
+      invoiceCard: invoiceCardView(id),
     };
+  };
+
+  /** The card paying an invoice: the one that holds its lock, else the latest asked for. */
+  const invoiceCardView = (obligationId: string): CardView | null => {
+    if (!deps.cards) return null;
+    const card = ledger.invoiceCard(obligationId) ?? ledger.cardsFor(obligationId).at(-1) ?? null;
+    return card ? (cardViews(deps.cards, [card])[0] ?? null) : null;
   };
 
   const record = (
@@ -482,7 +488,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
   }
 
   /** Every card with its charges and its agent checkouts, newest first. */
-  const cardViews = (desk: CardDesk): CardView[] => {
+  const cardViews = (desk: CardDesk, only?: CardRow[]): CardView[] => {
     const checkouts = new Map<string, CardView["checkouts"]>();
     for (const event of ledger.events()) {
       if (event.type !== "CARD_CHECKOUT") continue;
@@ -493,7 +499,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       checkouts.set(p.data.cardId, list);
     }
     const view = (card: CardRow): CardView => ({
-      id: card.id, purpose: card.purpose, merchant: card.merchant, category: card.category, categoryLabel: CARD_CATEGORIES[card.category]?.label ?? card.category,
+      id: card.id, obligationId: card.obligationId, purpose: card.purpose, merchant: card.merchant, category: card.category, categoryLabel: CARD_CATEGORIES[card.category]?.label ?? card.category,
       mccs: card.mccs, amountMinor: card.amountMinor, currency: card.currency, singleUse: card.singleUse, activeTo: card.activeTo, state: card.state,
       requestedBy: card.requestedBy, byAgent: card.requestedBy.startsWith("agent:"), reason: card.reason, approvedBy: card.approvedBy, last4: card.last4,
       brand: card.brand, spentMinor: card.spentMinor, heldMinor: heldFrom(desk.charges(card.id)),
@@ -501,7 +507,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       charges: desk.charges(card.id).map(({ cardId: _cardId, ...charge }) => charge), checkouts: checkouts.get(card.id) ?? [],
       settlements: desk.settlements(card.id).map(({ cardId: _cardId, ...settlement }) => settlement),
     });
-    return desk.list().map(view);
+    return (only ?? desk.list()).map(view);
   };
 
   async function cardRoutes(request: Request, path: string, desk: CardDesk): Promise<Response> {
@@ -549,6 +555,9 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         // The agent pays with the card the person signed, through Visa TAP. Pressed by a person, signed by the agent's key.
         const { amount } = await body(request, CardCheckoutBody);
         const card = ledger.requireCard(id);
+        if (card.obligationId) {
+          return json({ error: "Conflict", message: "this card pays a supplier invoice; pay it from the incident, which is assessed first" }, 409);
+        }
         const { result } = await desk.agentCheckout(id, { amount, merchant: card.merchant }, deps.agent?.actor ?? "agent:tessera");
         return json({ id, ...result });
       }
@@ -581,7 +590,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         const eur = deps.eurBeneficiaryId;
         if (!eur) return json({ error: "Conflict", message: "no EUR beneficiary for the funding incident: run `bun run setup` to create spike-eu-supplier" }, 409);
         const seed = () => seedAcme({ ledger, gateway, commander, simulator, approver: deps.operator }, { USD: deps.beneficiaryId, EUR: eur });
-        // Offline, seeding writes seven incidents' history at once; it is not news for the event-driven agent. (Against the
+        // Offline, seeding writes eight incidents' history at once; it is not news for the event-driven agent. (Against the
         // sandbox Airwallex sends its real webhooks regardless, and they are handled like any other.)
         const seeded = await (simulator.withoutEvents ? simulator.withoutEvents(seed) : seed());
         // Their transfer changes are recorded as reacted to, so the sweep does not later mistake them for news.
@@ -723,6 +732,24 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
             .catch(onRefusal(id, "fund/approve"));
           const funded: FundingResultWire = { outcome: result.outcome, conversion: result.conversion, walletsAfter: result.walletsAfter, replans: [] };
           return json(funded, 201);
+        }
+        case "card":
+        case "card/pay": {
+          // The invoice's card rail: a person asks for the card (they, or another person, then sign it on the card), and
+          // pressing pay has the agent pay the supplier's checkout through Visa TAP, signed with the agent's key.
+          if (!deps.cards) return json({ error: "NotFound", message: "Visa cards are not available on this server" }, 404);
+          const input = await body(request, CardForInvoiceBody);
+          const actor = action === "card" ? deps.operator : (deps.agent?.actor ?? "agent:tessera");
+          const evidence = effectiveEvidence(ledger.events(id), ledger.requireObligation(id).amountMinor)?.evidence ?? null;
+          const held = ledger.invoiceCard(id);
+          if (action === "card" && held) return json({ error: "Conflict", message: `this invoice already has a card (${held.state})` }, 409);
+          if (action === "card/pay" && held?.state !== "ACTIVE") {
+            return json({ error: "Conflict", message: held ? `the invoice's card is ${held.state}, not ACTIVE` : "this invoice has no card to pay with yet" }, 409);
+          }
+          const result = await payInvoiceByCard({ ledger, commander, desk: deps.cards }, id, {
+            actor, reason: input.reason ?? "The supplier needs paying now and the original transfer was returned.", evidence,
+          });
+          return json({ outcome: result.outcome, cardId: result.card.id, state: result.card.state, checkout: result.checkout, next: result.next }, 201);
         }
         case "escalation/resolve": {
           const input = await body(request, NoteBody);

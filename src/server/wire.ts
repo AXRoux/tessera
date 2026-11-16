@@ -253,6 +253,11 @@ export const IncidentViewSchema = z.object({
   certificate: SignedCertificateSchema.nullable(),
   chain: z.object({ ok: z.boolean(), brokenAt: z.number().int().nullable() }),
   paidHoldMs: z.number(),
+  /**
+   * The Visa card paying this invoice instead of a transfer: the one holding its lock, else the latest one asked for
+   * (refused, declined or failed). Null when the invoice has never had a card.
+   */
+  invoiceCard: z.lazy(() => CardViewSchema).nullable().optional(),
 });
 export type IncidentView = z.infer<typeof IncidentViewSchema>;
 
@@ -403,6 +408,8 @@ export type CardSettlementWire = z.infer<typeof CardSettlementWireSchema>;
 /** A Visa virtual card and its whole story (src/ledger/cards.ts). */
 export const CardViewSchema = z.object({
   id: z.string(),
+  /** The supplier invoice an invoice card pays; null for any other purchase. */
+  obligationId: z.string().nullable().optional(),
   purpose: z.string(),
   merchant: z.string(),
   category: z.string(),

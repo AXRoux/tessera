@@ -11,9 +11,9 @@
 ──────────────────────────────────────────────────────────────────────────────
   TESSERA · SPEC 01                       the layer between agents and money
 ──────────────────────────────────────────────────────────────────────────────
-  50/50  attacks held by policy           94/94  safeguards, each proven
-    623  automated tests passing             32  failure codes, all mapped
-     13  typed tools, and no more             1  live payout per invoice, max
+  57/57  attacks held by policy         100/100  safeguards, each proven
+    639  automated tests passing             32  failure codes, all mapped
+     14  typed tools, and no more             1  live payment per invoice, max
 ──────────────────────────────────────────────────────────────────────────────
 ```
 
@@ -21,8 +21,8 @@
 
 <p align="center">
   <a href="https://github.com/AXRoux/tessera/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AXRoux/tessera/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="attacks held 50/50" src="https://img.shields.io/badge/attacks_held-50%2F50-2b74ff">
-  <img alt="623 tests passing" src="https://img.shields.io/badge/tests-623_passing-0b0d12">
+  <img alt="attacks held 57/57" src="https://img.shields.io/badge/attacks_held-57%2F57-2b74ff">
+  <img alt="639 tests passing" src="https://img.shields.io/badge/tests-639_passing-0b0d12">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-2b74ff">
   <img alt="Airwallex sandbox" src="https://img.shields.io/badge/Airwallex-sandbox-0b0d12">
   <img alt="Bun and TypeScript" src="https://img.shields.io/badge/Bun_%C2%B7_TypeScript-strict-2b74ff?logo=bun&logoColor=white">
@@ -79,7 +79,7 @@ bun run redteam   # no keys: 50 attacks on the invariants, with a scoreboard
 | **Plugs into anything** | A zero-dependency [MCP server](#05-the-agent-surface) exposes thirteen typed tools over stdio, so any MCP client can hold them: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or a loop of your own. The protocol was checked end to end with the official MCP Inspector, and Hermes Agent has worked a full sandbox run through it. |
 | **Visa, on Airwallex** | Agents can buy, but only what a person signed for. Each purchase gets its own **single-use Visa virtual card issued by Airwallex**, with the signed terms as the card's controls. The agent pays through **Visa's Trusted Agent Protocol**, signing every checkout with the workspace's key for the merchant to verify. [Ten minutes down](#03-cards-on-visa). |
 | **One click in the console** | **Let the agent work them all** streams the run live. **Try to break it** gives the same agent a hostile brief and shows every refusal in black. |
-| **Proof, not claims** | 50 adversarial attacks held, 623 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 94 guards removed one at a time from a private copy, every single one caught. |
+| **Proof, not claims** | 57 adversarial attacks held, 639 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 100 guards removed one at a time from a private copy, every single one caught. |
 
 ### Why this is worth building
 
@@ -222,6 +222,25 @@ sweep: the charge clears (CLEARING) ─► Tessera proves it against the signed 
 - **Proved when it clears, followed until it posts.** Airwallex reports a purchase as a `CLEARING` transaction with a negative amount, `PENDING` at first (the money leaves the wallet and a single-use card is closed) and `APPROVED`, under the same id, once Airwallex posts it in a batch about half an hour later. Following the builder guide, Tessera treats the `CLEARING` itself as accepted instead of waiting: the charge counts as spent and is proved against what the person signed at once, the way a payout ends in a closure certificate. The proof checks the merchant they named (the one thing a card's controls cannot check), the cap, the merchant category, the currency, single use, and a person's signature, and a charge from another merchant is flagged even though the card allowed it through.
 - **On the ledger, like everything else.** `CARD_REQUESTED`, `CARD_REFUSED`, `CARD_DECIDED`, `CARD_ISSUE_INTENT`, `CARD_ISSUED`, `CARD_CHARGE` (every charge and decline Airwallex reports, and again on every move), `CARD_CHECKOUT` (with the TAP verdict), `CARD_STATUS` and `CARD_SETTLED`. `verifyChain` replays them and refuses a `cards` row edited behind its back, and a lost create reply is matched by the nickname Tessera wrote on the card, so a retry never issues two.
 - **In the console.** The treasury is a wallet: cards ride in a pocket that carries the working balance, and each rises out of it under the pointer. Open one to sign it, let the agent pay with it over TAP, test a merchant charge against its controls, freeze it, close it. `⌘K` opens a palette with "Issue a Visa card" from anywhere.
+
+### Paying a delayed supplier by Visa card, without paying twice
+
+Kit 03's question is how to resolve a delayed supplier transfer without paying twice. A replacement transfer is one answer; when the supplier is already chasing a missed deadline it takes another settlement window and, over SWIFT, a second fee. So the Commander has a second rail: **`PAY_BY_CARD`**, a single-use Visa card for exactly the invoice, controlled end to end by code and paid by the agent through Visa TAP.
+
+```
+transfer fails, money back ─► Commander allows REPLACE ─► and PAY_BY_CARD (recommended when the supplier is chasing)
+agent: pay_invoice_by_card ─► card cut from the invoice: exact amount, its supplier, single use ─► takes the invoice's lock
+person signs the card       ─► Airwallex issues it with those terms as its own controls
+agent: pay_invoice_by_card ─► TAP-signed checkout at /invoices/<ref>/pay ─► merchant verifies, charges exactly the invoice
+charge clears, proved       ─► hold window ─► certificate v4: the card, its TAP order, and the cancelled transfer beside it
+```
+
+- **Only where a replacement would be.** `PAY_BY_CARD` is offered exactly where `REPLACE` survives every rule (original provably `CANCELLED` with the money back, a replaceable failure, the wallet covering it above its floor, nothing escalated, no bank-detail change), and never on a server where the agent could not actually pay (no TAP merchant, i.e. real-money production).
+- **One lock, both rails, in the database.** A card for an invoice takes the same lock its transfers do. SQLite itself refuses a card while a transfer is `INTENT`/`LIVE`/`PAID`, a transfer while a card is pending, active or has spent, and a second card for the same invoice (`one_card_per_invoice`, and three triggers). A person's validly signed replacement approval is refused at the gateway with `DuplicateLockError` while the card holds. A declined, refused or unused card releases the invoice.
+- **No terms from the agent.** `pay_invoice_by_card` takes an incident id and a reason, nothing else (a strict schema refuses an amount, a merchant or a card). The card's amount, currency, merchant and single use come from the invoice; the checkout amount is the invoice's, and the generic card tool refuses an invoice card.
+- **TAP bound to one invoice.** The checkout is posted to `/invoices/<reference>/pay`; the TAP signature covers that path, and the signed payment container and the order name the same invoice, so a signed payment can never be aimed at another invoice (or replayed).
+- **Certified with the card.** The Closer requires every transfer to be over and tie out, no transfer `PAID`, one cleared charge for exactly the amount owed that matches every signed term, and the hold window passed. The v4 certificate carries the card, its proof and its TAP checkout beside the cancelled transfer it replaced. A card charged at another merchant escalates the incident as critical instead.
+- **Seven new attacks** (51 to 57 in `bun run redteam`) and six new mutations prove each of those guards is load-bearing; `ACME-1048` in the demo walks the whole flow, and `bun run smoke:offline` asserts it end to end over HTTP.
 
 **On your sandbox.** Card issuing must be enabled for the business. Airwallex issues commercial Visa cards in the regions its card programs cover (US, UK, Europe, Singapore, Hong Kong, Australia and others), and a sandbox business registered elsewhere answers `400 Invalid issuance details`, which Tessera records as a FAILED card with Airwallex's own words and lets a person retry once issuing is on. Offline, the simulator plays the same controls, so the whole flow runs with no keys.
 

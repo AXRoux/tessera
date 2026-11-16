@@ -62,7 +62,8 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
   const o = view.obligation;
   const chip = STATUS_CHIP[o.status];
   const feesKept = view.attempts.reduce((sum, a) => sum + (a.feeMinor ?? 0), 0);
-  const delivered = view.attempts.filter((a) => a.state === "PAID").reduce((sum, a) => sum + a.amountMinor, 0);
+  // A transfer that was paid, or the invoice's Visa card that paid instead.
+  const delivered = view.attempts.filter((a) => a.state === "PAID").reduce((sum, a) => sum + a.amountMinor, 0) + (view.invoiceCard?.spentMinor ?? 0);
   // Who reads supplier messages, as the server names it: the configured model, or offline the keyword reader (not a model).
   const reader = health?.reader ?? null;
   const operator = health?.operator ?? "operator";
@@ -93,7 +94,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
           <Figure label="Delivered" value={money(delivered, o.currency)} tone={delivered > 0 ? "text-accent" : "text-fg/60"} />
           <Figure label="Tries" value={String(view.attempts.length).padStart(2, "0")} />
           <Figure label="Fees kept" value={money(feesKept, o.currency)} />
-          <Figure label="Rail" value={`${o.method} ${o.currency}`} />
+          <Figure label="Rail" value={view.invoiceCard && ["PENDING", "ISSUING", "ACTIVE", "FROZEN", "SPENT"].includes(view.invoiceCard.state) ? `VISA ${o.currency}` : `${o.method} ${o.currency}`} />
         </dl>
       </header>
 

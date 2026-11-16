@@ -28,6 +28,7 @@ export const ACTION_WORDS: Record<string, string> = {
   REQUEST_CORRECTION: "ask for corrected details",
   REPLACE: "replace the payment",
   FUND: "fund the replacement",
+  PAY_BY_CARD: "pay it by Visa card",
   CLOSE: "close the incident",
   ESCALATE: "hand to a person",
 };
@@ -58,6 +59,7 @@ const TOOL_DONE: Record<string, string> = {
   read_supplier_message: "read the supplier's message",
   replace_payment: "replaced the payment",
   fund_replacement: "funded the replacement",
+  pay_invoice_by_card: "worked the invoice's Visa card",
   draft_supplier_reply: "drafted a reply for a person to send",
   defer_incident: "chose to wait",
   escalate_to_human: "handed the incident to a person",
@@ -67,6 +69,7 @@ const TOOL_DONE: Record<string, string> = {
 const TOOL_TRIED: Record<string, string> = {
   replace_payment: "replace the payment",
   fund_replacement: "fund the replacement",
+  pay_invoice_by_card: "pay the invoice by Visa card",
   reconcile_and_close: "certify the payment",
   escalate_to_human: "hand the incident over",
   draft_supplier_reply: "draft a reply",
@@ -113,6 +116,16 @@ const TITLES: Record<string, string> = {
   FUNDING_QUOTED: "Quote",
   FUNDING_REPLANNED: "Replanned",
   CHAIN_REBASELINED: "Rebaselined",
+  CARD_REQUESTED: "Card asked for",
+  CARD_REFUSED: "Card refused",
+  CARD_DECIDED: "Card signed",
+  CARD_ISSUE_INTENT: "Card sealed",
+  CARD_ISSUED: "Card issued",
+  CARD_ISSUE_FAILED: "Card failed",
+  CARD_CHECKOUT: "Visa TAP",
+  CARD_CHARGE: "Card charge",
+  CARD_SETTLED: "Card proved",
+  CARD_STATUS: "Card",
 };
 
 export function eventTitle(type: string): string {
@@ -240,6 +253,36 @@ export function describeEvent(type: string, payload: unknown): string {
     }
     case "FUNDING_REPLANNED":
       return `A quote was thrown away and the conversion planned again: ${bare(text(p.reason)) ?? "no reason given"}.`;
+    case "CARD_REQUESTED":
+      return `${actorLabel(text(p.requestedBy) ?? "someone")} asked for a single-use Visa card for exactly ${amount(p.amountMinor, p.currency)}, payable only to ${text(p.merchant) ?? "the supplier"}. It takes the invoice's lock: no transfer while it holds. A person must sign it.`;
+    case "CARD_REFUSED": {
+      const reasons = Array.isArray(p.reasons) ? p.reasons.filter((r): r is string => typeof r === "string") : [];
+      return `The card policy refused the card: ${bare(reasons.join("; ")) || "no reason given"}.`;
+    }
+    case "CARD_DECIDED":
+      return text(p.decision) === "APPROVED"
+        ? `${text(p.by) ?? "A person"} signed the card: "${bare(text(p.note)) ?? "no note"}".`
+        : `${text(p.by) ?? "A person"} declined the card, releasing the invoice: "${bare(text(p.note)) ?? "no note"}".`;
+    case "CARD_ISSUE_INTENT":
+      return "The card's issue was sealed in the ledger before Airwallex was asked to cut it.";
+    case "CARD_ISSUED":
+      return `Airwallex issued the card${text(p.last4) ? ` ending ${text(p.last4)}` : ""}, with the signed terms as its own controls.`;
+    case "CARD_ISSUE_FAILED":
+      return `Airwallex would not issue the card: ${bare(text(p.message)) ?? "no reason given"}.`;
+    case "CARD_CHECKOUT": {
+      const tap = record(p.tap);
+      const verdict = tap.verified === true ? "verified the agent's Visa Trusted Agent Protocol signature" : `rejected the agent's signature (${bare(text(tap.reason)) ?? "no reason"})`;
+      const status = text(p.status);
+      return `${actorLabel(text(p.actor) ?? "The agent")} paid at the supplier's checkout${text(p.invoice) ? ` for ${text(p.invoice)}` : ""}. The merchant ${verdict}${status === "APPROVED" ? `, and the charge went through (order ${text(p.orderId) ?? "?"}).` : status === "DECLINED" ? `, but the card declined: ${bare(text(p.reason)) ?? "no reason"}.` : "."}`;
+    }
+    case "CARD_CHARGE":
+      return `Airwallex reported a card ${(text(p.type) ?? "charge").toLowerCase()} of ${amount(p.amountMinor, p.currency)} at ${text(p.merchant) ?? "an unnamed merchant"}: ${(text(p.status) ?? "unknown").toLowerCase()}${text(p.failureReason) ? ` (${text(p.failureReason)})` : ""}.`;
+    case "CARD_SETTLED":
+      return p.matches === true
+        ? `The card charge of ${amount(p.amountMinor, p.currency)} was proved against every signed term: merchant, cap, category, currency, single use, a person's signature.`
+        : `The card charge of ${amount(p.amountMinor, p.currency)} does NOT match what was signed. A person must look.`;
+    case "CARD_STATUS":
+      return `The card is now ${(text(p.to) ?? "changed").toLowerCase()}: ${bare(text(p.why)) ?? "no reason recorded"}.`;
     default:
       return type;
   }

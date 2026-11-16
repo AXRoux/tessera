@@ -6,6 +6,9 @@
  * container signed with the same key and carrying the same nonce (TAP, "Payment"). Only then does the merchant charge
  * the card, through Airwallex's sandbox simulator (or the offline fake), and Airwallex applies the card's own controls.
  * The card number never travels: the container carries a payment token (the Airwallex card id) and its last four.
+ *
+ * An invoice payment is posted to `/invoices/<reference>/pay`. The TAP signature covers that path, and the signed
+ * container names the same invoice, so a signed payment for one invoice can never be applied to another.
  */
 import type { KeyObject } from "node:crypto";
 import { z } from "zod";
@@ -21,6 +24,8 @@ const CheckoutBodySchema = z.object({
     amount: z.number().positive(),
     currency: z.string().length(3),
     merchantCategoryCode: z.string().regex(/^\d{4}$/),
+    /** The supplier invoice being paid, for an invoice payment. */
+    invoice: z.string().min(1).max(80).optional(),
   }),
   agenticPaymentContainer: z.looseObject({
     nonce: z.string(),
@@ -28,6 +33,7 @@ const CheckoutBodySchema = z.object({
     alg: z.string(),
     paymentToken: z.string(),
     lastFour: z.string().nullable(),
+    invoice: z.string().optional(),
     signature: z.string(),
   }),
 });
@@ -60,6 +66,12 @@ export class SandboxMerchant {
     // The container is linked to the signed request by its nonce and key, and signed by that same key.
     if (container.nonce !== tap.nonce || container.kid !== tap.kid) {
       return { orderId: null, status: "REJECTED", reason: "the payment container is not linked to the signed request", tap };
+    }
+    // An invoice payment: the signed path, the order and the signed container must all name the same invoice.
+    const pathInvoice = /^\/invoices\/([^/]+)\/pay$/.exec(new URL(request.url).pathname)?.[1];
+    const invoice = pathInvoice === undefined ? undefined : decodeURIComponent(pathInvoice);
+    if ((order.invoice ?? undefined) !== invoice || (container.invoice ?? undefined) !== invoice) {
+      return { orderId: null, status: "REJECTED", reason: "the payment is not bound to this invoice: the signed path, the order and the payment container disagree", tap };
     }
     const key = this.deps.keys(container.kid);
     // Verified as received, field order and all: a parser that reorders fields would break the signature base.

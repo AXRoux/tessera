@@ -528,13 +528,13 @@ describe("demo seeding", () => {
     expect((await apiWorld({ deps: { simulator: null } }).call("POST", "/api/demo/seed")).status).toBe(403);
   });
 
-  it("seeds the seven ACME incidents where the simulator is on", async () => {
+  it("seeds the eight ACME incidents where the simulator is on", async () => {
     const a = apiWorld({ paidHoldMs: 3_600_000 });
 
     const seeded = (await a.call("POST", "/api/demo/seed")).parse(SeedResultSchema).seeded;
 
-    expect(seeded.map((s) => s.reference.slice(0, 9))).toEqual(["ACME-1041", "ACME-1042", "ACME-1043", "ACME-1044", "ACME-1045", "ACME-1046", "ACME-1047"]);
-    expect(a.ledger.inboxMessages()).toHaveLength(3);
+    expect(seeded.map((s) => s.reference.slice(0, 9))).toEqual(["ACME-1041", "ACME-1042", "ACME-1043", "ACME-1044", "ACME-1045", "ACME-1046", "ACME-1047", "ACME-1048"]);
+    expect(a.ledger.inboxMessages()).toHaveLength(4);
     expect(a.ledger.latestAttempt(seeded[1]!.id)!.state).toBe("DEAD");
     expect(a.ledger.latestAttempt(seeded[6]!.id)!.state).toBe("DEAD");
   });
@@ -719,13 +719,13 @@ describe("starting the offline demo over", () => {
     const call = (method: string, path: string) => demo.handle(new Request(`http://api.test${path}`, { method, headers: { "x-tessera-token": TOKEN } }));
 
     expect((await call("POST", "/api/demo/seed")).status).toBe(201);
-    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(7);
+    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(8);
 
     expect((await call("POST", "/api/demo/reset")).status).toBe(200);
     expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(0);
 
     expect((await call("POST", "/api/demo/seed")).status).toBe(201);
-    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(7);
+    expect((await references(call)).filter((r) => r.startsWith("ACME-"))).toHaveLength(8);
   });
 
   it("is refused where there is nothing to throw away, and says so in health", async () => {

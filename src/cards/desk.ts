@@ -17,7 +17,8 @@ import { chargeTakesMinor, heldFrom, type CardCharge, type CardRow, type CardSet
 import type { Ledger } from "../ledger/ledger";
 import { formatMinor, fromMinor, toMinor } from "../money";
 import { SANDBOX_MERCHANT_ORIGIN, SandboxMerchant, type CheckoutResult } from "./merchant";
-import { CARD_CATEGORIES, checkCardRequest, DEFAULT_CARD_POLICY, type CardPolicy } from "./policy";
+import type { Obligation } from "../ledger/ledger";
+import { CARD_CATEGORIES, checkCardRequest, DEFAULT_CARD_POLICY, INVOICE_CARD_CATEGORY, type CardPolicy } from "./policy";
 import { newNonce, publicJwk, signObject, signRequest, type TapJwk, type TapKey } from "./tap";
 
 /** The delegate cardholder Tessera issues to: an email for "the agents of this business", no person behind it. */
@@ -49,6 +50,8 @@ export interface CardDeskDeps {
   reserveFloorMinor: Readonly<Record<string, number>>;
   /** The agent's TAP signing key (src/cards/tap.ts). */
   agentKey: TapKey;
+  /** The name of the supplier behind an Airwallex beneficiary, for an invoice card's merchant. Absent: the beneficiary id. */
+  payeeName?: (beneficiaryId: string) => Promise<string | null>;
   policy?: CardPolicy;
   now?: () => Date;
 }
@@ -182,6 +185,33 @@ export class CardDesk {
     const reasons = checkCardRequest(card, card.reason, await this.context(card), this.policy);
     if (!this.deps.issuing) reasons.push("Airwallex Issuing is not connected to this workspace");
     return reasons.length > 0 ? ledger.refuseCard(card.id, reasons) : card;
+  }
+
+  /**
+   * Asks for a single-use card to pay one supplier invoice. Every term comes from the invoice, none from the caller: the
+   * exact amount and currency, the supplier (the invoice's beneficiary) as the only merchant, the supplier category, single
+   * use. The ledger takes the invoice's lock as it writes the card, so it is refused while a transfer for the invoice is
+   * open or another card holds it. The same card policy then applies as to any card, and a person must sign it.
+   */
+  async requestForInvoice(obligation: Obligation, requestedBy: string, reason: string): Promise<CardRow> {
+    const payee = (await this.deps.payeeName?.(obligation.beneficiaryId).catch(() => null)) ?? null;
+    const category = CARD_CATEGORIES[INVOICE_CARD_CATEGORY]!;
+    const card = this.deps.ledger.requestCard({
+      obligationId: obligation.id,
+      purpose: `Invoice ${obligation.reference}`.slice(0, 120),
+      merchant: (payee?.trim() || obligation.beneficiaryId).slice(0, 60),
+      category: INVOICE_CARD_CATEGORY,
+      mccs: [...category.mccs],
+      amountMinor: obligation.amountMinor,
+      currency: obligation.currency,
+      singleUse: true,
+      activeTo: new Date(this.now().getTime() + this.policy.lifetimeDays * 86_400_000).toISOString(),
+      requestedBy,
+      reason: reason.trim().slice(0, 500),
+    });
+    const reasons = checkCardRequest(card, card.reason, await this.context(card), this.policy);
+    if (!this.deps.issuing) reasons.push("Airwallex Issuing is not connected to this workspace");
+    return reasons.length > 0 ? this.deps.ledger.refuseCard(card.id, reasons) : card;
   }
 
   /** What the policy needs to know besides the request: today's total, live cards, and the wallet above its floor. */
@@ -356,11 +386,16 @@ export class CardDesk {
     if (card.merchant.trim().toLowerCase() !== input.merchant.trim().toLowerCase()) {
       throw new StateConflict(`this card was signed for ${card.merchant}, not ${input.merchant}`);
     }
+    // An invoice card pays its invoice, the whole of it, and nothing else: the amount is the invoice's, never the caller's.
+    const invoice = card.obligationId ? ledger.requireObligation(card.obligationId) : null;
+    if (invoice && toMinor(input.amount, card.currency) !== invoice.amountMinor) {
+      throw new StateConflict(`this card pays invoice ${invoice.reference} for exactly ${formatMinor(invoice.amountMinor, invoice.currency)}, not ${formatMinor(toMinor(input.amount, card.currency), card.currency)}`);
+    }
     const nonce = newNonce();
-    const url = new URL("/checkout", SANDBOX_MERCHANT_ORIGIN);
+    const url = new URL(invoice ? `/invoices/${encodeURIComponent(invoice.reference)}/pay` : "/checkout", SANDBOX_MERCHANT_ORIGIN);
     const key = this.deps.agentKey;
     const headers = signRequest({ key, authority: url.host, path: url.pathname, tag: "agent-payer-auth", nonce, now: Math.floor(this.now().getTime() / 1000) });
-    const container = signObject(key, { nonce, paymentToken: card.awxCardId, lastFour: card.last4 });
+    const container = signObject(key, { nonce, paymentToken: card.awxCardId, lastFour: card.last4, ...(invoice ? { invoice: invoice.reference } : {}) });
     const request = new Request(url.toString(), {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
@@ -371,13 +406,15 @@ export class CardDesk {
           amount: input.amount,
           currency: card.currency,
           merchantCategoryCode: input.merchantCategoryCode ?? card.mccs[0] ?? "5734",
+          ...(invoice ? { invoice: invoice.reference } : {}),
         },
         agenticPaymentContainer: container,
       }),
     });
     const result = await this.merchant.checkout(request);
-    ledger.append(null, "CARD_CHECKOUT", {
+    ledger.append(card.obligationId, "CARD_CHECKOUT", {
       cardId: id,
+      ...(invoice ? { invoice: invoice.reference } : {}),
       actor,
       merchant: card.merchant,
       amountMinor: toMinor(input.amount, card.currency),

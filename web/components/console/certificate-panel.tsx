@@ -50,6 +50,16 @@ export function CertificatePanel({ view }: { view: IncidentView }) {
         <Line label="Net wallet movement" value={money(totals.netWalletMinor, currency)} />
         <Line label="Issued" value={ago(cert.body.issuedAt)} />
       </div>
+      {cert.body.card ? (
+        <div className="mt-4">
+          <Kicker>Paid by Visa card ···· {cert.body.card.last4 ?? "????"}</Kicker>
+          <Line label="Charged by" value={cert.body.card.merchant} />
+          <Line label="Amount" value={money(cert.body.card.amountMinor, cert.body.card.currency)} />
+          <Line label="Signed by" value={cert.body.card.approvedBy?.replace(/^\w+:/, "") ?? "?"} />
+          <Line label="Visa TAP checkout" value={cert.body.card.tap ? `${cert.body.card.tap.verified ? "verified" : "not verified"}, order ${cert.body.card.tap.orderId ?? "?"}` : "none"} />
+          <Line label="Proved against the signed terms" value={cert.body.card.checks.every((c) => c.ok) ? `all ${cert.body.card.checks.length} checks` : "NO"} />
+        </div>
+      ) : null}
       {(cert.body.funding ?? []).map((f) => (
         <div key={f.fundingId} className="mt-4">
           <Kicker>Funded by conversion {f.conversionId ?? f.requestId}</Kicker>

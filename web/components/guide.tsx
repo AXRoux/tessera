@@ -46,7 +46,7 @@ export function guideCopy({ health, takeover, onRun, running, compact = false }:
       ),
     },
     agent: {
-      text: "The agent reads the board, weighs every incident and acts through thirteen typed tools. It may wait, replace, escalate or draft a reply; money moves only when policy agrees, and anything uncertain comes to you.",
+      text: "The agent reads the board, weighs every incident and acts through fourteen typed tools. It may wait, replace, pay by Visa card, escalate or draft a reply; money moves only when policy agrees, and anything uncertain comes to you.",
       action: run("Let the agent work", "commander"),
     },
     adversary: {

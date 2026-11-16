@@ -3,7 +3,10 @@ import { z } from "zod";
 import { requireHumanNote } from "../approval/approval";
 import { canonicalJson, sha256Hex } from "../canonical";
 import { DuplicateConversionError, DuplicateLockError, StateConflict } from "../errors";
-import { cardMismatch, CardSettledSchema, replayCards, spentFrom, type CardCharge, type CardRow, type CardSettlement, type CardState, type CardTerms } from "./cards";
+import {
+  cardMismatch, CardSettledSchema, holdsInvoiceLock, INVOICE_LOCK_STATES, replayCards, spentFrom, type CardCharge, type CardRow, type CardSettlement, type CardState,
+  type CardTerms,
+} from "./cards";
 import { conversionMismatch, replayConversions, type ConversionAttempt, type ConversionState, type ConversionTerms } from "./conversions";
 import { replayAttempts, replayObligations, replayReactions, WebhookReceivedSchema, type ReplayedAttempt } from "./events";
 
@@ -297,7 +300,8 @@ CREATE TABLE IF NOT EXISTS cards (
   spentMinor INTEGER NOT NULL DEFAULT 0,
   lastError TEXT,
   createdAt TEXT NOT NULL,
-  updatedAt TEXT NOT NULL
+  updatedAt TEXT NOT NULL,
+  obligationId TEXT REFERENCES obligations(id)
 );
 -- Every charge or decline Airwallex reported on a card, once: the transaction id is the dedupe key.
 CREATE TABLE IF NOT EXISTS card_charges (
@@ -315,8 +319,42 @@ CREATE TABLE IF NOT EXISTS card_charges (
 );
 `;
 
-/** Status implied by the latest attempt, ignoring the sticky CLOSED and ESCALATED. */
-export function statusFor(latest: Attempt | null): ObligationStatus {
+const LOCK_STATES_SQL = INVOICE_LOCK_STATES.map((state) => `'${state}'`).join(",");
+
+/**
+ * The invoice lock across both rails, enforced by the database itself (created once the cards table has its
+ * obligationId column, see `migrate`). An invoice is paid by at most one open transfer (`one_open_attempt`) or one
+ * card that may still pay or has paid, never both:
+ *   one_card_per_invoice           a second lock-holding card for the same invoice
+ *   card_holds_invoice_lock        a transfer attempt while a card holds the invoice
+ *   transfer_holds_invoice_lock    a card while a transfer is open (INTENT, LIVE or PAID)
+ *   invoice_card_revived           a dead card brought back (a retried issue) while a transfer is open
+ */
+const INVOICE_LOCK = `
+CREATE UNIQUE INDEX IF NOT EXISTS one_card_per_invoice
+  ON cards (obligationId) WHERE obligationId IS NOT NULL AND (state IN (${LOCK_STATES_SQL}) OR spentMinor > 0);
+CREATE TRIGGER IF NOT EXISTS card_holds_invoice_lock BEFORE INSERT ON attempts
+  WHEN EXISTS (SELECT 1 FROM cards WHERE obligationId = NEW.obligationId AND (state IN (${LOCK_STATES_SQL}) OR spentMinor > 0))
+  BEGIN SELECT RAISE(ABORT, 'invoice_lock: a Visa card holds this invoice'); END;
+CREATE TRIGGER IF NOT EXISTS transfer_holds_invoice_lock BEFORE INSERT ON cards
+  WHEN NEW.obligationId IS NOT NULL AND EXISTS (SELECT 1 FROM attempts WHERE obligationId = NEW.obligationId AND state IN ('INTENT','LIVE','PAID'))
+  BEGIN SELECT RAISE(ABORT, 'invoice_lock: a transfer holds this invoice'); END;
+CREATE TRIGGER IF NOT EXISTS invoice_card_revived BEFORE UPDATE OF state ON cards
+  WHEN NEW.obligationId IS NOT NULL AND NEW.state IN (${LOCK_STATES_SQL}) AND OLD.state NOT IN (${LOCK_STATES_SQL})
+    AND EXISTS (SELECT 1 FROM attempts WHERE obligationId = NEW.obligationId AND state IN ('INTENT','LIVE','PAID'))
+  BEGIN SELECT RAISE(ABORT, 'invoice_lock: a transfer holds this invoice'); END;
+`;
+
+/** Whether a SQLite error is the invoice lock refusing a write (either rail, either direction). */
+const isInvoiceLock = (error: unknown): boolean =>
+  error instanceof Error && (/invoice_lock/.test(error.message) || /UNIQUE constraint failed: cards\.obligationId$/.test(error.message));
+
+/**
+ * Status implied by the latest attempt and the invoice's card, ignoring the sticky CLOSED and ESCALATED. A card that
+ * holds the invoice is the payment in flight (PAYING) until it has spent (PAID).
+ */
+export function statusFor(latest: Attempt | null, card: Pick<CardRow, "state" | "spentMinor"> | null = null): ObligationStatus {
+  if (card && holdsInvoiceLock(card)) return card.state === "SPENT" || card.spentMinor > 0 ? "PAID" : "PAYING";
   if (latest?.state === "INTENT" || latest?.state === "LIVE") return "PAYING";
   if (latest?.state === "PAID") return "PAID";
   if (latest?.state === "DEAD") return "NEEDS_ACTION";
@@ -435,6 +473,9 @@ export class Ledger {
       this.db.exec(SCHEMA);
       const columns = this.db.query("PRAGMA table_info(attempts)").all() as Array<{ name: string }>;
       if (!columns.some((c) => c.name === "awxUpdatedAt")) this.db.exec("ALTER TABLE attempts ADD COLUMN awxUpdatedAt TEXT");
+      const cardColumns = this.db.query("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
+      if (!cardColumns.some((c) => c.name === "obligationId")) this.db.exec("ALTER TABLE cards ADD COLUMN obligationId TEXT REFERENCES obligations(id)");
+      this.db.exec(INVOICE_LOCK);
       // A file from before chain_head existed: pin today's tail so later deletions show.
       if (!hadChainHead) {
         this.db.exec(
@@ -504,7 +545,7 @@ export class Ledger {
     return this.tx(() => {
       const obligation = this.requireObligation(obligationId);
       if (obligation.status !== "ESCALATED") throw new StateConflict(`obligation ${obligationId} is ${obligation.status}, not escalated`);
-      const next = this.getCertificateJson(obligationId) ? "CLOSED" : statusFor(this.latestAttempt(obligationId));
+      const next = this.getCertificateJson(obligationId) ? "CLOSED" : statusFor(this.latestAttempt(obligationId), this.invoiceCard(obligationId));
       this.setObligationStatus(obligationId, next);
       this.append(obligationId, "ESCALATION_RESOLVED", { by, note, previousReason: obligation.escalationReason });
       return this.requireObligation(obligationId);
@@ -515,7 +556,7 @@ export class Ledger {
   refreshObligationStatus(id: string): void {
     const obligation = this.requireObligation(id);
     if (obligation.status === "CLOSED" || obligation.status === "ESCALATED") return;
-    const next = statusFor(this.latestAttempt(id));
+    const next = statusFor(this.latestAttempt(id), this.invoiceCard(id));
     if (next !== obligation.status) this.setObligationStatus(id, next);
   }
 
@@ -591,6 +632,7 @@ export class Ledger {
       if (error instanceof Error && /UNIQUE constraint failed: attempts\.obligationId$/.test(error.message)) {
         throw new DuplicateLockError(input.obligationId);
       }
+      if (isInvoiceLock(error)) throw new DuplicateLockError(input.obligationId, "a Visa card holds this invoice");
       throw error;
     }
     return this.requireAttempt(id);
@@ -700,35 +742,72 @@ export class Ledger {
 
   // ---- Visa virtual cards (src/ledger/cards.ts) -----------------------------
 
-  /** A card asked for: the row and its CARD_REQUESTED event, in one transaction. It waits for code, then a person. */
-  requestCard(input: CardTerms & { requestedBy: string; reason: string }): CardRow {
+  /**
+   * A card asked for: the row and its CARD_REQUESTED event, in one transaction. It waits for code, then a person. An
+   * invoice card (`obligationId`) takes the invoice's lock as it is written: the database refuses it while a transfer for
+   * the invoice is open or another card holds it (DuplicateLockError).
+   */
+  requestCard(input: CardTerms & { requestedBy: string; reason: string; obligationId?: string | null }): CardRow {
     return this.tx(() => {
       const id = crypto.randomUUID();
       const requestId = `tessera-card-${id}`;
       const ts = this.now().toISOString();
-      this.db
-        .query(
-          `INSERT INTO cards (id, purpose, merchant, category, mccs, amountMinor, currency, singleUse, activeTo, state, requestedBy, reason,
-             requestId, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          id, input.purpose, input.merchant, input.category, JSON.stringify(input.mccs), input.amountMinor, input.currency, input.singleUse ? 1 : 0,
-          input.activeTo, input.requestedBy, input.reason, requestId, ts, ts,
-        );
+      const obligationId = input.obligationId ?? null;
+      if (obligationId !== null) this.requireObligation(obligationId);
+      try {
+        this.db
+          .query(
+            `INSERT INTO cards (id, purpose, merchant, category, mccs, amountMinor, currency, singleUse, activeTo, state, requestedBy, reason,
+               requestId, createdAt, updatedAt, obligationId)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            id, input.purpose, input.merchant, input.category, JSON.stringify(input.mccs), input.amountMinor, input.currency, input.singleUse ? 1 : 0,
+            input.activeTo, input.requestedBy, input.reason, requestId, ts, ts, obligationId,
+          );
+      } catch (error) {
+        if (obligationId !== null && isInvoiceLock(error)) throw new DuplicateLockError(obligationId, "the invoice already has an open transfer or a card");
+        throw error;
+      }
       const { requestedBy, reason, purpose, merchant, category, mccs, amountMinor, currency, singleUse, activeTo } = input;
-      this.append(null, "CARD_REQUESTED", { cardId: id, requestId, requestedBy, reason, purpose, merchant, category, mccs, amountMinor, currency, singleUse, activeTo });
-      return this.requireCard(id);
+      this.append(obligationId, "CARD_REQUESTED", {
+        cardId: id, requestId, requestedBy, reason, purpose, merchant, category, mccs, amountMinor, currency, singleUse, activeTo,
+        ...(obligationId !== null ? { obligationId } : {}),
+      });
+      return this.touchInvoice(this.requireCard(id));
     });
+  }
+
+  /** An invoice card moved: its invoice's status follows (PAYING while it may pay, PAID once it has). */
+  private touchInvoice(card: CardRow): CardRow {
+    if (card.obligationId !== null) this.refreshObligationStatus(card.obligationId);
+    return card;
+  }
+
+  /** Every card asked for to pay this invoice, oldest first. */
+  cardsFor(obligationId: string): CardRow[] {
+    return (this.db.query("SELECT * FROM cards WHERE obligationId = ? ORDER BY createdAt, rowid").all(obligationId) as CardDbRow[]).map(toCard);
+  }
+
+  /** The card that holds this invoice's lock (it may still pay, or it has paid), or null. At most one exists. */
+  invoiceCard(obligationId: string): CardRow | null {
+    return this.cardsFor(obligationId).find(holdsInvoiceLock) ?? null;
   }
 
   /** Compare-and-set on a card's state, so two callers (a person and the sweep) never both move it. */
   private moveCard(id: string, from: readonly CardState[], to: CardState, patch: Partial<Pick<CardRow, "approvedBy" | "requestId" | "awxCardId" | "last4" | "brand" | "awxStatus" | "lastError">> = {}): CardRow {
     const keys = (["approvedBy", "requestId", "awxCardId", "last4", "brand", "awxStatus", "lastError"] as const).filter((key) => patch[key] !== undefined);
     const marks = from.map(() => "?").join(", ");
-    const result = this.db
-      .query(`UPDATE cards SET state = ?, ${keys.map((key) => `${key} = ?, `).join("")}updatedAt = ? WHERE id = ? AND state IN (${marks})`)
-      .run(to, ...keys.map((key) => patch[key] as string | null), this.now().toISOString(), id, ...from);
+    let result: { changes: number };
+    try {
+      result = this.db
+        .query(`UPDATE cards SET state = ?, ${keys.map((key) => `${key} = ?, `).join("")}updatedAt = ? WHERE id = ? AND state IN (${marks})`)
+        .run(to, ...keys.map((key) => patch[key] as string | null), this.now().toISOString(), id, ...from);
+    } catch (error) {
+      const obligationId = this.getCard(id)?.obligationId ?? null;
+      if (obligationId !== null && isInvoiceLock(error)) throw new DuplicateLockError(obligationId, "the invoice already has an open transfer or a card");
+      throw error;
+    }
     if (result.changes === 0) {
       const current = this.getCard(id);
       throw new StateConflict(current ? `card ${id} is ${current.state}, not ${from.join(" or ")}` : `unknown card ${id}`);
@@ -739,16 +818,16 @@ export class Ledger {
   refuseCard(id: string, reasons: string[]): CardRow {
     return this.tx(() => {
       const card = this.moveCard(id, ["PENDING"], "REFUSED", { lastError: reasons.join("; ").slice(0, 500) });
-      this.append(null, "CARD_REFUSED", { cardId: id, reasons });
-      return card;
+      this.append(card.obligationId, "CARD_REFUSED", { cardId: id, reasons });
+      return this.touchInvoice(card);
     });
   }
 
   declineCard(id: string, by: string, note: string): CardRow {
     return this.tx(() => {
       const card = this.moveCard(id, ["PENDING"], "DECLINED");
-      this.append(null, "CARD_DECIDED", { cardId: id, decision: "DECLINED", by, note });
-      return card;
+      this.append(card.obligationId, "CARD_DECIDED", { cardId: id, decision: "DECLINED", by, note });
+      return this.touchInvoice(card);
     });
   }
 
@@ -762,25 +841,25 @@ export class Ledger {
       const current = this.requireCard(id);
       const requestId = current.state === "FAILED" ? `tessera-card-${id}-${crypto.randomUUID().slice(0, 8)}` : current.requestId;
       const card = this.moveCard(id, approval ? ["PENDING"] : ["FAILED"], "ISSUING", { requestId, lastError: null, ...(approval ? { approvedBy: approval.by } : {}) });
-      if (approval) this.append(null, "CARD_DECIDED", { cardId: id, decision: "APPROVED", by: approval.by, note: approval.note });
-      this.append(null, "CARD_ISSUE_INTENT", { cardId: id, requestId, cardholderId });
-      return card;
+      if (approval) this.append(card.obligationId, "CARD_DECIDED", { cardId: id, decision: "APPROVED", by: approval.by, note: approval.note });
+      this.append(card.obligationId, "CARD_ISSUE_INTENT", { cardId: id, requestId, cardholderId });
+      return this.touchInvoice(card);
     });
   }
 
   cardIssued(id: string, issued: { awxCardId: string; last4: string | null; brand: string | null; awxStatus: string }): CardRow {
     return this.tx(() => {
       const card = this.moveCard(id, ["ISSUING"], "ACTIVE", { awxCardId: issued.awxCardId, last4: issued.last4, brand: issued.brand, awxStatus: issued.awxStatus });
-      this.append(null, "CARD_ISSUED", { cardId: id, ...issued });
-      return card;
+      this.append(card.obligationId, "CARD_ISSUED", { cardId: id, ...issued });
+      return this.touchInvoice(card);
     });
   }
 
   cardIssueFailed(id: string, code: string, message: string): CardRow {
     return this.tx(() => {
       const card = this.moveCard(id, ["ISSUING"], "FAILED", { lastError: `${code}: ${message}`.slice(0, 500) });
-      this.append(null, "CARD_ISSUE_FAILED", { cardId: id, code, message: message.slice(0, 300) });
-      return card;
+      this.append(card.obligationId, "CARD_ISSUE_FAILED", { cardId: id, code, message: message.slice(0, 300) });
+      return this.touchInvoice(card);
     });
   }
 
@@ -817,7 +896,9 @@ export class Ledger {
       const spent = spentFrom(this.cardCharges(charge.cardId));
       this.db.query("UPDATE cards SET spentMinor = ?, updatedAt = ? WHERE id = ?").run(spent, now, charge.cardId);
       const { at: _at, ...payload } = charge;
-      this.append(null, "CARD_CHARGE", payload);
+      const card = this.requireCard(charge.cardId);
+      this.append(card.obligationId, "CARD_CHARGE", payload);
+      this.touchInvoice(card);
       return true;
     });
   }
@@ -826,7 +907,7 @@ export class Ledger {
   settleCardCharge(settlement: CardSettlement): boolean {
     return this.tx(() => {
       if (this.cardSettlements(settlement.cardId).some((s) => s.transactionId === settlement.transactionId)) return false;
-      this.append(null, "CARD_SETTLED", settlement);
+      this.append(this.requireCard(settlement.cardId).obligationId, "CARD_SETTLED", settlement);
       return true;
     });
   }
@@ -846,8 +927,8 @@ export class Ledger {
       const from = this.requireCard(id).state;
       const allowed: CardState[] = to === "ACTIVE" ? ["FROZEN"] : to === "FROZEN" ? ["ACTIVE"] : ["ACTIVE", "FROZEN"];
       const card = this.moveCard(id, allowed, to, { awxStatus: awxStatus ?? undefined });
-      this.append(null, "CARD_STATUS", { cardId: id, from, to, by, why, awxStatus });
-      return card;
+      this.append(card.obligationId, "CARD_STATUS", { cardId: id, from, to, by, why, awxStatus });
+      return this.touchInvoice(card);
     });
   }
 

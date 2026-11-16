@@ -188,10 +188,18 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   // One policy for all three: what the Commander plans, the funding executor re-checks, and the hold window the Closer enforces.
   const policy = { ...DEFAULT_POLICY, ...(pace === "live" ? LIVE_PACE : {}), paidHoldMs };
   const funder = new FundingExecutor({ ledger, api, approvalSecret, policy });
-  const commander = new Commander({ ledger, gateway, balances: api, funding: { fx: api, executor: funder }, secret: approvalSecret, policy });
-  const closer = new Closer({ ledger, api, gateway, secret: approvalSecret, paidHoldMs });
   // The agent's TAP key is derived from the approval secret: stable for this workspace, never stored, never shared.
-  const cards = new CardDesk({ ledger, issuing, charger, balances: api, reserveFloorMinor: policy.reserveFloorMinor, agentKey: agentKeyFrom(approvalSecret) });
+  const cards = new CardDesk({
+    ledger, issuing, charger, balances: api, reserveFloorMinor: policy.reserveFloorMinor, agentKey: agentKeyFrom(approvalSecret),
+    // An invoice card is cut for the supplier the invoice pays, by the name Airwallex holds for that beneficiary.
+    payeeName: async (beneficiaryId) => (await api.listBeneficiaries()).find((b) => b.id === beneficiaryId)?.nickname ?? null,
+  });
+  // An invoice may be paid by card only where the agent can actually pay one: Issuing and a TAP merchant (sandbox, offline).
+  const commander = new Commander({
+    ledger, gateway, balances: api, funding: { fx: api, executor: funder }, secret: approvalSecret, policy,
+    cardsOffered: cards.issuingConnected && cards.canCharge, syncCards: () => cards.sync(),
+  });
+  const closer = new Closer({ ledger, api, gateway, secret: approvalSecret, paidHoldMs });
 
   // A public demo is open to anyone who can reach it, so it must never be able to spend the owner's tokens.
   if (publicDemo && modelConfigured(env)) {

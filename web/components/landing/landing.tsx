@@ -465,9 +465,9 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
 
           <dl className="relative mt-6 grid grid-cols-3 gap-2 short:hidden">
             {[
-              ["50/50", "attacks held by policy"],
-              ["94/94", "mutations caught by tests"],
-              ["1", "live payout per invoice, max"],
+              ["57/57", "attacks held by policy"],
+              ["100/100", "mutations caught by tests"],
+              ["1", "live payment per invoice, max"],
             ].map(([value, label]) => (
               <div key={label} className="well rounded-[14px]! px-3 py-2.5">
                 <dt className="cond text-[26px] leading-none">{value}</dt>
@@ -484,7 +484,7 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
             src="/landing/agents.webp"
             alt="A chrome robotic hand reaching for a point of light"
             title={["Agents", "act."]}
-            lines={["Thirteen typed tools", "Any model, over MCP", "Pays with Visa, signed by TAP"]}
+            lines={["Fourteen typed tools", "Any model, over MCP", "Pays with Visa, signed by TAP"]}
             stagger="up"
             delay={220}
           />

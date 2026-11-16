@@ -39,6 +39,12 @@ const FINISH: Record<string, { surface: string; ink: string; sub: string }> = {
     ink: "text-[#101216]",
     sub: "text-[#101216]/60",
   },
+  /** Invoice cards: brushed gold, so the card paying a supplier invoice stands apart from everyday spend. */
+  supplier: {
+    surface: "conic-gradient(from 205deg at 57% 48%, #7a5a14 0deg, #e7c66a 45deg, #8c6a1c 105deg, #f3dc8e 165deg, #866418 225deg, #d9b452 295deg, #7a5a14 360deg)",
+    ink: "text-[#1d1404]",
+    sub: "text-[#1d1404]/65",
+  },
 };
 
 const finishOf = (category: string) => FINISH[category] ?? FINISH.software!;

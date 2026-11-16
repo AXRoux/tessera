@@ -255,7 +255,19 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
               </Tile>
             ) : null}
 
-            {card.state === "ACTIVE" && canCharge ? (
+            {card.obligationId ? (
+              <Tile className="grid gap-2 rounded-[20px]! p-4">
+                <p className="text-[12.5px] leading-relaxed text-fg/70">
+                  This card pays one supplier invoice, for exactly its amount, and holds that invoice&rsquo;s lock: no transfer can be made while it does. The agent pays it from the incident, where the
+                  invoice is assessed first.
+                </p>
+                <a href={`/incidents/${card.obligationId}`} className="tile flex h-10 items-center justify-center rounded-full! text-[13px] font-medium">
+                  Open the invoice
+                </a>
+              </Tile>
+            ) : null}
+
+            {card.state === "ACTIVE" && canCharge && !card.obligationId ? (
               <Tile className="grid gap-4 rounded-[20px]! p-4">
                 <div className="grid gap-3.5">
                   <Field label="Merchant category" htmlFor={mccId}>
