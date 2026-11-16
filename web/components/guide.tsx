@@ -63,7 +63,7 @@ export function guideCopy({ health, takeover, onRun, running, compact = false }:
           ),
         }
       : {
-          text: "You are the human in the loop. Nothing needs you yet; run the agent again, and whatever it should not settle alone will be handed to you with its reasoning.",
+          text: "You are the human in the loop. Nothing to act on at this moment; run the agent again, and whatever it should not settle alone will be handed to you with its reasoning.",
           action: run("Run the agent again", "commander"),
         },
     certify: {

@@ -7,6 +7,8 @@ import { VisaCard, VisaMark } from "./visa-card";
 /** Which cards ride in the wallet: live ones first, then those waiting on a person, then the rest, newest first. */
 const RANK: Record<CardView["state"], number> = { ACTIVE: 0, PENDING: 1, ISSUING: 1, FROZEN: 2, FAILED: 3, SPENT: 4, CLOSED: 5, REFUSED: 6, DECLINED: 6 };
 const SHOWN = 3;
+/** A single-use card that has done its one job (or was closed) leaves the wallet, so the next card slides into its place. */
+const RETIRED = new Set<CardView["state"]>(["SPENT", "CLOSED"]);
 /** How far each card behind the front one peeks above it. */
 const STEP = 30;
 /** How much of the front card shows above the pocket. */
@@ -35,7 +37,7 @@ export function CardWallet({
   onOpen: (card: CardView) => void;
   onIssue: () => void;
 }) {
-  const ranked = [...(cards?.items ?? [])].sort((a, b) => RANK[a.state] - RANK[b.state] || b.createdAt.localeCompare(a.createdAt));
+  const ranked = (cards?.items ?? []).filter((c) => !RETIRED.has(c.state)).sort((a, b) => RANK[a.state] - RANK[b.state] || b.createdAt.localeCompare(a.createdAt));
   // The most useful card goes in front, so it is drawn last.
   const shown = ranked.slice(0, SHOWN).reverse();
   const count = Math.max(shown.length, 1);

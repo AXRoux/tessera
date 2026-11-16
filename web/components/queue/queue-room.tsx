@@ -125,7 +125,7 @@ export function QueueRoom({ initial, health, selected }: { initial: IncidentSumm
               <RingSquare value={1} tone="accent" size={76}>
                 <Icon name="check" className="size-6" />
               </RingSquare>
-              <p className="text-[14px] font-semibold">{waiting.length === 0 ? "Nothing needs you" : "Nothing fits that filter"}</p>
+              <p className="text-[14px] font-semibold">{waiting.length === 0 ? "Nothing to act on at this moment" : "Nothing fits that filter"}</p>
               <p className="max-w-[260px] text-[12px] leading-relaxed text-fg/50">
                 {waiting.length === 0 ? "When the agent meets something it should not settle alone, it lands here with its reasoning." : "Try another filter, or clear the search."}
               </p>

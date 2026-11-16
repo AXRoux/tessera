@@ -34,7 +34,7 @@ export function Queue({ items }: { items: IncidentSummary[] }) {
       {waiting.length === 0 ? (
         <div className="well flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 rounded-[22px]! px-6 text-center">
           <Icon name="check" className="size-6 text-accent" />
-          <p className="text-[13px] font-medium">Nothing needs you</p>
+          <p className="text-[13px] font-medium">Nothing to act on at this moment</p>
           <p className="max-w-[260px] text-[12px] leading-relaxed text-fg/50">Whatever the agent should not settle alone lands here, reasoning attached.</p>
         </div>
       ) : (
