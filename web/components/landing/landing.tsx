@@ -493,7 +493,7 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
             src="/landing/code.webp"
             alt="A wave of iridescent liquid chrome"
             title={["Your policy", "decides."]}
-            lines={["Written in code,", "not in a prompt.", "50 attacks. 50 held."]}
+            lines={["Written in code,", "not in a prompt.", "57 attacks. 57 held."]}
             stagger="down"
             delay={300}
           >
@@ -553,11 +553,11 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
       </section>
 
       {/* ── The wordmark, bleeding off the bottom edge ── */}
-      <footer className="relative z-0 flex shrink-0 items-end justify-between gap-6 overflow-hidden px-5 sm:px-8">
-        <div aria-hidden className="fade-blue -mb-[0.17em] select-none text-[min(17vw,26vh)] font-bold leading-[0.82] tracking-[-0.08em]">
+      <footer className="relative z-0 flex shrink-0 items-end justify-between gap-6 overflow-hidden px-5 pb-[clamp(10px,2.2vh,24px)] sm:px-8">
+        <div aria-hidden className="fade-blue select-none pb-[0.04em] text-[min(15vw,22vh)] font-bold leading-[0.86] tracking-[-0.08em]">
           Tessera.
         </div>
-        <div className="micro hidden shrink-0 pb-6 text-right text-fg/55 lg:block">
+        <div className="micro hidden shrink-0 pb-1 text-right text-fg/55 lg:block">
           <a href="https://www.null-ptr.team" target="_blank" rel="noopener noreferrer" className="group block transition-colors hover:text-fg">
             <span className="block">Created by Vance Poitier,</span>
             <span className="block">
