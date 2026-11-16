@@ -662,3 +662,66 @@
     transform: scale(1.05);
   }
 }
+
+/* The landing's live layer over the photograph: a market line that draws itself, and a scan that passes over it. */
+@keyframes draw-line {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  55%,
+  85% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+@utility draw-line {
+  stroke-dasharray: 1;
+  animation: draw-line 7s cubic-bezier(0.6, 0, 0.3, 1) infinite;
+}
+@keyframes scan-y {
+  0% {
+    transform: translateY(-10%);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(1000%);
+    opacity: 0;
+  }
+}
+@utility scan-y {
+  animation: scan-y 5.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@utility feed-in {
+  animation: feed-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .draw-line,
+  .scan-y,
+  .feed-in {
+    animation: none;
+  }
+  .draw-line {
+    stroke-dashoffset: 0;
+  }
+  .scan-y {
+    opacity: 0;
+  }
+}

@@ -15,9 +15,11 @@ import { Icon } from "./icons";
 import { PeelPage, usePeel } from "./peel";
 
 /*
- * The landing: one 16:9 poster wall, after the Swiss/brutalist reference. A text poster says what Tessera is; four
- * image posters say how a payout travels (agents act, your policy decides, you sign, sealed then proved); the agents it
- * works with run beneath; the wordmark closes the page. Nothing here is a screenshot or a number we cannot stand behind.
+ * The landing: one 16:9 wall, after a billboard reference (a ruled white panel beside one full-bleed monochrome
+ * photograph) and a series of grainy editorial posters. The billboard says what Tessera is; the photograph shows a
+ * person and an agent at one desk, in cobalt duotone, with the work playing live over it; beside it the person who
+ * signs, and the proof. The agents it works with run beneath; the wordmark closes the page. Every photograph is
+ * generated (scripts/gen-landing-art.ts), and nothing here is a number we cannot stand behind.
  *
  * The whole wall is a sticker over the sign-in screen: lift its corner, or press a sign-in button, and it peels away
  * (components/landing/peel.tsx). The address follows (/sign-in), so Back lays the sticker down again.
@@ -101,57 +103,167 @@ function Rings({ className = "" }: { className?: string }) {
   );
 }
 
-/* ── The image posters ──────────────────────────────────────────────────────────────────────────────────────────── */
+/* ── The live layer ───────────────────────────────────────────────────────────────────────────────────────────── */
 
-function Poster({
-  n,
-  src,
-  alt,
-  title,
-  lines,
-  stagger,
-  delay,
-  children,
-}: {
-  n: string;
-  src: string;
-  alt: string;
-  title: [string, string];
-  lines: string[];
-  stagger: "up" | "down";
-  delay: number;
-  children?: ReactNode;
-}) {
+/**
+ * One invoice, worked live: the same five steps Tessera's ledger records for a supplier paid by card (ACME-1048), played
+ * on a loop. Who acts is named on every line: the agent, the policy, a person, the network, the ledger.
+ */
+const FEED: { who: string; what: string; tag: string; human?: boolean }[] = [
+  { who: "Agent", what: "Read the supplier's mail", tag: "nothing arrived" },
+  { who: "Policy", what: "Card allowed, no second transfer", tag: "pay_by_card" },
+  { who: "Dana R.", what: "Signed the card, in writing", tag: "····4130", human: true },
+  { who: "Visa TAP", what: "Checkout verified, charged once", tag: "$25.00" },
+  { who: "Ledger", what: "Sealed, then proved", tag: "a41f…9c" },
+];
+
+function AgentFeed() {
+  const [step, setStep] = useState(FEED.length);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    setStep(0);
+    const timer = setInterval(() => setStep((n) => (n + 1) % (FEED.length + 3)), 1300);
+    return () => clearInterval(timer);
+  }, []);
+  const shown = Math.min(step, FEED.length);
   return (
-    <article
-      className={`group relative min-h-[460px] overflow-hidden rounded-[24px] bg-[#050506] text-white shadow-[0_30px_60px_-34px_rgb(0_0_0/0.7)] transition-transform duration-500 ease-out hover:-translate-y-2 xl:min-h-0 ${
-        stagger === "down" ? "xl:mt-10" : "xl:mb-10"
-      }`}
-    >
-      <Image src={src} alt={alt} fill unoptimized priority sizes="(min-width: 1280px) 22vw, 50vw" className="drift-img object-cover opacity-90 transition-opacity duration-500 group-hover:opacity-100" />
-      <div aria-hidden className="grain absolute inset-0 opacity-40 mix-blend-overlay" />
-      <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgb(0_0_0/0.72)_0%,transparent_34%,transparent_58%,rgb(0_0_0/0.82)_100%)]" />
-
-      <div className="relative flex h-full flex-col justify-between p-5">
-        <header className="flex items-start justify-between gap-3">
-          <h3 className="cond cond-in text-[clamp(30px,min(2.6vw,4.6vh),52px)] transition-[font-variation-settings] duration-500 group-hover:[font-variation-settings:'wdth'_78]" style={{ animationDelay: `${delay}ms` }}>
-            {title[0]}
-            <br />
-            {title[1]}
-          </h3>
-          <span className="cond text-[26px] leading-none text-white/90">{n}</span>
-        </header>
-        <div className="flex items-end justify-between gap-3">
-          <div className="micro space-y-0.5 text-white/80">
-            {lines.map((line) => (
-              <p key={line}>{line}</p>
-            ))}
-          </div>
-          <Crosshair className="shrink-0 text-white/70 transition-transform duration-700 group-hover:rotate-90" />
-        </div>
-        {children}
+    <div className="w-[min(100%,372px)] rounded-[18px] border border-white/15 bg-[rgb(3_8_28/0.62)] p-3.5 text-white shadow-[0_24px_50px_-20px_rgb(0_0_0/0.8)] backdrop-blur-xl">
+      <div className="micro flex items-center justify-between text-white/60">
+        <span className="flex items-center gap-2">
+          <span aria-hidden className="beat size-1.5 rounded-full bg-[#7fb0ff]" />
+          Live · ACME-1048
+        </span>
+        <span>{shown === FEED.length ? "Proved" : `Step ${String(shown + 1).padStart(2, "0")}`}</span>
       </div>
-    </article>
+      <ol className="mt-3 space-y-1.5" aria-label="One invoice, worked by an agent and a person">
+        {FEED.map((line, i) => {
+          const done = i < shown;
+          const now = i === shown;
+          return (
+            <li
+              key={line.who}
+              className={`grid grid-cols-[58px_1fr_auto] items-baseline gap-2 text-[11.5px] transition-opacity duration-500 ${done ? "opacity-100" : now ? "opacity-70" : "opacity-20"}`}
+            >
+              <span className={`micro ${line.human ? "text-[#ffd27a]" : "text-[#8fb6ff]"}`}>{line.who}</span>
+              <span className="truncate text-white/90">
+                {line.what}
+                {now ? <span aria-hidden className="beat ml-1 inline-block h-[10px] w-[5px] translate-y-[1px] bg-white/80" /> : null}
+              </span>
+              <span className="micro text-white/45">{done ? line.tag : ""}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+/** A market line over the photograph, the billboard's chart: it draws itself, holds, and moves on. */
+function MarketLine({ className = "" }: { className?: string }) {
+  return (
+    <svg aria-hidden viewBox="0 0 400 120" preserveAspectRatio="none" className={className} fill="none">
+      <g stroke="rgb(255 255 255 / 0.16)" strokeWidth="0.6">
+        {[20, 50, 80, 110].map((y) => (
+          <path key={y} d={`M0 ${y}H400`} vectorEffect="non-scaling-stroke" />
+        ))}
+        {Array.from({ length: 9 }, (_, i) => (
+          <path key={i} d={`M${i * 50} 0V120`} vectorEffect="non-scaling-stroke" />
+        ))}
+      </g>
+      <path
+        className="draw-line"
+        pathLength={1}
+        d="M0 96 L22 90 L40 98 L62 74 L80 82 L104 60 L122 70 L146 44 L164 58 L186 40 L204 52 L228 30 L246 46 L270 22 L290 36 L312 18 L334 32 L356 12 L378 26 L400 8"
+        stroke="#dce8ff"
+        strokeWidth="1.6"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
+/* ── The two photographs ───────────────────────────────────────────────────────────────────────────────────────── */
+
+/** The billboard: a person and an agent at one desk, in cobalt duotone, with the mark laid over it and the work live on it. */
+function HeroPhoto() {
+  return (
+    <figure className="group relative min-h-[460px] overflow-hidden rounded-[28px] bg-[#01061a] text-white shadow-[0_34px_70px_-36px_rgb(0_10_60/0.75)] xl:min-h-0">
+      <Image
+        src="/landing/duo-desk.webp"
+        alt="A treasury lead takes a card from a robotic hand at her desk, high above a financial district"
+        fill
+        unoptimized
+        priority
+        sizes="(min-width: 1280px) 45vw, 100vw"
+        className="drift-img object-cover object-[62%_50%]"
+      />
+      <div aria-hidden className="grain absolute inset-0 opacity-50 mix-blend-overlay" />
+      <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgb(1_6_26/0.7)_0%,transparent_38%,transparent_55%,rgb(1_6_26/0.78)_100%)]" />
+      {/* A scan passes over the desk, the agent at work. */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[10%]">
+        <div className="scan-y h-full w-full bg-[linear-gradient(180deg,transparent,rgb(143_182_255/0.16)_80%,rgb(220_232_255/0.5))]" />
+      </div>
+      <MarketLine className="absolute left-6 top-[25%] h-[22%] w-[44%] opacity-90 mix-blend-screen" />
+
+      <figcaption className="relative flex h-full flex-col justify-between p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="flex size-12 items-center justify-center rounded-[14px] bg-white/95 shadow-[0_10px_24px_-10px_rgb(0_0_0/0.6)]">
+              <Logo size={26} />
+            </span>
+            <span className="cond text-[clamp(34px,min(3.1vw,5.6vh),60px)] leading-none text-white">Tessera</span>
+          </div>
+          <p className="micro text-right text-white/70">
+            Human + agent
+            <br />
+            one ledger
+          </p>
+        </div>
+
+        <div className="flex items-end justify-between gap-4">
+          <div className="micro hidden space-y-0.5 text-white/65 2xl:block">
+            <p>Agents act</p>
+            <p>Policy decides</p>
+            <p>People sign</p>
+          </div>
+          <AgentFeed />
+        </div>
+      </figcaption>
+      <Crosshair className="absolute left-[55%] top-[57%] size-7 text-white/80 transition-transform duration-700 group-hover:rotate-90" />
+    </figure>
+  );
+}
+
+/** The person who signs: nothing risky moves until someone does. */
+function SignerPhoto() {
+  return (
+    <figure className="group relative min-h-[300px] overflow-hidden rounded-[24px] bg-[#01061a] text-white xl:min-h-0">
+      <Image
+        src="/landing/duo-signer.webp"
+        alt="A finance director signs a document with a fountain pen"
+        fill
+        unoptimized
+        sizes="(min-width: 1280px) 18vw, 50vw"
+        className="drift-img object-cover object-[40%_30%]"
+      />
+      <div aria-hidden className="grain absolute inset-0 opacity-50 mix-blend-overlay" />
+      <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgb(1_6_26/0.55)_0%,transparent_40%,rgb(1_6_26/0.85)_100%)]" />
+      <figcaption className="relative flex h-full flex-col justify-between p-5">
+        <div className="flex items-start justify-between">
+          <span className="cond text-[clamp(26px,min(2.1vw,4vh),40px)] leading-[0.9]">
+            You
+            <br />
+            sign.
+          </span>
+          <Rings className="h-5 text-white/75" />
+        </div>
+        <p className="micro text-white/75">
+          In writing.
+          <br />
+          By name. Every time.
+        </p>
+      </figcaption>
+    </figure>
   );
 }
 
@@ -383,150 +495,112 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
         </div>
       </header>
 
-      {/* ── The wall ── */}
-      <main className="relative z-10 grid min-h-0 flex-1 gap-4 px-5 sm:px-8 xl:grid-cols-[minmax(0,0.94fr)_minmax(0,1.6fr)]">
-        {/* The text poster */}
+      {/* ── The wall: a billboard, the photograph, the person who signs and the proof ── */}
+      <main className="relative z-10 grid min-h-0 flex-1 gap-4 px-5 sm:px-8 xl:grid-cols-[minmax(0,0.98fr)_minmax(0,1.3fr)_minmax(0,0.5fr)]">
+        {/* The billboard: the claim, set like a poster, with the rules showing. */}
         <section className="tile relative flex min-h-0 flex-col overflow-hidden rounded-[28px]! p-6 xl:p-8">
-          {/* The glow and grain sit in their own rounded clip: Safari lets a blurred layer escape a rounded overflow. */}
           <div aria-hidden className="pointer-events-none absolute inset-0 [clip-path:inset(0_round_28px)]">
-            <div className="absolute inset-y-0 right-0 w-[46%] bg-[linear-gradient(90deg,transparent,color-mix(in_oklab,var(--accent)_16%,transparent)_55%,color-mix(in_oklab,var(--accent)_62%,transparent))] blur-2xl" />
             <div className="grain absolute inset-0 opacity-25 mix-blend-multiply [[data-theme=dark]_&]:mix-blend-screen" />
           </div>
 
           <div className="micro relative flex items-start justify-between text-fg/60">
             <p>
-              Agentic payout control
+              Tessera
               <br />
-              for finance teams
+              Treasury operations
               <br />
-              built on Airwallex
+              Built on Airwallex
             </p>
             <p className="text-right">
               N°01
               <br />
-              v.02 · 2026
+              2026
             </p>
           </div>
+          <div aria-hidden className="relative mt-4 h-px bg-fg/15" />
 
-          <h1 className="cond relative mt-6 text-[clamp(54px,min(5.5vw,9.2vh),112px)] text-fg xl:mt-auto">
+          <h1 className="cond relative mt-auto whitespace-nowrap pt-6 text-[clamp(44px,min(5.1vw,9vh),116px)] text-fg">
             <span className="cond-in block" style={{ animationDelay: "0ms" }}>
-              AI agents
+              The agentic
             </span>
-            <span className="cond-in block" style={{ animationDelay: "90ms" }}>
-              you can trust
+            <span className="cond-in block text-accent" style={{ animationDelay: "100ms" }}>
+              Treasury ops
             </span>
-            <span className="cond-in block text-accent" style={{ animationDelay: "180ms" }}>
-              with payouts
+            <span className="cond-in flex items-end gap-4" style={{ animationDelay: "200ms" }}>
+              Platform.
+              <Crosshair className="mb-[0.3em] hidden size-6 text-fg/40 sm:block" />
             </span>
           </h1>
 
-          <p className="relative mt-5 max-w-[520px] text-[clamp(14px,min(1vw,1.7vh),16.5px)] leading-relaxed text-fg/70 shorter:line-clamp-3">
-            Tessera is the control layer between your AI agents and your treasury. Agents read the inbox, chase failed payouts, draft the replies, and buy only what a person signed for, on single-use Visa cards. Your policy,
-            written in code, settles what may move; a person signs what matters; and every payout is sealed before it leaves and proved once it lands.
-          </p>
-
-          <div className="relative mt-5 grid grid-cols-[auto_auto_1fr] items-end gap-6 short:hidden">
-            <ul className="micro space-y-0.5 text-fg/80" aria-label="What Tessera does">
-              {["Detect.", "Decide.", "Delegate.", "Settle.", "Prove."].map((verb) => (
-                <li key={verb}>{verb}</li>
-              ))}
-            </ul>
-            <div className="micro space-y-0.5 text-fg/55">
-              <p>api.sandbox.airwallex.com</p>
-              <p>MCP · 13 typed tools</p>
-              <p>sha-256 hash chain</p>
-              <p>Visa cards · TAP-signed</p>
-              <p>any model, your key</p>
+          {/* The bottom of the billboard: three ruled cells, the way a poster carries its small print. */}
+          <div className="relative mt-[clamp(14px,3.4vh,40px)] grid grid-cols-[1.6fr_1fr] border-t border-fg/15 shorter:grid-cols-1 2xl:grid-cols-[1.4fr_1fr_0.75fr]">
+            <p className="py-4 pr-5 shorter:hidden text-[clamp(13px,min(0.95vw,1.65vh),15.5px)] leading-relaxed text-fg/70">
+              Agents work the exceptions. Your policy decides. People sign. Every payment is sealed before it moves, and proved after it lands.
+            </p>
+            <div className="flex flex-col justify-center gap-2.5 border-l border-fg/15 py-4 pl-5 shorter:flex-row shorter:border-l-0 shorter:pb-0 shorter:pl-0">
+              {accounts && !user ? (
+                <>
+                  <LinkBtn size="md" block {...doorLink("sign-up")} icon={<Icon name="wallet" className="size-4" />}>
+                    Get your card
+                  </LinkBtn>
+                  <LinkBtn size="md" block tone="secondary" {...doorLink("sign-in")}>
+                    Sign in
+                  </LinkBtn>
+                </>
+              ) : (
+                <>
+                  <LinkBtn size="md" block href="/dashboard" icon={<Icon name="dashboard" className="size-4" />}>
+                    Open the control room
+                  </LinkBtn>
+                  <LinkBtn size="md" block tone="secondary" href="/dashboard?compose=1">
+                    Send a payout
+                  </LinkBtn>
+                </>
+              )}
             </div>
-            <Ruler className="mb-1 hidden max-w-[150px] justify-self-end text-fg/45 2xl:block" />
+            <div className="hidden flex-col justify-between border-l border-fg/15 py-4 pl-5 2xl:flex">
+              <p className="micro text-fg/55">
+                57 / 57
+                <br />
+                attacks held
+              </p>
+              <Barcode text="TESSERA-TREASURY-OPS" className="h-8 w-full text-fg/70" />
+            </div>
           </div>
-
-          <div className="relative mt-6 flex flex-wrap items-center gap-3 short:mt-4">
-            {accounts && !user ? (
-              <>
-                <LinkBtn size="md" {...doorLink("sign-up")} icon={<Icon name="wallet" className="size-4" />}>
-                  Get your card
-                </LinkBtn>
-                <LinkBtn size="md" tone="secondary" {...doorLink("sign-in")}>
-                  Sign in
-                </LinkBtn>
-              </>
-            ) : (
-              <>
-                <LinkBtn size="md" href="/dashboard" icon={<Icon name="dashboard" className="size-4" />}>
-                  Open the control room
-                </LinkBtn>
-                <LinkBtn size="md" tone="secondary" href="/dashboard?compose=1">
-                  Send a payout
-                </LinkBtn>
-              </>
-            )}
-          </div>
-
-          <dl className="relative mt-6 grid grid-cols-3 gap-2 short:hidden">
+          <dl className="micro relative grid grid-cols-3 border-t border-fg/15 pt-3 text-fg/55 short:hidden">
             {[
-              ["57/57", "attacks held by policy"],
-              ["100/100", "mutations caught by tests"],
-              ["1", "live payment per invoice, max"],
-            ].map(([value, label]) => (
-              <div key={label} className="well rounded-[14px]! px-3 py-2.5">
-                <dt className="cond text-[26px] leading-none">{value}</dt>
-                <dd className="micro mt-1 text-fg/55">{label}</dd>
+              ["Airwallex", "payouts · FX · Visa"],
+              ["Any model", "over MCP"],
+              ["1 payment", "per invoice, max"],
+            ].map(([k, v]) => (
+              <div key={k}>
+                <dt className="text-fg/80">{k}</dt>
+                <dd>{v}</dd>
               </div>
             ))}
           </dl>
         </section>
 
-        {/* The image posters: how a payout travels */}
-        <section aria-label="How a payout travels" className="grid min-h-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Poster
-            n="01"
-            src="/landing/agents.webp"
-            alt="A chrome robotic hand reaching for a point of light"
-            title={["Agents", "act."]}
-            lines={["Fourteen typed tools", "Any model, over MCP", "Pays with Visa, signed by TAP"]}
-            stagger="up"
-            delay={220}
-          />
-          <Poster
-            n="02"
-            src="/landing/code.webp"
-            alt="A wave of iridescent liquid chrome"
-            title={["Your policy", "decides."]}
-            lines={["Written in code,", "not in a prompt.", "57 attacks. 57 held."]}
-            stagger="down"
-            delay={300}
-          >
-            <Rings className="absolute right-5 top-[42%] h-6 text-white/70" />
-          </Poster>
-          <Poster
-            n="03"
-            src="/landing/human.webp"
-            alt="A woman in profile, eyes closed, in black and white"
-            title={["You", "sign."]}
-            lines={["In the loop", "In writing", "By name"]}
-            stagger="up"
-            delay={380}
-          >
-            <div className="tile absolute bottom-16 right-5 w-[46%] rounded-[16px]! p-3 text-fg">
-              <p className="cond text-[22px] leading-none">You decide</p>
-              <p className="micro mt-1.5 text-fg/60">Nothing moves until a named person signs.</p>
+        <HeroPhoto />
+
+        <section aria-label="People sign, the ledger proves" className="grid min-h-0 grid-cols-2 gap-4 xl:grid-cols-1 xl:grid-rows-[1.15fr_1fr]">
+          <SignerPhoto />
+          <article className="relative flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-[#04060c] p-5 text-white">
+            <div aria-hidden className="grain absolute inset-0 opacity-40 mix-blend-overlay" />
+            <div aria-hidden className="absolute -right-10 -top-10 size-40 rounded-full bg-[#2b74ff] opacity-40 blur-3xl" />
+            <div className="relative flex items-start justify-between">
+              <span className="cond text-[clamp(22px,min(1.8vw,3.4vh),34px)] leading-[0.9]">
+                Sealed,
+                <br />
+                then proved.
+              </span>
+              <span className="micro text-white/55">sha-256</span>
             </div>
-          </Poster>
-          <Poster
-            n="04"
-            src="/landing/proof.webp"
-            alt="Black glass mosaic tiles, one glowing electric blue"
-            title={["Sealed,", "then proved."]}
-            lines={["Each line hashed", "to the one before", "nothing rewritten."]}
-            stagger="down"
-            delay={460}
-          >
-            <div className="absolute inset-x-5 top-[30%]">
+            <div className="relative mt-auto">
               <Chain />
-              <Barcode text="TESSERA-PROOF-0001" className="h-7 w-full text-white/80" />
+              <Barcode text="TESSERA-PROOF-0001" className="h-6 w-full text-white/75" />
             </div>
-          </Poster>
+          </article>
         </section>
       </main>
 
