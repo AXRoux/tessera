@@ -334,7 +334,7 @@ Verified on the sandbox on 2026-11-06 UTC: a real $12 transfer was moved to `SEN
 
 ## 05 The agent surface
 
-The whole reach of an agent is **thirteen typed tools** (`src/agent/toolbox.ts`). What is missing is the point.
+The whole reach of an agent is **fourteen typed tools** (`src/agent/toolbox.ts`). What is missing is the point.
 
 | Tool | Does | Moves money? |
 |---|---|:-:|
@@ -351,6 +351,7 @@ The whole reach of an agent is **thirteen typed tools** (`src/agent/toolbox.ts`)
 | `list_virtual_cards` | Lists the Visa virtual cards: what each is for, the merchant a person signed it for, its cap, what it has spent, its state | no |
 | `request_virtual_card` | Asks for a single-use Visa card for one purchase. Policy checks it (category, the agent's own limit, today's total, the wallet above its floor), and it waits for a named person to sign | no, and it cannot sign |
 | `pay_with_virtual_card` | Pays with an ACTIVE card, only at the merchant the person named, over TAP, with Airwallex applying the card's controls to the charge | within the signed cap, once |
+| `pay_invoice_by_card` | Where a replacement would be allowed: asks for a single-use card whose every term is the invoice's (it takes the invoice's lock), then, once a person has signed it, pays the supplier's checkout over TAP for exactly the invoice. Takes an incident id and a reason, nothing else | the invoice, once, by card |
 
 **Not in the box:** create a transfer, sign or approve a payment, edit an amount, edit a beneficiary, release a forbidden replacement, choose a conversion's amount, source or rate, sign a card, raise a card's limit, or point a card at another merchant.
 
@@ -445,6 +446,24 @@ const run = await runAgent({ model: anthropic, toolbox, system: COMMANDER_SYSTEM
 ```
 
 The loop is about 60 lines and holds no authority of its own: no gateway, no secret, no database handle. A step limit stops a runaway.
+
+### The agent development lifecycle, run on money
+
+<p align="center">
+  <img src="docs/img/adlc.png" alt="LangChain's agent development lifecycle as Tessera runs it: a loop of Build (fourteen typed tools, policy as code, a quarantined reader), Test (639 tests, 57 red-team attacks, 100 mutations, end-to-end simulation), Deploy (durable intents, human signatures, sandboxed runtimes on EC2 and App Runner) and Monitor (a hash-chained ledger of every call, refusal and charge), with Iterate closing the loop around one invariant: one live payment per invoice. Below it, one real lap: Kit 03's Visa card rail, built, attacked, deployed, corrected by what the live sandbox showed, and certified." width="100%">
+</p>
+
+LangChain describes shipping agents as a loop: **Build → Test → Deploy → Monitor**, then iterate ([*The Agent Development Lifecycle*](https://www.langchain.com/blog/the-agent-development-lifecycle), Harrison Chase). Tessera is that loop with money in it, so each stage has a stricter job than usual:
+
+| Stage | In the ADLC | In Tessera |
+|---|---|---|
+| **Build** | Frameworks, runtimes and harnesses: prompts, tools, MCP, middleware | Any model or MCP client works through **fourteen typed tools** (`src/agent/toolbox.ts`); the Commander's policy is code the model never sees, and supplier mail reaches the agent only as booleans |
+| **Test** | Datasets, metrics, experiments, multi-turn simulation | **639 tests**, a red team of **57 attacks** that each try to pay twice (`bun run redteam`), **100 mutations** that remove one guard at a time (`bun run mutate`), and a simulated Airwallex the agent works end to end (`bun run smoke:offline`, `bun run scale`) |
+| **Deploy** | Durable execution, human in the loop, sandboxes, a context hub | The intent is sealed before every network call and resumed by request ID after a crash (`kill -9` tested); risky money and every card wait for a person's signature; the offline simulator and the Airwallex sandbox are the sandboxes; Tessera Live seals each workspace's keys |
+| **Monitor** | Traces, signals, feedback, dashboards | The trace is a **hash-chained ledger** of every tool call, refusal, bank event and card charge (`verifyChain`); refusals and reassessments are the signals; the queue is where people answer the agent; outcomes end in a certificate checked against Airwallex |
+| **Iterate** | Hard examples become evals | Every way a lap could have failed becomes an attack or a mutation before the next lap ships |
+
+One real lap, from the day Kit 03's card rail shipped: the card rail was **built** with one lock across both payment rails, **tested** with seven new attacks and six new mutations, **deployed**, then **monitored** on the real sandbox, where one account answered `Invalid issuance details` and the live ledger showed which merchant category Airwallex had already accepted. The **iteration** narrowed invoice cards to that category, shipped it, and the next live payment cleared through Visa TAP and was certified.
 
 ---
 
