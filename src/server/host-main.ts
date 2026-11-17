@@ -4,12 +4,13 @@
  *
  * Required: TESSERA_API_TOKEN (shared with the console), TESSERA_MASTER_KEY (encrypts every stored key),
  * BETTER_AUTH_SECRET (signs sessions) and BETTER_AUTH_URL (the public origin people sign in on).
+ * Optional: GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET and APPLE_CLIENT_ID + APPLE_CLIENT_SECRET turn on those sign-ins.
  * Data lives under TESSERA_DATA_DIR (default .data): auth.db, workspaces.db and one ledger per live workspace.
  */
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { MAX_REQUEST_BODY_BYTES } from "./api";
-import { createAuth } from "./auth";
+import { createAuth, socialFromEnv } from "./auth";
 import { TenantHost } from "./host";
 import { parseMasterKey, WorkspaceStore } from "./workspaces";
 
@@ -24,7 +25,7 @@ const master = parseMasterKey(required("TESSERA_MASTER_KEY"));
 const dataDir = process.env.TESSERA_DATA_DIR?.trim() || ".data";
 mkdirSync(join(dataDir, "workspaces"), { recursive: true });
 
-const auth = await createAuth({ dbPath: join(dataDir, "auth.db"), secret: required("BETTER_AUTH_SECRET"), baseURL: required("BETTER_AUTH_URL") });
+const auth = await createAuth({ dbPath: join(dataDir, "auth.db"), secret: required("BETTER_AUTH_SECRET"), baseURL: required("BETTER_AUTH_URL"), social: socialFromEnv(process.env) });
 const store = new WorkspaceStore(join(dataDir, "workspaces.db"), master);
 const host = new TenantHost({
   auth, store, master, token, dataDir,

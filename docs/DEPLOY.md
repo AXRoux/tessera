@@ -122,7 +122,7 @@ own **Airwallex sandbox** keys (the workspace goes live, with a ledger file of i
 | Disk | 20 GB gp3, encrypted, kept on termination; DLM policy: daily snapshot at 07:00 UTC, keep 7 | accounts, sealed keys and live ledgers |
 | TLS | Caddy (Let's Encrypt) in front; HTTP redirects to HTTPS; HSTS | `X-Forwarded-For` is overwritten by Caddy, so rate limits see the real client |
 | Network | security group `tessera-live-web`: 80 and 443 only. **No SSH**: SSM Session Manager | |
-| Secrets | Secrets Manager `tessera/live`: `TESSERA_API_TOKEN`, `TESSERA_MASTER_KEY`, `BETTER_AUTH_SECRET` | read at start by the instance role, written root-only for `docker run`, deleted |
+| Secrets | Secrets Manager `tessera/live`: `TESSERA_API_TOKEN`, `TESSERA_MASTER_KEY`, `BETTER_AUTH_SECRET`; optional `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and `APPLE_CLIENT_ID`/`APPLE_CLIENT_SECRET` turn on those sign-ins | read at start by the instance role, written root-only for `docker run`, deleted |
 | Role | `tessera-live-ec2`: that one secret, that one repository, SSM core | nothing else in the account |
 | Data | `/var/lib/tessera`, mode 700, files 600 | |
 

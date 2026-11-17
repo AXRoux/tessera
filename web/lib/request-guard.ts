@@ -5,6 +5,12 @@ const HOST_ENTRY = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9]
 export type GuardResult = { ok: true } | { ok: false; message: string };
 
 /**
+ * The one cross-origin write the app accepts: Sign in with Apple returns by form POST from Apple's own origin, to
+ * exactly this path. Better Auth then checks the state and PKCE verifier it issued, so a forged post signs nobody in.
+ */
+const APPLE_CALLBACK = { path: "/api/auth/callback/apple", origin: "https://appleid.apple.com" };
+
+/**
  * Extra hosts the app may answer on. Only a public offline demo (TESSERA_PUBLIC_DEMO=1, which the API refuses unless
  * it runs on the simulated Airwallex) opens it beyond loopback, and then only to the names in TESSERA_ALLOWED_HOSTS.
  * An entry without a port matches that name on any port; malformed entries are dropped.
@@ -35,14 +41,15 @@ function hostAllowed(host: string, allowedHosts: readonly string[]): boolean {
  *   not a cross-site risk, and Origin "null" is refused.
  */
 export function checkRequest(
-  input: { method: string; host: string | null; origin: string | null },
+  input: { method: string; host: string | null; origin: string | null; path?: string },
   allowedHosts: readonly string[] = [],
 ): GuardResult {
   if (!input.host || !hostAllowed(input.host, allowedHosts)) {
     return { ok: false, message: allowedHosts.length > 0 ? "this host is not on the demo's allowlist" : "this app only answers on localhost" };
   }
   const isRead = input.method === "GET" || input.method === "HEAD";
-  if (!isRead && input.origin !== null) {
+  const appleReturn = input.method === "POST" && input.path === APPLE_CALLBACK.path && input.origin === APPLE_CALLBACK.origin;
+  if (!isRead && input.origin !== null && !appleReturn) {
     let originHost: string | null = null;
     try {
       originHost = new URL(input.origin).host;

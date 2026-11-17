@@ -14,6 +14,27 @@ export interface AuthConfig {
   secret: string;
   /** The public origin people sign in on, e.g. https://tessera.example.com. Cookies are Secure when it is https. */
   baseURL: string;
+  /** Sign in with Google or Apple: each is on only when its client id and secret are configured. */
+  social?: SocialConfig;
+}
+
+export interface SocialConfig {
+  google?: { clientId: string; clientSecret: string };
+  /** Apple's client secret is a signed JWT (it expires within six months); the client id is the Services ID. */
+  apple?: { clientId: string; clientSecret: string; appBundleIdentifier?: string };
+}
+
+/** The providers configured in this environment: a provider needs both its id and its secret, or it stays off. */
+export function socialFromEnv(env: Record<string, string | undefined>): SocialConfig {
+  const pair = (id: string, secret: string) => {
+    const clientId = env[id]?.trim();
+    const clientSecret = env[secret]?.trim();
+    return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+  };
+  const google = pair("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET");
+  const apple = pair("APPLE_CLIENT_ID", "APPLE_CLIENT_SECRET");
+  const bundle = env.APPLE_APP_BUNDLE_IDENTIFIER?.trim();
+  return { ...(google ? { google } : {}), ...(apple ? { apple: bundle ? { ...apple, appBundleIdentifier: bundle } : apple } : {}) };
 }
 
 export function authOptions(config: AuthConfig, database: Database) {
@@ -25,13 +46,19 @@ export function authOptions(config: AuthConfig, database: Database) {
     secret: config.secret,
     baseURL: config.baseURL,
     basePath: "/api/auth",
-    trustedOrigins: [new URL(config.baseURL).origin],
+    // Apple answers with a form POST from its own origin; nothing else off-site is trusted.
+    trustedOrigins: [new URL(config.baseURL).origin, ...(config.social?.apple ? ["https://appleid.apple.com"] : [])],
     emailAndPassword: {
       enabled: true,
       // Long enough that a dictionary does not get far; the console shows a strength meter on the way there.
       minPasswordLength: 10,
       maxPasswordLength: 128,
       autoSignIn: true,
+    },
+    // Google and Apple, when their keys are set. Better Auth checks the state and PKCE verifier on every callback.
+    socialProviders: {
+      ...(config.social?.google ? { google: { ...config.social.google, prompt: "select_account" as const } } : {}),
+      ...(config.social?.apple ? { apple: config.social.apple } : {}),
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7,

@@ -20,7 +20,7 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
   if (!PROXIED_ROUTE.test(target)) return problem(404, "NotFound", "no such route");
 
   const guard = checkRequest(
-    { method: request.method, host: request.headers.get("host"), origin: request.headers.get("origin") },
+    { method: request.method, host: request.headers.get("host"), origin: request.headers.get("origin"), path: request.nextUrl.pathname },
     allowedHostsFromEnv(process.env),
   );
   if (!guard.ok) return problem(403, "Forbidden", guard.message);

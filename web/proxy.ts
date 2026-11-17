@@ -15,7 +15,7 @@ const PROTECTED = /^\/(dashboard|queue|incidents|workspace)(\/|$)/;
  */
 export function proxy(request: NextRequest): Response | undefined {
   const guard = checkRequest(
-    { method: request.method, host: request.headers.get("host"), origin: request.headers.get("origin") },
+    { method: request.method, host: request.headers.get("host"), origin: request.headers.get("origin"), path: request.nextUrl.pathname },
     allowedHostsFromEnv(process.env),
   );
   if (!guard.ok) return Response.json({ error: "Forbidden", message: guard.message }, { status: 403, headers: { "cache-control": "no-store" } });

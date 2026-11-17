@@ -95,4 +95,14 @@ describe("public demo host allowlist", () => {
     expect(write("https://evil.example").ok).toBe(false);
     expect(write("null").ok).toBe(false);
   });
+
+  it("lets Apple's sign-in return post to its own callback, and nothing else from Apple or anywhere else", () => {
+    const at = (path: string, origin: string, method = "POST") => checkRequest({ method, host: "localhost:3100", origin, path }).ok;
+    expect(at("/api/auth/callback/apple", "https://appleid.apple.com")).toBe(true);
+    expect(at("/api/auth/callback/google", "https://appleid.apple.com")).toBe(false);
+    expect(at("/api/auth/sign-in/email", "https://appleid.apple.com")).toBe(false);
+    expect(at("/api/auth/callback/apple", "https://evil.example")).toBe(false);
+    expect(at("/api/auth/callback/apple", "https://appleid.apple.com.evil.example")).toBe(false);
+    expect(at("/api/auth/callback/apple/", "https://appleid.apple.com")).toBe(false);
+  });
 });

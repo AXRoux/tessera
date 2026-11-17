@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { authClient } from "@/lib/auth-client";
 import { passwordStrength } from "@/lib/password-strength";
 import { safeNext } from "@/lib/safe-next";
@@ -212,7 +212,7 @@ function Card({
       <div
         onPointerMove={move}
         onPointerLeave={() => setTilt({ x: 0, y: 0, gx: 50, gy: 30, on: false })}
-        className={`relative aspect-[1.586] w-[min(500px,86vw)] [transform-style:preserve-3d] ${swiping ? "transition-transform duration-500 ease-in" : "transition-transform duration-200 ease-out"}`}
+        className={`relative aspect-[1.586] w-[var(--card-w,min(500px,86vw))] [transform-style:preserve-3d] ${swiping ? "transition-transform duration-500 ease-in" : "transition-transform duration-200 ease-out"}`}
         style={{ transform: swiping ? "translateY(-40px) rotateX(18deg) scale(0.94)" : `rotateX(${tilt.x}deg) rotateY(${tilt.y + (flipped ? 180 : 0)}deg)` }}
       >
         {/* Front. Each face is also hidden outright while it faces away: Safari ignores backface-visibility on a face
@@ -307,6 +307,184 @@ function Card({
   );
 }
 
+/* ── The wallet: every agent's card, stacked; the one in front is the one you sign in with ─────────────────────── */
+
+/** A card waiting in the stack: its plate, and along the top edge (all that shows) whose it is and its last four. */
+function StackFace({ agent }: { agent: Agent }) {
+  const no = String(AGENTS.indexOf(agent) + 1).padStart(2, "0");
+  return (
+    <span
+      className="chroma-edge block h-full w-full p-[1.5px]"
+      style={{ borderRadius: CARD_RADIUS + 1.5, boxShadow: "0 -14px 30px -16px rgb(0 0 0 / 0.75), 0 30px 60px -30px rgb(0 0 0 / 0.7)" }}
+    >
+      <span className="relative block h-full w-full overflow-hidden bg-[#0b0c10]" style={{ borderRadius: CARD_RADIUS }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- pre-sized local WebP plates with their own srcset */}
+        <img
+          {...plateProps(agent)}
+          alt=""
+          draggable={false}
+          decoding="async"
+          loading="lazy"
+          className="absolute inset-0 h-full w-full select-none object-cover"
+          style={{ transform: `scale(1.07)${"mirror" in agent ? " scaleX(-1)" : ""}` }}
+        />
+        <span aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgb(3_4_7/0.7)_0%,rgb(3_4_7/0.25)_32%,transparent_60%)]" />
+        <span aria-hidden className="film-grain absolute inset-0" />
+        <span className="relative flex items-center justify-between gap-3 px-5 pt-[calc(var(--peek)/2-14px)] text-left text-white">
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-black/60 ring-1 ring-white/15">
+              <AgentGlyph agent={agent} size={"full" in agent ? 28 : 15} />
+            </span>
+            <span className="shrink-0 text-[13px] font-medium">{agent.name}</span>
+            <span className="readout hidden truncate text-[9.5px] uppercase tracking-[0.18em] text-white/50 @[400px]/wallet:inline">
+              Plate {no} / {agent.plate}
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-3">
+            <span className="tnum text-[12.5px] tracking-[0.08em] text-white/80">···· {digitsFor(agent.id)}</span>
+            <span className="text-[13px] font-bold italic tracking-[-0.02em] text-white/90">VISA</span>
+          </span>
+        </span>
+      </span>
+    </span>
+  );
+}
+
+/**
+ * The wallet. Every agent's card sits in one stack, each showing its top edge above the next, and the chosen one lies in
+ * front, whole and live. Picking another card slides it down to the front as the one there slides back up into line.
+ */
+function Wallet({ agent, onPick, children }: { agent: Agent; onPick: (agent: Agent) => void; children: ReactNode }) {
+  const behind = AGENTS.filter((a) => a.id !== agent.id);
+  const last = AGENTS.length - 1;
+  return (
+    <div className="@container/wallet relative w-[var(--card-w)]" style={{ height: `calc(var(--card-w) / 1.586 + var(--peek) * ${last})` }}>
+      {AGENTS.map((a) => {
+        const front = a.id === agent.id;
+        const slot = front ? last : behind.indexOf(a);
+        const depth = last - slot;
+        return (
+          <button
+            key={a.id}
+            type="button"
+            inert={front}
+            onClick={() => onPick(a)}
+            aria-label={`Use the ${a.name} card`}
+            className="group absolute left-0 top-0 aspect-[1.586] w-full origin-top cursor-pointer rounded-[27px] outline-none transition-[transform,opacity,filter] duration-[650ms] ease-[cubic-bezier(0.2,0.7,0.2,1)]"
+            style={{
+              zIndex: slot,
+              transform: `translateY(calc(var(--peek) * ${slot})) scale(${1 - depth * 0.035})`,
+              opacity: front ? 0 : 1,
+              filter: `brightness(${1 - depth * 0.07})`,
+            }}
+          >
+            <span className="block h-full w-full transition-transform duration-300 ease-out group-hover:-translate-y-2.5 group-focus-visible:-translate-y-2.5">
+              <StackFace agent={a} />
+            </span>
+          </button>
+        );
+      })}
+      {/* Inside the wallet, a card is the wallet's width (the panel's measure would resolve against the wallet here). */}
+      <div className="absolute left-0 z-20 [--card-w:100cqw]" style={{ top: `calc(var(--peek) * ${last})` }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** The left of the screen: the wallet on a dark plate lit by the chosen card, its agents named across the top. */
+function WalletPanel({ agent, onPick, children }: { agent: Agent; onPick: (agent: Agent) => void; children: ReactNode }) {
+  return (
+    <section
+      aria-label="Agent cards"
+      className="@container relative flex min-h-[620px] flex-col overflow-hidden rounded-[22px] bg-[#030934] text-white shadow-[0_40px_80px_-44px_rgb(4_16_90/0.7)] [--chrome:170px] lg:min-h-0"
+      // The card takes what height is left once the agents and the five edges behind it are placed.
+      style={{ "--peek": "clamp(34px, 5.4dvh, 50px)", "--card-w": `min(460px, 84cqw, calc((100dvh - var(--chrome) - var(--peek) * ${AGENTS.length - 1}) * 1.586))` } as CSSProperties}
+    >
+      {/* The chosen card's own colours, thrown wide and soft behind the stack. */}
+      {AGENTS.map((a) => (
+        // eslint-disable-next-line @next/next/no-img-element -- the same local plates, blurred into light
+        <img
+          key={a.id}
+          src={`/cards/${a.id}-1000.webp`}
+          alt=""
+          aria-hidden
+          loading="lazy"
+          className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover blur-[80px] saturate-[1.3] transition-opacity duration-1000"
+          style={{ opacity: a.id === agent.id ? 0.6 : 0 }}
+        />
+      ))}
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgb(3_9_52/0.55)_0%,rgb(3_9_52/0.25)_45%,rgb(3_9_52/0.9)_100%)]" />
+      <div aria-hidden className="film-grain pointer-events-none absolute inset-0" />
+
+      <nav aria-label="Agents" className="relative z-10 flex shrink-0 gap-6 overflow-x-auto px-8 pt-7 text-[13.5px] [scrollbar-width:none]">
+        {AGENTS.map((a) => {
+          const on = a.id === agent.id;
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => onPick(a)}
+              aria-pressed={on}
+              className={`relative shrink-0 cursor-pointer pb-2 transition-colors ${on ? "text-white" : "text-white/55 hover:text-white/85"}`}
+            >
+              {a.name}
+              <span aria-hidden className={`absolute inset-x-0 bottom-0 h-[1.5px] origin-left bg-white transition-transform duration-500 ${on ? "scale-x-100" : "scale-x-0"}`} />
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-6 py-6">{children}</div>
+    </section>
+  );
+}
+
+/* ── Google and Apple ────────────────────────────────────────────────────────────────────────────────────────────── */
+
+type Social = "google" | "apple";
+
+function GoogleMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className="size-[18px] shrink-0">
+      <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.46a5.52 5.52 0 0 1-2.4 3.62v3h3.88c2.27-2.09 3.58-5.17 3.58-8.81z" />
+      <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.9l-3.88-3.01c-1.07.72-2.45 1.15-4.06 1.15-3.13 0-5.78-2.11-6.72-4.95H1.27v3.11A12 12 0 0 0 12 24z" />
+      <path fill="#FBBC05" d="M5.28 14.29A7.2 7.2 0 0 1 4.9 12c0-.8.14-1.57.38-2.29V6.6H1.27a12 12 0 0 0 0 10.8l4.01-3.11z" />
+      <path fill="#EA4335" d="M12 4.76c1.76 0 3.34.61 4.59 1.8l3.44-3.44A11.98 11.98 0 0 0 1.27 6.6l4.01 3.11C6.22 6.87 8.87 4.76 12 4.76z" />
+    </svg>
+  );
+}
+
+function AppleMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className="size-[18px] shrink-0" fill="currentColor">
+      <path d="M16.37 12.62c-.02-2.33 1.9-3.45 1.99-3.5-1.09-1.59-2.78-1.8-3.38-1.83-1.44-.15-2.81.85-3.54.85-.73 0-1.86-.83-3.06-.81-1.57.02-3.02.92-3.83 2.32-1.64 2.84-.42 7.04 1.17 9.35.78 1.13 1.71 2.39 2.92 2.35 1.17-.05 1.61-.76 3.03-.76 1.41 0 1.81.76 3.05.73 1.26-.02 2.06-1.15 2.83-2.28.89-1.31 1.26-2.58 1.28-2.64-.03-.01-2.45-.94-2.46-3.78zM14.04 5.78c.65-.79 1.08-1.87.96-2.96-.93.04-2.06.62-2.72 1.4-.6.69-1.12 1.8-.98 2.86 1.04.08 2.1-.53 2.74-1.3z" />
+    </svg>
+  );
+}
+
+const SOCIAL: { id: Social; label: string; mark: ReactNode }[] = [
+  { id: "google", label: "Continue with Google", mark: <GoogleMark /> },
+  { id: "apple", label: "Continue with Apple", mark: <AppleMark /> },
+];
+
+/** What went wrong starting (or returning from) Google or Apple, in words a person can act on. */
+function socialSentence(provider: Social | null, error: { code?: string; status?: number; message?: string }): string {
+  const name = provider === "apple" ? "Apple" : provider === "google" ? "Google" : "That provider";
+  if (error.code === "PROVIDER_NOT_FOUND" || error.status === 404) return `${name} sign-in is not switched on for this Tessera yet. Use your email for now.`;
+  return sentence(error);
+}
+
+/** The heading above the card: whose door this is, and the way to the other side of it. */
+function Welcome({ children }: { children: ReactNode }) {
+  return (
+    <div className="mb-6 text-center">
+      <h1 className="text-[clamp(26px,2.3vw,34px)] font-semibold leading-tight tracking-[-0.045em]">Welcome to Tessera</h1>
+      <p className="mt-1.5 text-[14px] text-fg/60">{children}</p>
+    </div>
+  );
+}
+
 /* ── The form ───────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 const FIELD = "well h-11 w-full rounded-[14px]! px-3.5 text-[14px] text-fg outline-none placeholder:text-fg/35 transition-shadow focus-visible:ring-2 focus-visible:ring-accent/45";
@@ -394,7 +572,7 @@ function OperatorDoor() {
           One operator · no accounts
         </p>
         <div className="px-4 pb-1 pt-5">
-          <h1 className="text-[23px] font-semibold leading-tight tracking-[-0.04em]">Welcome back.</h1>
+          <h2 className="text-[23px] font-semibold leading-tight tracking-[-0.04em]">Your control room.</h2>
           <p className="mt-1 text-[13px] leading-relaxed text-fg/55">
             This control room belongs to one operator, so there is no password to type. The agent has the legwork; the signatures are yours.
           </p>
@@ -448,6 +626,7 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
   const [swiping, setSwiping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
+  const [social, setSocial] = useState<Social | null>(null);
   const signUp = mode === "sign-up";
   // Signed in already, and not in the middle of signing in (the store learns of a new session before the card swipes).
   const known = account && !busy ? account : null;
@@ -464,6 +643,30 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
     setError(null);
     setConfirm("");
   }, [mode]);
+
+  // Back from Google or Apple without a session: Better Auth names what went wrong in the address.
+  useEffect(() => {
+    const failed = new URLSearchParams(window.location.search).get("error");
+    if (failed) setError(failed === "account_not_linked" ? "That email already has a Tessera account. Sign in with your password." : "That sign-in did not go through. Try again, or use your email.");
+  }, []);
+
+  async function continueWith(provider: Social) {
+    if (busy || social) return;
+    setSocial(provider);
+    setError(null);
+    const back = signUp ? "/sign-up" : "/sign-in";
+    // Better Auth sends the browser to the provider; it comes back through /api/auth/callback/<provider> with a session.
+    const result = await authClient.signIn.social({
+      provider,
+      callbackURL: safeNext(next, "/dashboard"),
+      newUserCallbackURL: "/workspace?welcome=1",
+      errorCallbackURL: back,
+    });
+    if (result.error) {
+      setError(socialSentence(provider, result.error));
+      setSocial(null);
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -488,9 +691,23 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
     }, 420);
   }
 
+  const pick = (option: Agent) => {
+    setAgent(option);
+    // The agent picked here is the face the console shows, until a model says otherwise.
+    storeFaceChoice(option.id);
+  };
+
   return (
-    <main className="flex min-h-dvh flex-col xl:h-full xl:min-h-0">
-      <header className="flex shrink-0 items-center justify-between px-6 pt-5">
+    <main className="grid min-h-dvh gap-3 p-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)] xl:h-full xl:min-h-0">
+      {/* The wallet: every agent's card, the chosen one in front */}
+      <WalletPanel agent={agent} onPick={pick}>
+        <Wallet agent={agent} onPick={pick}>
+          <Card mode={mode} name={name} email={email} password={password} flipped={flipped} agent={agent} swiping={swiping} account={known} />
+        </Wallet>
+      </WalletPanel>
+
+      <div className="order-first flex min-h-0 flex-col px-3 sm:px-7 lg:order-none lg:overflow-y-auto">
+      <header className="flex h-[64px] shrink-0 items-center justify-between">
         <Link href="/" onClick={inPlace(onHome)} className="flex items-center gap-2.5 text-[13px] text-fg/60 hover:text-fg">
           <span className="tile flex size-9 items-center justify-center rounded-[11px]!">
             <Logo size={20} />
@@ -508,48 +725,28 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
         />
       </header>
 
-      <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-6">
-        <div className="grid items-center gap-12 lg:grid-cols-[auto_400px]">
-          {/* The card and the agents that can hold it */}
-          <div className="flex flex-col items-center gap-7">
-            <Card mode={mode} name={name} email={email} password={password} flipped={flipped} agent={agent} swiping={swiping} account={known} />
-            <div className="flex flex-col items-center gap-3">
-              <span className="text-[12px] text-fg/50">Works with the agent you already use. Pick one.</span>
-              <ul className="flex items-center gap-2.5" aria-label="Agents">
-                {AGENTS.map((option) => {
-                  const on = option.id === agent.id;
-                  return (
-                    <li key={option.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAgent(option);
-                          // The agent picked here is the face the console shows, until a model says otherwise.
-                          storeFaceChoice(option.id);
-                        }}
-                        aria-pressed={on}
-                        title={option.name}
-                        className={`group relative flex size-12 cursor-pointer items-center justify-center overflow-hidden rounded-[15px] bg-[#0c0d10] shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_10px_20px_-12px_rgb(0_0_0/0.7)] transition-transform duration-200 hover:-translate-y-1 ${
-                          on ? "-translate-y-1 ring-2 ring-accent ring-offset-2 ring-offset-canvas" : ""
-                        }`}
-                      >
-                        <AgentGlyph agent={option} size={"full" in option ? 48 : 22} />
-                        <span className="sr-only">{option.name}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </div>
-
+      <div className="flex flex-1 items-center justify-center py-6">
+        <div className="w-full max-w-[400px]">
           {/* The wallet the card came from: the form (or, with one operator and no accounts, the door) */}
           {mode === "operator" ? (
-            <OperatorDoor />
+            <>
+              <Welcome>One operator, one control room. Step straight in.</Welcome>
+              <OperatorDoor />
+            </>
           ) : known ? (
             <SessionDoor account={known} next={next} />
           ) : (
           <div className="relative">
+            <Welcome>
+              {signUp ? "Already have an account? " : "Don’t have an account? "}
+              <Link
+                href={otherHref}
+                onClick={inPlace(onSwitch && (() => onSwitch(signUp ? "sign-in" : "sign-up")))}
+                className="font-medium text-accent underline decoration-accent/0 underline-offset-[3px] transition-colors hover:decoration-accent"
+              >
+                {signUp ? "Sign in" : "Sign up for free"}
+              </Link>
+            </Welcome>
             <div className="tile relative rounded-[28px]! p-2">
               <nav aria-label="Account" className="well grid grid-cols-2 gap-1 rounded-full! p-1">
                 {(["sign-in", "sign-up"] as const).map((tab) => (
@@ -565,15 +762,9 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
                 ))}
               </nav>
 
-              <div className="px-4 pb-1 pt-5">
-                <h1 className="text-[23px] font-semibold leading-tight tracking-[-0.04em]">{signUp ? "Get your card." : "Welcome back."}</h1>
-                <p className="mt-1 text-[13px] leading-relaxed text-fg/55">
-                  {signUp ? "A private workspace in seconds, in offline rehearsal until you bring keys." : "Sign in to your control room."}
-                </p>
-              </div>
 
 
-              <form onSubmit={submit} className="space-y-3 px-2 pb-2 pt-4" noValidate>
+              <form onSubmit={submit} className="space-y-3 px-2 pb-2 pt-5" noValidate>
                 {signUp ? (
                   <Field id={nameId} label="Your name">
                     <input id={nameId} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="Ada Lovelace" maxLength={80} className={FIELD} />
@@ -703,17 +894,55 @@ export function AuthScreen({ mode, next, account = null, onSwitch, onHome }: Aut
                   </p>
                 ) : null}
 
-                <Btn type="submit" size="md" block disabled={!ready} busy={busy}>
+                <Btn type="submit" size="md" block disabled={!ready || social !== null} busy={busy}>
                   {signUp ? "Issue my workspace" : "Sign in"}
                 </Btn>
+                {SOCIAL.map((option) => (
+                  <Btn
+                    key={option.id}
+                    type="button"
+                    tone="secondary"
+                    size="md"
+                    block
+                    onClick={() => continueWith(option.id)}
+                    disabled={busy || (social !== null && social !== option.id)}
+                    busy={social === option.id}
+                    icon={option.mark}
+                  >
+                    {option.label}
+                  </Btn>
+                ))}
               </form>
             </div>
             <p className="mt-3 px-4 text-center text-[11px] leading-relaxed text-fg/45">
               {signUp ? "Sandbox keys only. Real money cannot move here." : "Forgot your password? Ask whoever runs this Tessera to reset it."}
+              <span className="mt-1 block">
+                With Google or Apple, you agree to the{" "}
+                <Link href="/terms" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-fg/70">
+                  Terms
+                </Link>{" "}
+                and{" "}
+                <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-fg/70">
+                  Privacy
+                </Link>
+                .
+              </span>
             </p>
           </div>
           )}
         </div>
+      </div>
+
+      <footer className="flex shrink-0 items-center justify-end pb-5">
+        <ul className="flex items-center gap-2" aria-label="Agents">
+          {AGENTS.map((option) => (
+            <li key={option.id} title={option.name} className="flex size-7 items-center justify-center overflow-hidden rounded-[9px] bg-[#0c0d10] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)]">
+              <AgentGlyph agent={option} size={"full" in option ? 28 : 14} />
+              <span className="sr-only">{option.name}</span>
+            </li>
+          ))}
+        </ul>
+      </footer>
       </div>
     </main>
   );
