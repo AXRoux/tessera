@@ -18,12 +18,13 @@ const when = (iso: string) => new Date(iso).toLocaleDateString([], { day: "numer
 
 function Field({ id, label, hint, children }: { id: string; label: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    <div>
+    // On a short screen a hint shows only while its field is in use, so every field of a form fits in its tile.
+    <div className="group">
       <label htmlFor={id} className="mb-1.5 block text-[12px] font-medium text-fg/70">
         {label}
       </label>
       {children}
-      {hint ? <p className="mt-1.5 text-[11.5px] leading-snug text-fg/45">{hint}</p> : null}
+      {hint ? <p className="mt-1.5 text-[11.5px] leading-snug text-fg/45 short:hidden short:group-focus-within:block">{hint}</p> : null}
     </div>
   );
 }
@@ -179,7 +180,9 @@ function Account({ user, live, model }: { user: WorkspaceResponse["user"]; live:
         </ol>
       </Tile>
 
-      <Tile className="thin-scroll min-h-0 flex-1 overflow-y-auto rounded-[22px]! px-4 py-3.5">
+      {/* Same padding as the tiles beside it, so Sign out sits level with their buttons; only the list scrolls. */}
+      <Tile className="flex min-h-0 flex-1 flex-col rounded-[24px]! p-4">
+        <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
         <Kicker>How your keys are kept</Kicker>
         <ul className="mt-3 space-y-3 text-[12.5px] leading-snug">
           {[
@@ -197,8 +200,8 @@ function Account({ user, live, model }: { user: WorkspaceResponse["user"]; live:
             </li>
           ))}
         </ul>
-      </Tile>
-
+        </div>
+        <div className="shrink-0 border-t border-fg/[0.06] pt-3">
       <Btn
         tone="secondary"
         block
@@ -212,6 +215,8 @@ function Account({ user, live, model }: { user: WorkspaceResponse["user"]; live:
       >
         Sign out
       </Btn>
+        </div>
+      </Tile>
     </Tray>
   );
 }
@@ -290,7 +295,9 @@ function AirwallexCard({ workspace, save }: { workspace: WorkspaceResponse["work
           <Problem message={error} />
         </Tile>
       ) : (
-        <form onSubmit={connect} className="tile flex min-h-0 flex-1 flex-col gap-3 rounded-[24px]! p-4">
+        <form onSubmit={connect} className="tile flex min-h-0 flex-1 flex-col rounded-[24px]! p-4">
+          {/* The fields scroll inside the tile when the screen is short; the buttons below stay where they are. */}
+          <div className="thin-scroll -mx-1 -mt-1 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-1 pt-1">
           <Field id={clientIdId} label="Client ID">
             <input id={clientIdId} value={clientId} onChange={(e) => setClientId(e.target.value)} autoComplete="off" spellCheck={false} placeholder="From your sandbox account" className={`${FIELD} readout`} />
           </Field>
@@ -298,7 +305,8 @@ function AirwallexCard({ workspace, save }: { workspace: WorkspaceResponse["work
             <Secret id={keyId} value={apiKey} onChange={setApiKey} placeholder="Paste the API key" />
           </Field>
           <Problem message={error} />
-          <div className="mt-auto flex gap-2">
+          </div>
+          <div className="flex shrink-0 gap-2 border-t border-fg/[0.06] pt-3">
             {replacing ? (
               <Btn tone="secondary" type="button" onClick={() => setReplacing(false)}>
                 Cancel
@@ -323,18 +331,21 @@ const DEFAULT_MODEL = { anthropic: "claude-sonnet-4-5", openai: "" } as const;
 function FacePicker() {
   const { choice, auto, setChoice } = useAgentFace();
   return (
-    <Tile className="rounded-[24px]! px-4 py-3">
+    // On a short screen it folds into one row, which leaves the key form below it room for every field.
+    <Tile className="rounded-[24px]! px-4 py-3 short:flex short:items-center short:justify-between short:gap-3 short:py-2.5">
       <div className="flex items-center justify-between gap-3">
-        <Kicker>Shown in the console as</Kicker>
-        <span className="text-[11.5px] text-fg/50">{choice === "auto" ? `Auto follows your model: ${auto.name}` : "Pinned on this browser"}</span>
+        <Kicker>
+          Shown <span className="short:hidden">in the console </span>as
+        </Kicker>
+        <span className="text-[11.5px] text-fg/50 short:hidden">{choice === "auto" ? `Auto follows your model: ${auto.name}` : "Pinned on this browser"}</span>
       </div>
-      <div role="group" aria-label="Agent face" className="mt-2.5 flex flex-wrap items-center gap-2">
+      <div role="group" aria-label="Agent face" className="mt-2.5 flex flex-wrap items-center gap-2 short:mt-0 short:justify-end short:gap-1.5">
         <button
           type="button"
           aria-pressed={choice === "auto"}
           onClick={() => setChoice("auto")}
           title={`Follow the connected model (now ${auto.name})`}
-          className={`well flex h-10 cursor-pointer items-center gap-2 rounded-full! pl-1.5 pr-3.5 text-[12.5px] font-medium transition-shadow ${choice === "auto" ? "ring-2 ring-accent" : "text-fg/70 hover:text-fg"}`}
+          className={`well flex h-10 cursor-pointer items-center gap-2 rounded-full! pl-1.5 pr-3.5 text-[12.5px] font-medium transition-shadow short:h-9 ${choice === "auto" ? "ring-2 ring-accent" : "text-fg/70 hover:text-fg"}`}
         >
           <FaceGlyph face={auto} size={28} />
           Auto
@@ -350,7 +361,7 @@ function FacePicker() {
               title={face.name}
               className={`cursor-pointer rounded-[12px] transition-transform duration-200 hover:-translate-y-0.5 ${on ? "-translate-y-0.5 ring-2 ring-accent ring-offset-2 ring-offset-canvas" : ""}`}
             >
-              <FaceGlyph face={face} size={36} className="rounded-[12px]!" />
+              <FaceGlyph face={face} size={36} className="rounded-[12px]! short:size-8!" />
               <span className="sr-only">{face.name}</span>
             </button>
           );
@@ -442,7 +453,9 @@ function ModelCard({ workspace, save }: { workspace: WorkspaceResponse["workspac
           <Problem message={error} />
         </Tile>
       ) : (
-        <form onSubmit={connect} className="tile flex min-h-0 flex-1 flex-col gap-3 rounded-[24px]! p-4">
+        <form onSubmit={connect} className="tile flex min-h-0 flex-1 flex-col rounded-[24px]! p-4">
+          {/* The fields scroll inside the tile when the screen is short; the buttons below stay where they are. */}
+          <div className="thin-scroll -mx-1 -mt-1 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-1 pt-1">
           <Toggle
             label="Provider"
             value={provider}
@@ -457,18 +470,19 @@ function ModelCard({ workspace, save }: { workspace: WorkspaceResponse["workspac
             ]}
           />
           {provider === "openai" ? (
-            <Field id={baseId} label="Endpoint" hint="Any Chat Completions endpoint over https: OpenRouter, Nous Research (https://inference-api.nousresearch.com/v1), Together, your own gateway.">
+            <Field id={baseId} label="Endpoint" hint="Any https Chat Completions endpoint: OpenRouter, Nous Research, Together, your own gateway.">
               <input id={baseId} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} autoComplete="off" spellCheck={false} placeholder="https://openrouter.ai/api/v1" className={`${FIELD} readout`} />
             </Field>
           ) : null}
-          <Field id={modelId} label="Model" hint={provider === "openai" ? "Its id exactly as the endpoint lists it, and it must support tool calls: the agent works only through tools." : undefined}>
+          <Field id={modelId} label="Model" hint={provider === "openai" ? "Exactly as the endpoint lists it. It must support tool calls." : undefined}>
             <input id={modelId} value={model} onChange={(e) => setModel(e.target.value)} autoComplete="off" spellCheck={false} placeholder={provider === "anthropic" ? "claude-sonnet-4-5" : "z-ai/glm-5.2"} className={`${FIELD} readout`} />
           </Field>
-          <Field id={keyId} label="API key" hint="Checked with one tiny call to the model before it is saved. Runs spend this key only when you start one.">
+          <Field id={keyId} label="API key" hint="Checked with one tiny call before it is saved; spent only when you start a run.">
             <Secret id={keyId} value={apiKey} onChange={setApiKey} placeholder={provider === "anthropic" ? "sk-ant-…" : "Paste the key"} />
           </Field>
           <Problem message={error} />
-          <div className="mt-auto flex gap-2">
+          </div>
+          <div className="flex shrink-0 gap-2 border-t border-fg/[0.06] pt-3">
             {replacing ? (
               <Btn tone="secondary" type="button" onClick={() => setReplacing(false)}>
                 Cancel
