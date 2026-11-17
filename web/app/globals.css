@@ -725,3 +725,68 @@
     opacity: 0;
   }
 }
+
+/* ── The landing billboard: a ruled paper face beside one printed picture ─────────────────────────────────────── */
+
+/* The paper face: white with navy ink by day, navy with pale ink by night. Rules are the ink, thinned. */
+.paper-face {
+  --paper: #ffffff;
+  --ink: #0b1760;
+  --rule: color-mix(in oklab, var(--ink) 26%, transparent);
+  background-color: var(--paper);
+  color: var(--ink);
+}
+[data-theme="dark"] .paper-face {
+  --paper: #070b1e;
+  --ink: #e8eeff;
+}
+/* The picture face: its frame is the print's brightest tone, the way the reference frames its picture in lime. */
+.picture-face {
+  --frame: #6fb0ff;
+  background-color: var(--frame);
+}
+/* A box whose child covers it like object-fit: cover, but stays an element, so marks can be pinned to the picture. */
+.cover-box {
+  container-type: size;
+}
+.cover-fit {
+  width: max(116cqw, 132.2cqh);
+  aspect-ratio: 2000 / 1513;
+  transform: translate3d(calc(var(--px, 0) * -10px), calc(var(--py, 0) * -10px), 0) scale(1.03);
+  transition: transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* Something that drifts with the pointer, the other way, so it floats above the picture. */
+@utility drift-over {
+  transform: translate3d(calc(var(--px, 0) * 7px), calc(var(--py, 0) * 5px), 0);
+  transition: transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* A tracking box that locks on to a figure, holds, and lets go. */
+@keyframes lock-on {
+  0% {
+    opacity: 0;
+    transform: scale(1.16);
+  }
+  9%,
+  82% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+@utility lock-on {
+  animation: lock-on 6.5s cubic-bezier(0.2, 0.7, 0.2, 1) infinite both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cover-fit {
+    transform: scale(1.03);
+  }
+  .drift-over {
+    transform: none;
+  }
+  .lock-on {
+    animation: none;
+  }
+}

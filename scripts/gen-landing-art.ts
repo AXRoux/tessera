@@ -1,16 +1,18 @@
 /**
- * Generates the landing page's photographs with fal.ai (FLUX 1.1 Pro Ultra, raw mode for real-looking people).
+ * Generates the landing page's billboard picture with fal.ai (FLUX 1.1 Pro Ultra, raw mode, for real-looking people),
+ * then prints it: a cobalt halftone, the way the reference billboard prints its crowd in green.
  *
- *   bun run scripts/gen-landing-art.ts generate [--only <plate>] [--n 2]
+ *   bun run scripts/gen-landing-art.ts generate [--only <plate>] [--n 3]
  *       Each plate (or one), n candidates, into $TESSERA_ART_DIR (default /tmp/tessera-landing-art), plus manifest.json.
  *   bun run scripts/gen-landing-art.ts finish <plate-i> <name>
- *       Turns that candidate into the page's cobalt duotone (navy shadows, pale-blue highlights, fine grain) and writes
- *       web/public/landing/<name>.webp.
+ *       Paints out any signage listed for that candidate (a model writes gibberish on street signs), then turns it
+ *       into a four-tone halftone mapped navy -> cobalt -> sky and writes web/public/landing/<name>.webp (lossless).
  *
  * Reads FAL_KEY from the root .env. The key is used here only: nothing in the app or its image calls fal.
  *
- * Art direction: the Payy billboard (one full-bleed monochrome photograph of people and markets, a logo laid over it) and
- * a series of grainy editorial posters. Real people working with AI on money; textless, so the page draws every word.
+ * Art direction: the Payy billboard (a ruled white face beside one full-bleed duotone picture of a crowd in a financial
+ * district, the mark laid over it) and a series of grainy editorial posters. People and an agent, side by side, on
+ * their way to work. Textless: the page draws every word.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -29,21 +31,31 @@ const FRAME =
   "Black and white editorial photograph, high contrast, deep blacks, fine film grain, shot on medium format, natural window light, documentary realism, real people with natural skin texture. Absolutely no text, no letters, no numbers, no logos, no watermark, no screens showing readable writing, no borders.";
 
 const PLATES: Record<string, { prompt: string; aspect: string }> = {
-  desk: {
+  // The billboard's picture: people and an agent in a financial district, the reference's crowd and towers.
+  pair: {
     aspect: "4:3",
     prompt:
-      "A treasury operations lead, a woman in her thirties with short natural hair in a dark tailored blazer, seated at a desk in a high-rise office, calmly reviewing a payment on a tablet. Beside her on the desk a sleek polished chrome robotic hand rests open, palm up, offering a single thin translucent glass card toward her, the two hands about to meet. Floor-to-ceiling windows behind with the towers of a financial district. Composition: the woman on the right half, the robotic hand and glass card in the center, calm negative space at the top left.",
-  },
-  signer: {
-    aspect: "3:4",
-    prompt:
-      "Close portrait of a man in his fifties, a chief financial officer with grey stubble and rolled shirt sleeves, leaning over a desk and signing a document with a fountain pen, focused and calm, his face in three-quarter profile lit softly from a window on the right, the pen and paper sharp in the foreground. Dark background.",
+      "Street photograph taken from behind at shoulder height in a financial district at morning rush hour. In the foreground, seen from behind and in sharp focus, a businesswoman in a long dark coat walks side by side with a tall sleek humanoid robot with a smooth white and chrome body, in step, shoulder to shoulder, each carrying a slim briefcase. Around and ahead of them a dense crowd of office workers in coats walks away from the camera across a wide plaza toward towering stone bank buildings with columns and glass skyscrapers. Low morning sun rakes between the towers, long shadows, light haze, deep perspective.",
   },
   crowd: {
     aspect: "4:3",
     prompt:
-      "Wide street photograph of a busy financial district at morning rush: crowds of office workers in coats crossing a plaza between tall stone and glass towers, motion and depth, sunlight raking between buildings, seen from slightly above. Composition: dense crowd in the lower half, towers rising to the top.",
+      "High-angle photograph of a dense crowd of office workers in coats crossing a wide plaza in a financial district between grand stone bank buildings with columns and tall glass towers. Several sleek white humanoid robots walk among the people in the crowd, side by side with them. Strong low sunlight, long shadows, deep perspective, vintage documentary look.",
   },
+  floor: {
+    aspect: "4:3",
+    prompt:
+      "Documentary photograph of a busy treasury operations floor in a bank: people in shirts and jackets working at long desks, in the centre a woman analyst and a sleek white humanoid robot stand side by side studying the same sheet of paper she holds, colleagues around them in conversation, tall windows with skyscrapers behind, daylight.",
+  },
+};
+
+/** Boxes of gibberish signage to paint out, per chosen candidate: [width, height, x, y, filter size]. */
+const SIGNAGE: Record<string, [number, number, number, number, number][]> = {
+  "pair-1": [
+    [140, 95, 0, 772, 17], [85, 50, 622, 882, 13], [70, 145, 744, 813, 15], [52, 90, 987, 878, 13], [52, 70, 1182, 903, 13],
+    [44, 30, 1053, 970, 9], [48, 92, 1751, 863, 13], [70, 132, 1804, 806, 15], [98, 168, 1956, 738, 19], [170, 318, 2172, 478, 27],
+    [90, 60, 1500, 920, 11], [46, 34, 1673, 1022, 9], [26, 262, 1703, 516, 11],
+  ],
 };
 
 type Candidate = { plate: string; index: number; url: string; seed: number; width: number; height: number };
@@ -101,15 +113,20 @@ if (command === "generate") {
 } else if (command === "finish") {
   const [id, name] = [process.argv[3], process.argv[4]];
   if (!id || !name) throw new Error("usage: finish <plate-i> <name>");
-  const source = join(OUT, `${id}.png`);
   mkdirSync(PUBLIC, { recursive: true });
-  // Cobalt duotone, as a three-stop gradient map: shadows to deep navy, midtones to Tessera blue, highlights to a near
-  // white blue. More contrast first, a fine grain last.
+  // Street signs and banners come back with gibberish lettering. Each listed box (w h x y, then the filter size, in the
+  // candidate's own pixels) is flattened to its darkest tone, which leaves a plain dark sign or banner.
+  const clean = join(OUT, `${name}-clean.png`);
+  await $`cp ${join(OUT, `${id}.png`)} ${clean}`;
+  for (const [w, h, x, y, n] of SIGNAGE[id] ?? []) {
+    await $`magick ${clean} ${"("} +clone -crop ${`${w}x${h}+${x}+${y}`} +repage -statistic Minimum ${`${n}x${n}`} -blur 0x2 ${")"} -geometry ${`+${x}+${y}`} -composite ${clean}`;
+  }
+  // Four tones through an angled halftone screen, then a three-stop map: deep navy, Tessera cobalt, sky.
   const clut = join(OUT, "clut.png");
-  await $`magick -size 1x128 gradient:${"#01061a-#1f63f0"} -size 1x128 gradient:${"#1f63f0-#e9f1ff"} -append -rotate -90 ${clut}`;
-  const duo = join(OUT, `${name}-duo.png`);
-  await $`magick ${source} -resize ${"2000x2000>"} -colorspace Gray -sigmoidal-contrast 5x45% ${clut} -clut -attenuate 0.4 +noise Gaussian ${duo}`;
-  await $`cwebp -quiet -q 82 ${duo} -o ${join(PUBLIC, `${name}.webp`)}`;
+  await $`magick -size 1x128 gradient:${"#020838-#1340d8"} -size 1x128 gradient:${"#1340d8-#7ab8ff"} -append -rotate -90 ${clut}`;
+  const print = join(OUT, `${name}-print.png`);
+  await $`magick ${clean} -resize 2000x -colorspace Gray -level ${"0%,100%,0.7"} -sigmoidal-contrast 5x50% -unsharp 0x1.5 -ordered-dither h8x8a,4 ${clut} -clut ${print}`;
+  await $`cwebp -quiet -lossless -z 9 ${print} -o ${join(PUBLIC, `${name}.webp`)}`;
   console.log(`web/public/landing/${name}.webp`);
 } else {
   console.error("usage: generate [--only <plate>] [--n 2] | finish <plate-i> <name>");
