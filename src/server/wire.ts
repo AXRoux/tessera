@@ -226,6 +226,8 @@ export const SupplierRequestSchema = z.object({
   decidedBy: z.string().nullable(),
   decidedAt: z.string().nullable(),
   note: z.string().nullable(),
+  /** Cleared from the Received list (housekeeping; the record stays). */
+  clearedAt: z.string().nullable().optional(),
 });
 export type SupplierRequestView = z.infer<typeof SupplierRequestSchema>;
 

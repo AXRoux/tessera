@@ -123,6 +123,8 @@ export interface SupplierRequest {
   decidedBy: string | null;
   decidedAt: string | null;
   note: string | null;
+  /** When a person cleared it from the Received list; null while it is shown. */
+  clearedAt: string | null;
 }
 type SupplierRequestRow = Omit<SupplierRequest, "checks"> & { checks: string };
 const toSupplierRequest = (row: SupplierRequestRow): SupplierRequest => ({ ...row, checks: JSON.parse(row.checks) as SupplierRequest["checks"] });
@@ -347,7 +349,9 @@ CREATE TABLE IF NOT EXISTS supplier_requests (
   obligationId TEXT REFERENCES obligations(id),
   decidedBy TEXT,
   decidedAt TEXT,
-  note TEXT
+  note TEXT,
+  -- Cleared from the Received list by a person once it needed nothing more. The record itself stays.
+  clearedAt TEXT
 );
 -- Every charge or decline Airwallex reported on a card, once: the transaction id is the dedupe key.
 CREATE TABLE IF NOT EXISTS card_charges (
@@ -521,6 +525,8 @@ export class Ledger {
       if (!columns.some((c) => c.name === "awxUpdatedAt")) this.db.exec("ALTER TABLE attempts ADD COLUMN awxUpdatedAt TEXT");
       const cardColumns = this.db.query("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
       if (!cardColumns.some((c) => c.name === "obligationId")) this.db.exec("ALTER TABLE cards ADD COLUMN obligationId TEXT REFERENCES obligations(id)");
+      const requestColumns = this.db.query("PRAGMA table_info(supplier_requests)").all() as Array<{ name: string }>;
+      if (!requestColumns.some((c) => c.name === "clearedAt")) this.db.exec("ALTER TABLE supplier_requests ADD COLUMN clearedAt TEXT");
       this.db.exec(INVOICE_LOCK);
       // A file from before chain_head existed: pin today's tail so later deletions show.
       if (!hadChainHead) {
@@ -1045,7 +1051,7 @@ export class Ledger {
    * Files a supplier's request as it arrived, with the door's verdict. The chain records who sent it, the invoice it
    * names, a hash of the text and the verdict; a copy of an invoice already on the ledger is chained to that invoice.
    */
-  addSupplierRequest(input: Omit<SupplierRequest, "id" | "receivedAt" | "status" | "obligationId" | "decidedBy" | "decidedAt" | "note"> & { duplicateOf?: string | null }): SupplierRequest {
+  addSupplierRequest(input: Omit<SupplierRequest, "id" | "receivedAt" | "status" | "obligationId" | "decidedBy" | "decidedAt" | "note" | "clearedAt"> & { duplicateOf?: string | null }): SupplierRequest {
     return this.tx(() => {
       const id = crypto.randomUUID();
       const receivedAt = this.now().toISOString();
@@ -1067,8 +1073,26 @@ export class Ledger {
     });
   }
 
-  supplierRequests(): SupplierRequest[] {
-    return (this.db.query("SELECT * FROM supplier_requests ORDER BY receivedAt DESC, rowid DESC").all() as SupplierRequestRow[]).map(toSupplierRequest);
+  /** Every request, newest first; cleared ones only when asked for. */
+  supplierRequests(options: { cleared?: boolean } = {}): SupplierRequest[] {
+    const where = options.cleared ? "" : "WHERE clearedAt IS NULL";
+    return (this.db.query(`SELECT * FROM supplier_requests ${where} ORDER BY receivedAt DESC, rowid DESC`).all() as SupplierRequestRow[]).map(toSupplierRequest);
+  }
+
+  /**
+   * Clears a request from the Received list once nothing is left to decide on it: approved (its invoice lives on in the
+   * ledger), declined, or filed as a copy. A request still waiting on a person cannot be cleared. Housekeeping only:
+   * the request, its invoice and their history are untouched.
+   */
+  clearSupplierRequest(id: string): SupplierRequest {
+    return this.tx(() => {
+      const request = this.requireSupplierRequest(id);
+      if (request.status === "RECEIVED" || request.status === "HELD") {
+        throw new StateConflict(`${request.reference} still needs a decision, so it cannot be cleared`);
+      }
+      if (request.clearedAt === null) this.db.query("UPDATE supplier_requests SET clearedAt = ? WHERE id = ?").run(this.now().toISOString(), id);
+      return this.requireSupplierRequest(id);
+    });
   }
 
   getSupplierRequest(id: string): SupplierRequest | null {

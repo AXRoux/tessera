@@ -83,16 +83,31 @@ function SupplierTile({ supplier, rehearsal, busy, onSend }: { supplier: Supplie
   );
 }
 
-function RequestRow({ request, on, onPick }: { request: SupplierRequestView; on: boolean; onPick: () => void }) {
+/** Nothing is left to decide on these: approved (its invoice lives on), declined, or filed as a copy. */
+const clearable = (r: SupplierRequestView): boolean => r.status === "OPENED" || r.status === "DECLINED" || r.status === "DUPLICATE";
+
+function RequestRow({ request, on, onPick, onClear, clearing }: { request: SupplierRequestView; on: boolean; onPick: () => void; onClear: () => void; clearing: boolean }) {
   const status = STATUS[request.status];
   return (
-    <li role="option" aria-selected={on}>
+    <li role="option" aria-selected={on} className="group relative">
+      {clearable(request) ? (
+        <button
+          type="button"
+          onClick={onClear}
+          disabled={clearing}
+          aria-label={`Clear ${request.reference} from the list`}
+          title="Clear from the list. The invoice and its history stay."
+          className="well absolute right-2.5 top-2.5 z-[1] flex size-6 cursor-pointer items-center justify-center rounded-full! text-fg/50 opacity-70 transition hover:text-fg hover:opacity-100 disabled:opacity-40 group-hover:opacity-100"
+        >
+          <Icon name="close" className="size-3" />
+        </button>
+      ) : null}
       <button type="button" onClick={onPick} className="block w-full cursor-pointer text-left">
         <Tile className={`rounded-[20px]! px-3.5 py-3 transition-shadow ${on ? "ring-2 ring-accent" : "hover:ring-1 hover:ring-fg/15"}`}>
           <span className="flex items-center gap-3">
             <SupplierMark supplier={request.supplier} size={34} />
             <span className="min-w-0 flex-1">
-              <span className="flex items-baseline justify-between gap-2">
+              <span className={`flex items-baseline justify-between gap-2 ${clearable(request) ? "pr-7" : ""}`}>
                 <span className="truncate text-[13px] font-semibold">{request.supplier.name}</span>
                 <span className="readout shrink-0 text-[12.5px] font-medium">{money(request.amountMinor, request.currency)}</span>
               </span>
@@ -255,12 +270,28 @@ export function RequestsRoom({ health, initialSuppliers, initialRequests }: { he
   const { items, setItems, reload } = useRequests(initialRequests);
   const [pick, setPick] = useState<string | null>(initialRequests[0]?.id ?? null);
   const [sending, setSending] = useState<string | null>(null);
+  const [clearing, setClearing] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const current = items.find((r) => r.id === pick) ?? items[0] ?? null;
   const byId = useMemo(() => new Map((suppliers?.suppliers ?? []).map((s) => [s.id, s])), [suppliers]);
   const rehearsal = suppliers?.rehearsal ?? false;
   const operator = health?.operator ?? "operator";
   const count = (status: SupplierRequestView["status"]) => items.filter((r) => r.status === status).length;
+
+  /** Off the list; the request, its invoice and their history stay in the ledger. */
+  async function clear(ids: string[]) {
+    setClearing((now) => new Set([...now, ...ids]));
+    setError(null);
+    try {
+      for (const id of ids) await api(`requests/${id}/clear`, SupplierRequestSchema, { method: "POST" });
+      setItems((list) => list.filter((r) => !ids.includes(r.id)));
+    } catch (e) {
+      setError(problemText(e));
+      void reload();
+    } finally {
+      setClearing((now) => new Set([...now].filter((id) => !ids.includes(id))));
+    }
+  }
 
   async function send(supplierId: string) {
     setSending(supplierId);
@@ -318,7 +349,19 @@ export function RequestsRoom({ health, initialSuppliers, initialRequests }: { he
         </Tray>
 
         <Tray label="Received" className="min-h-[420px] gap-3 p-3 xl:min-h-0">
-          <TrayHead className="px-2 pt-1" n={2} title="Received" note="Newest first" />
+          <TrayHead
+            className="px-2 pt-1"
+            n={2}
+            title="Received"
+            note="Newest first"
+            right={
+              items.filter(clearable).length > 1 ? (
+                <button type="button" onClick={() => void clear(items.filter(clearable).map((r) => r.id))} className="cursor-pointer text-[12px] text-fg/55 hover:text-fg">
+                  Clear approved
+                </button>
+              ) : null
+            }
+          />
           {items.length === 0 ? (
             <div className="well flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-[24px]! px-6 text-center">
               <span className="flex size-14 items-center justify-center rounded-full bg-fg/[0.06] text-fg/60">
@@ -330,7 +373,7 @@ export function RequestsRoom({ health, initialSuppliers, initialRequests }: { he
           ) : (
             <ul className="thin-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-1" role="listbox" aria-label="Invoices received">
               {items.map((r) => (
-                <RequestRow key={r.id} request={r} on={r.id === current?.id} onPick={() => setPick(r.id)} />
+                <RequestRow key={r.id} request={r} on={r.id === current?.id} onPick={() => setPick(r.id)} onClear={() => void clear([r.id])} clearing={clearing.has(r.id)} />
               ))}
             </ul>
           )}

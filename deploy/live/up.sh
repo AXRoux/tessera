@@ -45,4 +45,7 @@ CADDY
 docker run -d --name caddy --network tessera --restart unless-stopped -p 80:80 -p 443:443 \
   -v /opt/tessera/Caddyfile:/etc/caddy/Caddyfile:ro -v caddy_data:/data -v caddy_config:/config \
   --log-opt max-size=10m --log-opt max-file=3 caddy:2 >/dev/null
+# Old images are ~1 GB each and the disk is 20 GB: drop every image no container uses (the running one stays, and a
+# rollback re-pulls its tag from ECR).
+docker image prune -af >/dev/null 2>&1 || true
 echo "tessera live: $IMAGE on https://$HOST"

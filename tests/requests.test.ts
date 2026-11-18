@@ -325,3 +325,46 @@ describe("stories, paid by single-use Visa card", () => {
     expect(runtime.ledger.verifyChain().ok).toBe(true);
   });
 });
+
+describe("clearing the Received list", () => {
+  it("clears a request once nothing is left to decide on it, keeps its invoice, and keeps numbering going", async () => {
+    const r = rig();
+    const approved = await r.send("modal");
+    const id = await r.approve(approved.id);
+    const waiting = await r.send("modal");
+    const held = await r.send("framer");
+
+    expect((await r.call("POST", `/api/requests/${waiting.id}/clear`)).status).toBe(409);
+    expect((await r.call("POST", `/api/requests/${held.id}/clear`)).status).toBe(409);
+
+    const cleared = await r.call("POST", `/api/requests/${approved.id}/clear`);
+    expect(cleared.status).toBe(200);
+    expect(SupplierRequestSchema.parse(cleared.data).clearedAt).not.toBeNull();
+    expect((await r.call("POST", `/api/requests/${approved.id}/clear`)).status).toBe(200);
+
+    const listed = RequestListSchema.parse((await r.call("GET", "/api/requests")).data).items.map((q) => q.id);
+    expect(listed).not.toContain(approved.id);
+    expect(listed).toEqual(expect.arrayContaining([waiting.id, held.id]));
+    expect((await r.view(id)).obligation.reference).toBe("MDL-2611");
+    // MDL-2611 (cleared) and MDL-2612 (waiting) are taken: the next invoice is MDL-2613.
+    expect(SuppliersSchema.parse((await r.call("GET", "/api/suppliers")).data).suppliers.find((s) => s.id === "modal")!.nextReference).toBe("MDL-2613");
+    expect(r.ledger.verifyChain().ok).toBe(true);
+  });
+
+  it("adds the column to a ledger file written before clearing existed", async () => {
+    const { Database } = await import("bun:sqlite");
+    const { mkdtempSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const path = join(mkdtempSync(join(tmpdir(), "tessera-")), "old.db");
+    const old = new Database(path, { create: true });
+    old.exec(`CREATE TABLE supplier_requests (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, story TEXT, reference TEXT NOT NULL, amountMinor INTEGER NOT NULL,
+      currency TEXT NOT NULL, sender TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, receivedAt TEXT NOT NULL, verdict TEXT NOT NULL, status TEXT NOT NULL,
+      checks TEXT NOT NULL, summary TEXT NOT NULL, obligationId TEXT, decidedBy TEXT, decidedAt TEXT, note TEXT)`);
+    old.close();
+    const ledger = new Ledger(path);
+    const columns = ledger.db.query("PRAGMA table_info(supplier_requests)").all() as { name: string }[];
+    expect(columns.map((c) => c.name)).toContain("clearedAt");
+    ledger.close();
+  });
+});

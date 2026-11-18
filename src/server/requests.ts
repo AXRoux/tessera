@@ -9,6 +9,7 @@
  *   POST /api/requests        {supplierId}  rehearsal: the supplier sends its invoice (sandbox or offline only)
  *   POST /api/requests/:id/approve {note}   a person approves: the invoice is opened and paid
  *   POST /api/requests/:id/decline {note}   a person turns it down
+ *   POST /api/requests/:id/clear            off the Received list, once nothing is left to decide on it
  *   POST /api/obligations/:id/story/play {step}   the supplier's or the bank's next move (sandbox or offline only)
  */
 import { z } from "zod";
@@ -73,7 +74,7 @@ export function createRequests(deps: RequestDeps) {
 
   /** The next invoice number for a supplier: its base, plus one for every invoice it already sent on this ledger. */
   function nextReference(supplier: Supplier): string {
-    const sent = ledger.supplierRequests().filter((r) => r.supplierId === supplier.id && r.status !== "DUPLICATE").length;
+    const sent = ledger.supplierRequests({ cleared: true }).filter((r) => r.supplierId === supplier.id && r.status !== "DUPLICATE").length;
     const taken = new Set(ledger.listObligations().map((o) => o.reference));
     let n = supplier.invoiceBase + sent;
     while (taken.has(`${supplier.invoicePrefix}-${n}`)) n++;
@@ -256,11 +257,12 @@ export function createRequests(deps: RequestDeps) {
       }
       return json({ error: "MethodNotAllowed", message: "unsupported method" }, 405);
     }
-    const match = path.match(/^\/api\/requests\/([\w-]+)\/(approve|decline)$/);
+    const match = path.match(/^\/api\/requests\/([\w-]+)\/(approve|decline|clear)$/);
     if (match) {
       if (request.method !== "POST") return json({ error: "MethodNotAllowed", message: "unsupported method" }, 405);
       const [, id, action] = match as unknown as [string, string, string];
       if (!ledger.getSupplierRequest(id)) return json({ error: "NotFound", message: "no such request" }, 404);
+      if (action === "clear") return json(requestView(ledger.clearSupplierRequest(id)));
       const { note } = await read(request, NoteBody);
       if (action === "approve") return json({ obligationId: await approve(id, note) }, 201);
       return json(requestView(ledger.declineRequest(id, deps.operator, note)));
