@@ -43,18 +43,17 @@ export function agentVerdict({ tool, outcome }: Pick<VerdictInput, "tool" | "out
 
 /**
  * Who acted, as the console names them. Tessera is agent-agnostic, so whichever model drives the agent it is simply
- * "Agent" (the model is metadata on the Keys page, never a name in the record). The deterministic scripted agent and
- * the guardrail test's adversary keep their names, because those say what they are. A person is shown as given.
+ * "Agent", whether a model or the built-in deterministic agent drives it (the model is metadata on the Keys page, never
+ * a name in the record). Only the guardrail test's adversary keeps its name. A person is shown as given.
  */
 export function actorLabel(actor: string): string {
   if (!actor.startsWith("agent:")) return actor;
   const name = actor.slice("agent:".length);
-  if (name === "scripted") return "Scripted agent";
   if (name === "adversary") return "Adversary";
   return "Agent";
 }
 
-/** The same, at the start of a sentence: "The agent handed it over", "The scripted agent", "The adversary". */
+/** The same, at the start of a sentence: "The agent handed it over", "The adversary". */
 export function actorSubject(actor: string): string {
   if (!actor.startsWith("agent:")) return actor;
   const label = actorLabel(actor);

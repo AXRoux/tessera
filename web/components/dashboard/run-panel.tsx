@@ -84,7 +84,7 @@ function Plan({ plan, empty }: { plan: { work: Move[]; leave: Move[]; certified:
 export function RunPanel({ items, health }: { items: IncidentSummary[]; health: Health | null }) {
   const agent = useAgentRun();
   // Tessera is agent-agnostic: the panel speaks of "the agent", and the connected model is shown as metadata.
-  const model = health?.agent ? (health.agent.kind === "scripted" ? "scripted (not a model)" : health.agent.name) : null;
+  const model = health?.agent ? (health.agent.kind === "scripted" ? "built-in" : health.agent.name) : null;
   const live = agent.running;
   const elapsed = useRunClock(live);
   const idFor = (reference: string) => items.find((item) => item.reference === reference)?.id;

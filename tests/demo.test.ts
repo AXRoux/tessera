@@ -162,7 +162,7 @@ describe("scripted agent", () => {
     expect(ledger.invoiceCard(card!)).toMatchObject({ state: "PENDING", amountMinor: 2_500, requestedBy: "agent:scripted", singleUse: true });
     expect(ledger.attemptsFor(card!)).toHaveLength(1);
     expect(ledger.requireObligation(card!).status).toBe("PAYING");
-    expect(run.finalText).toContain("not a model");
+    expect(run.finalText).toContain("Agent worked");
     expect(run.finalText.split("\n").filter((l) => l.startsWith("ACME-"))).toHaveLength(8);
     expect((await checkInvariant(ledger, api, seeded.map((s) => s.id), new Date(0).toISOString())).ok).toBe(true);
   });

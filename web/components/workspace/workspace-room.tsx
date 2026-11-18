@@ -404,7 +404,7 @@ function ModelCard({ workspace, save }: { workspace: WorkspaceResponse["workspac
 
   return (
     <Tray label="Your model" className="min-h-[520px] gap-3 p-3 xl:min-h-0">
-      <TrayHead n={3} className="px-2 pt-1" title="Your model" note="The agent runs on your key, agent-agnostic" right={<Chip tone={connected ? "accent" : "neutral"}>{connected ? "Connected" : "Scripted agent"}</Chip>} />
+      <TrayHead n={3} className="px-2 pt-1" title="Your model" note="The agent runs on your key, agent-agnostic" right={<Chip tone={connected ? "accent" : "neutral"}>{connected ? "Connected" : "Built-in agent"}</Chip>} />
 
       <Tile className="flex items-center gap-4 rounded-[24px]! p-4">
         <RingSquare value={connected ? 1 : 0} tone="accent" size={72}>

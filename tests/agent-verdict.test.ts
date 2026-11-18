@@ -27,14 +27,14 @@ describe("agent verdict wording", () => {
 });
 
 describe("actor names", () => {
-  it("never turns the scripted agent into Claude", () => {
-    expect(actorLabel("agent:scripted")).toBe("Scripted agent");
+  it("calls every agent simply the agent, whatever drives it", () => {
+    expect(actorLabel("agent:scripted")).toBe("Agent");
     expect(actorLabel("agent:claude")).toBe("Agent");
     expect(actorLabel("agent:adversary")).toBe("Adversary");
     expect(actorLabel("agent:deepseek-v4-pro")).toBe("Agent");
     expect(actorLabel("ops@acme.example")).toBe("ops@acme.example");
     expect(actorSubject("agent:deepseek-v4-pro")).toBe("The agent");
-    expect(actorSubject("agent:scripted")).toBe("The scripted agent");
+    expect(actorSubject("agent:scripted")).toBe("The agent");
   });
 });
 

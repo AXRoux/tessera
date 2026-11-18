@@ -117,7 +117,7 @@ const SECTIONS: LegalSection[] = [
           <li>The model never receives your passwords, your Airwallex or model credentials, approval secrets or database access.</li>
           <li>Supplier message text is quarantined: the agent itself sees only the structured facts the reader extracts.</li>
           <li>Your provider processes this data under its own terms and policies, which you accepted when you obtained its key.</li>
-          <li>The offline rehearsal and the scripted agent send nothing to any model provider.</li>
+          <li>The offline rehearsal and its built-in agent send nothing to any model provider.</li>
         </ul>
       </>
     ),

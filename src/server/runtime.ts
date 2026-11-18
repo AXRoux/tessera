@@ -226,7 +226,7 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
     model = new OfflineReader();
     readerName = "offline keyword reader";
     // Never named after a model, whatever TESSERA_AGENT_NAME says: the ledger must not credit a model that did not run.
-    agent = { model: new ScriptedAgentModel(), actor: "agent:scripted", kind: "scripted", name: "scripted agent" };
+    agent = { model: new ScriptedAgentModel(), actor: "agent:scripted", kind: "scripted", name: "Agent" };
   }
   // Event-driven agent runs spend model calls nobody asked for in the moment, so they are opt-in and never public.
   let agentOnEvent = truthy(env.TESSERA_AGENT_ON_EVENT);

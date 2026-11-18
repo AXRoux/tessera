@@ -88,6 +88,6 @@ export function deriveTour({ items, metrics, openedAttention, agentSeen = false 
 /** Who is meant by "the agent" in tour copy: the model's name only when a model is what runs. */
 export function tourAgent(agent: Health["agent"] | undefined): { name: string; Name: string } {
   if (agent?.kind === "model") return { name: agent.name, Name: agent.name };
-  if (agent?.kind === "scripted") return { name: "the scripted agent (not a model)", Name: "The scripted agent (not a model)" };
+  if (agent?.kind === "scripted") return { name: "the agent", Name: "The agent" };
   return { name: "the agent", Name: "The agent" };
 }

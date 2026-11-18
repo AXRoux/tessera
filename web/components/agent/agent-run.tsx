@@ -31,7 +31,7 @@ const IDLE: AgentRunState = { status: "idle", actor: null, mode: "commander", sc
  */
 export function agentName(agent: Health["agent"] | undefined, capital = false): string {
   if (agent?.kind === "model") return agent.name;
-  if (agent?.kind === "scripted") return capital ? "The scripted agent" : "the scripted agent";
+  if (agent?.kind === "scripted") return capital ? "The agent" : "the agent";
   return capital ? "The agent" : "the agent";
 }
 
