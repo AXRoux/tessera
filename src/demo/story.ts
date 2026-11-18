@@ -18,7 +18,7 @@ import { formatMinor } from "../money";
 import { fill, type Supplier, type StoryId, dueDate } from "./suppliers";
 
 export type StoryActor = "supplier" | "bank" | "you";
-export type StoryAction = "replace" | "retry" | "certify";
+export type StoryAction = "replace" | "retry" | "certify" | "card-sign" | "card-pay";
 export type StoryEffect =
   | { kind: "message"; followUp: true }
   | { kind: "resend" }
@@ -35,6 +35,8 @@ interface StepDef {
   action?: StoryAction;
   /** A closing note: never "done", it is what is left for a person. */
   yours?: boolean;
+  /** The replace step also offers the card rail: a single-use Visa card, paid by the agent through Visa TAP. */
+  alt?: "card";
   done?: (s: StoryState) => boolean;
 }
 
@@ -43,6 +45,8 @@ export interface StoryState {
   attempts: Attempt[];
   events: LedgerEvent[];
   hasCard: boolean;
+  /** The invoice's Visa card, if it has one: its state, what it charged, and whether the charge is proved. */
+  card: { state: string; spentMinor: number; settled: boolean } | null;
 }
 
 export interface StoryStep {
@@ -53,6 +57,7 @@ export interface StoryStep {
   state: "done" | "next" | "later" | "yours";
   play: boolean;
   action: StoryAction | null;
+  alt: "card" | null;
 }
 
 const StoryStepPayload = z.looseObject({ step: z.string() });
@@ -72,7 +77,7 @@ export function playedSteps(events: LedgerEvent[]): Map<string, number> {
 const refusedAfter = (events: LedgerEvent[], afterSeq: number): boolean => events.some((e) => e.type === "PAYMENT_REFUSED" && e.seq > afterSeq);
 const lastSeqOf = (events: LedgerEvent[], type: string): number => events.findLast((e) => e.type === type)?.seq ?? 0;
 
-function definitions(supplier: Supplier, story: StoryId, o: Obligation): StepDef[] {
+function definitions(supplier: Supplier, story: StoryId, o: Obligation, st: StoryState): StepDef[] {
   const amount = formatMinor(o.amountMinor, o.currency);
   const who = supplier.name;
   const head: StepDef[] = [
@@ -95,15 +100,41 @@ function definitions(supplier: Supplier, story: StoryId, o: Obligation): StepDef
   };
 
   switch (story) {
-    case "timeout":
-      return [
+    case "timeout": {
+      const failed: StepDef[] = [
         ...head,
         { id: "chase", actor: "supplier", title: `${who} follows up: payment hasn't arrived`, play: { kind: "message", followUp: true },
           after: "Tessera holds. The transfer is still inside its settlement window, so sending again could pay twice." },
         { id: "fail", actor: "bank", title: "Airwallex: transfer failed, channel timeout (91402)", play: { kind: "fail", failureType: "CHANNEL_TIMEOUT" },
-          after: "Confirmed with Airwallex, not taken from a message: cancelled, funds back in the wallet. A replacement is now allowed.",
+          after: "Confirmed with Airwallex, not taken from a message: cancelled, funds back in the wallet. Paying again is now allowed.",
           done: (s) => s.attempts.length > 1 || s.attempts[0]?.state === "DEAD" },
-        { id: "replace", actor: "you", title: "Send a replacement", action: "replace",
+      ];
+      if (st.card) {
+        // Paid again by single-use Visa card: a person signs it, the agent pays the supplier's checkout through Visa TAP.
+        const cardAnchor = (s: StoryState) => Math.max(lastSeqOf(s.events, "CARD_CHECKOUT"), lastSeqOf(s.events, "ATTEMPT_INTENT"));
+        return [
+          ...failed,
+          { id: "replace", actor: "you", title: "Pay by single-use Visa card", action: "replace", alt: "card",
+            after: `One card for exactly ${amount}, payable only to ${supplier.legalName}. It holds the invoice's lock, so no transfer can follow it.`,
+            done: () => true },
+          { id: "card-sign", actor: "you", title: "Sign the card", action: "card-sign",
+            after: "Signed in writing. Airwallex issued the card with the invoice's terms as its controls.",
+            done: (s) => s.card !== null && s.card.state !== "PENDING" },
+          { id: "card-pay", actor: "you", title: `Agent pays ${who}'s checkout through Visa TAP`, action: "card-pay",
+            after: "The checkout verified the agent's signature before it charged the exact amount.",
+            done: (s) => (s.card?.spentMinor ?? 0) > 0 || s.card?.state === "SPENT" },
+          { id: "card-clear", actor: "bank", title: "Visa: charge cleared and proved against the signed terms",
+            done: (s) => s.card?.settled === true || s.obligation.status === "CLOSED" },
+          { id: "retry", actor: "you", title: "Send a transfer as well", action: "retry",
+            after: "Declined by policy and logged. The card holds this invoice; a transfer could pay twice.",
+            done: (s) => refusedAfter(s.events, cardAnchor(s)) },
+          certify,
+          { id: "yours", actor: "you", title: `Reply to ${who} with the payment details.`, yours: true },
+        ];
+      }
+      return [
+        ...failed,
+        { id: "replace", actor: "you", title: "Send a replacement", action: "replace", alt: "card",
           after: "New transfer under a fresh request ID. The original stays cancelled.",
           done: (s) => s.attempts.length > 1 || s.hasCard },
         { id: "retry", actor: "you", title: "Send it again", action: "retry",
@@ -112,6 +143,7 @@ function definitions(supplier: Supplier, story: StoryId, o: Obligation): StepDef
         certify,
         { id: "yours", actor: "you", title: `Reply to ${who} with the payment details.`, yours: true },
       ];
+    }
     case "inflight":
       return [
         ...head,
@@ -161,7 +193,7 @@ function definitions(supplier: Supplier, story: StoryId, o: Obligation): StepDef
 export function storySteps(supplier: Supplier, story: StoryId, s: StoryState): StoryStep[] {
   const played = playedSteps(s.events);
   let nextGiven = false;
-  return definitions(supplier, story, s.obligation).map((d) => {
+  return definitions(supplier, story, s.obligation, s).map((d) => {
     // A played step is done the moment it is chained, even if the bank is still catching up (a FAILED transfer that
     // Airwallex has not cancelled yet), so it is never offered twice.
     const done = !d.yours && ((d.play !== undefined && played.has(d.id)) || (d.done ? d.done(s) : false));
@@ -171,7 +203,7 @@ export function storySteps(supplier: Supplier, story: StoryId, s: StoryState): S
     else if (!nextGiven) state = "next";
     else state = "later";
     if (state === "next") nextGiven = true;
-    return { id: d.id, actor: d.actor, title: d.title, after: d.after ?? null, state, play: d.play !== undefined, action: d.action ?? null };
+    return { id: d.id, actor: d.actor, title: d.title, after: d.after ?? null, state, play: d.play !== undefined, action: d.action ?? null, alt: d.alt ?? null };
   });
 }
 
@@ -181,7 +213,7 @@ export function effectFor(supplier: Supplier, story: StoryId, s: StoryState, ste
   const step = steps.find((x) => x.id === stepId);
   if (!step) return `this story has no step "${stepId}"`;
   if (step.state !== "next") return step.state === "done" ? "that step has already happened" : "that step is not next";
-  const def = definitions(supplier, story, s.obligation).find((d) => d.id === stepId);
+  const def = definitions(supplier, story, s.obligation, s).find((d) => d.id === stepId);
   if (!def?.play) return "that step is a person's move, not the supplier's or the bank's";
   return def.play;
 }

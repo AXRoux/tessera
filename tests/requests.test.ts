@@ -278,3 +278,50 @@ describe("stories", () => {
     expect(advanced).toEqual([]);
   });
 });
+
+describe("stories, paid by single-use Visa card", () => {
+  it("timeout: after the bank fails it, the invoice is paid by a signed card through Visa TAP, a transfer is refused, and it certifies", async () => {
+    const { buildRuntime } = await import("../src/server/runtime");
+    const runtime = buildRuntime({ TESSERA_OFFLINE: "1", TESSERA_BANK_CLOCK_MS: "1", TESSERA_PAID_HOLD_MS: "0" });
+    const handle = createApi({
+      ledger: runtime.ledger, gateway: runtime.gateway, commander: runtime.commander, closer: runtime.closer, cards: runtime.cards,
+      model: null, simulator: runtime.simulator, token: TOKEN, operator: "ops@acme.example", beneficiaryId: "offline-us-supplier",
+      paidHoldMs: runtime.paidHoldMs, offline: true, beneficiaries: runtime.api, storyPollMs: 0,
+    });
+    const call = async (method: string, path: string, body?: unknown) => {
+      const response = await handle(new Request(`http://api.test${path}`, { method, headers: { "content-type": "application/json", "x-tessera-token": TOKEN }, body: body === undefined ? undefined : JSON.stringify(body) }));
+      return { status: response.status, data: (await response.json().catch(() => null)) as Record<string, unknown> };
+    };
+    const view = async (id: string) => IncidentViewSchema.parse((await call("GET", `/api/obligations/${id}`)).data);
+    const next = async (id: string) => (await view(id)).story!.steps.find((s) => s.state === "next")?.id ?? null;
+
+    const request = SupplierRequestSchema.parse((await call("POST", "/api/requests", { supplierId: "modal" })).data);
+    const id = String((await call("POST", `/api/requests/${request.id}/approve`, { note: "Checked against the vendor record." })).data.obligationId);
+    await call("POST", `/api/obligations/${id}/story/play`, { step: "chase" });
+    await call("POST", `/api/obligations/${id}/story/play`, { step: "fail" });
+    let v = await view(id);
+    expect(v.assessment!.decision.allowed).toEqual(expect.arrayContaining(["REPLACE", "PAY_BY_CARD"]));
+    expect(v.story!.steps.find((s) => s.id === "replace")!.alt).toBe("card");
+
+    expect((await call("POST", `/api/obligations/${id}/card`, {})).status).toBe(201);
+    expect(await next(id)).toBe("card-sign");
+    v = await view(id);
+    expect((await call("POST", `/api/cards/${v.invoiceCard!.id}/approve`, { note: "Supplier takes card for this invoice." })).status).toBe(200);
+    expect(await next(id)).toBe("card-pay");
+    expect((await call("POST", `/api/obligations/${id}/card/pay`, {})).data.outcome).toBe("PAID");
+
+    // The charge clears on the simulator's clock; the sweep reads it back and proves it against the signed terms.
+    await Bun.sleep(20);
+    await runtime.cards.sync();
+    expect(await next(id)).toBe("retry");
+    expect((await call("POST", `/api/obligations/${id}/replace`)).status).toBe(409);
+    expect(await next(id)).toBe("certify");
+    expect((await call("POST", `/api/obligations/${id}/close`)).status).toBe(200);
+    v = await view(id);
+    expect(v.attempts).toHaveLength(1);
+    expect(v.attempts[0]!.state).toBe("DEAD");
+    expect(v.invoiceCard!.spentMinor).toBe(64_218);
+    expect(v.story!.steps.at(-1)!.state).toBe("yours");
+    expect(runtime.ledger.verifyChain().ok).toBe(true);
+  });
+});

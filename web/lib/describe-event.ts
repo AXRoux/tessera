@@ -273,7 +273,7 @@ export function describeEvent(type: string, payload: unknown): string {
     case "FUNDING_REPLANNED":
       return `A quote was thrown away and the conversion planned again: ${bare(text(p.reason)) ?? "no reason given"}.`;
     case "CARD_REQUESTED":
-      return `${actorLabel(text(p.requestedBy) ?? "someone")} asked for a single-use Visa card for exactly ${amount(p.amountMinor, p.currency)}, payable only to ${text(p.merchant) ?? "the supplier"}. It takes the invoice's lock: no transfer while it holds. A person must sign it.`;
+      return `${actorLabel(text(p.requestedBy) ?? "someone")} asked for a single-use Visa card for exactly ${amount(p.amountMinor, p.currency)}, payable only to ${bare(text(p.merchant)) ?? "the supplier"}. It takes the invoice's lock: no transfer while it holds. A person must sign it.`;
     case "CARD_REFUSED": {
       const reasons = Array.isArray(p.reasons) ? p.reasons.filter((r): r is string => typeof r === "string") : [];
       return `The card policy refused the card: ${bare(reasons.join("; ")) || "no reason given"}.`;

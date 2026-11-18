@@ -173,7 +173,14 @@ export function createRequests(deps: RequestDeps) {
     attempts: ledger.attemptsFor(obligationId),
     events: ledger.events(obligationId),
     hasCard: ledger.invoiceCard(obligationId) !== null,
+    card: cardOf(obligationId),
   });
+
+  /** The card holding the invoice's lock, as the story reads it (a declined or refused card leaves the transfer path). */
+  const cardOf = (obligationId: string) => {
+    const card = ledger.invoiceCard(obligationId);
+    return card ? { state: card.state, spentMinor: card.spentMinor, settled: ledger.cardSettlements(card.id).length > 0 } : null;
+  };
 
   /** Plays the supplier's or the bank's next move, and chains it. */
   async function play(obligationId: string, stepId: string): Promise<void> {

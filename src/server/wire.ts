@@ -239,7 +239,9 @@ export const StoryStepSchema = z.object({
   after: z.string().nullable(),
   state: z.enum(["done", "next", "later", "yours"]),
   play: z.boolean(),
-  action: z.enum(["replace", "retry", "certify"]).nullable(),
+  action: z.enum(["replace", "retry", "certify", "card-sign", "card-pay"]).nullable(),
+  /** The step can also be taken by single-use Visa card (paid through Visa TAP). */
+  alt: z.enum(["card"]).nullable().optional(),
 });
 export type StoryStep = z.infer<typeof StoryStepSchema>;
 

@@ -172,8 +172,8 @@ function Recommendation({ view, decision: d, act }: { view: IncidentView; decisi
         <Tile className="mt-5 rounded-[22px]! px-4 py-4">
           <p className="text-[13px] leading-relaxed text-fg/80">
             {unread > 0
-              ? `The money has arrived, but the supplier wrote and nobody has read ${unread === 1 ? "it" : "them"} yet. Read ${unread === 1 ? "their message" : "their messages"} under The evidence, Supplier, before you certify.`
-              : "The money has arrived. One step is left: Tessera matches every wallet line against Airwallex, then seals a certificate that closes this invoice for good."}
+              ? `Paid, but the supplier has written since. Read ${unread === 1 ? "their message" : "their messages"} under Evidence › Supplier before certifying.`
+              : "Paid. One step remains: Tessera matches every wallet line against Airwallex and signs the certificate."}
           </p>
           <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-2">
             <Btn

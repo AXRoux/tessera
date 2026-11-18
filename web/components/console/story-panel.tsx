@@ -1,10 +1,13 @@
 "use client";
 
+import { useId, useState } from "react";
 import { Acknowledged, api, ApiProblem } from "@/lib/client-api";
+import { money } from "@/lib/format";
 import type { IncidentView, Story, StoryStep } from "../../../src/server/wire";
 import { Icon } from "../landing/icons";
 import { Btn } from "../kit/metal";
 import { Chip } from "../kit/widgets";
+import { TextArea } from "./fields";
 import { SupplierMark } from "../suppliers/supplier-mark";
 import type { RunAction } from "./actions-panel";
 
@@ -26,6 +29,8 @@ function Who({ step, story }: { step: StoryStep; story: Story }) {
  */
 export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: string | null; run: RunAction }) {
   const story = view.story;
+  const noteId = useId();
+  const [note, setNote] = useState("");
   if (!story) return null;
   const id = view.obligation.id;
   const allowed = view.assessment?.decision.allowed ?? [];
@@ -61,6 +66,30 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
       }
     });
 
+  const amount = money(view.obligation.amountMinor, view.obligation.currency);
+  const card = view.invoiceCard ?? null;
+
+  const askCard = () =>
+    run("story-card", async () => {
+      await api(`obligations/${id}/card`, Acknowledged, { method: "POST", body: {} });
+      return { tone: "ok", title: "Card requested", lines: [`A single-use Visa card for exactly ${amount}, payable only to ${story.supplier.legalName}. It waits for your signature.`] };
+    });
+
+  const signCard = (cardId: string, text: string) =>
+    run("story-card-sign", async () => {
+      await api(`cards/${cardId}/approve`, Acknowledged, { method: "POST", body: { note: text } });
+      setNote("");
+      return { tone: "ok", title: "Card signed and issued", lines: ["Airwallex issued it with the invoice's terms as its controls."] };
+    });
+
+  const payCard = () =>
+    run("story-card-pay", async () => {
+      const result = await api(`obligations/${id}/card/pay`, Acknowledged, { method: "POST", body: {} });
+      return String(result.outcome) === "PAID"
+        ? { tone: "ok", title: "Paid through Visa TAP", lines: [`${who}'s checkout verified the agent's signature and charged exactly ${amount}.`] }
+        : { tone: "refused", title: "The checkout did not go through", lines: [String(result.next ?? "Tessera will reassess.")] };
+    });
+
   const certify = () =>
     run("story-certify", async () => {
       await api(`obligations/${id}/close`, Acknowledged, { method: "POST" });
@@ -78,9 +107,51 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
       );
     }
     if (step.action === "replace") {
+      const issuingOff = card?.state === "FAILED" && /issuance/i.test(card.lastError ?? "");
+      const byCard = step.alt === "card" && allowed.includes("PAY_BY_CARD");
       return (
-        <Btn busy={busy === "story-replace"} disabled={busy !== null || !allowed.includes("REPLACE")} onClick={replace}>
-          Send replacement
+        <div className="space-y-2.5">
+          <div className="grid gap-2">
+            <div className="well space-y-2 rounded-[16px]! p-3">
+              <p className="text-[13px] font-semibold">Bank transfer</p>
+              <p className="text-[12.5px] leading-snug text-fg/60">A new transfer to the account on file. Arrives within the usual settlement window.</p>
+              <Btn block busy={busy === "story-replace"} disabled={busy !== null || !allowed.includes("REPLACE")} onClick={replace}>
+                Send replacement
+              </Btn>
+            </div>
+            {byCard ? (
+              <div className="well space-y-2 rounded-[16px]! p-3">
+                <p className="text-[13px] font-semibold">Single-use Visa card</p>
+                <p className="text-[12.5px] leading-snug text-fg/60">
+                  {issuingOff ? "Card issuing isn't enabled on this Airwallex account." : `Exactly ${amount}, payable only to ${who}. You sign; the agent pays through Visa TAP. Clears in minutes.`}
+                </p>
+                <Btn block tone="secondary" busy={busy === "story-card"} disabled={busy !== null || issuingOff} onClick={askCard}>
+                  Pay by Visa card
+                </Btn>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+    if (step.action === "card-sign" && card) {
+      const text = note.trim() || `${who} is waiting on ${view.obligation.reference}; paying it once by single-use card.`;
+      return (
+        <div className="space-y-2.5">
+          <label htmlFor={noteId} className="block text-[12px] text-fg/60">
+            Your reason, signed onto the card
+          </label>
+          <TextArea id={noteId} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={500} placeholder={text} />
+          <Btn busy={busy === "story-card-sign"} disabled={busy !== null} onClick={() => signCard(card.id, text)}>
+            Sign the card
+          </Btn>
+        </div>
+      );
+    }
+    if (step.action === "card-pay") {
+      return (
+        <Btn busy={busy === "story-card-pay"} disabled={busy !== null} onClick={payCard}>
+          Pay through Visa TAP
         </Btn>
       );
     }
@@ -102,6 +173,7 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
         </div>
       );
     }
+    if (step.id === "card-clear") return <p className="text-[12.5px] text-fg/55">Waiting for Visa to clear the charge. Tessera proves it against the signed terms the moment it does.</p>;
     return null;
   }
 
@@ -113,8 +185,8 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
       <div className="tile flex items-center gap-3 rounded-[20px]! p-3.5">
         <SupplierMark supplier={story.supplier} size={42} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13.5px] font-semibold">{story.supplier.legalName}</p>
-          <p className="truncate text-[11.5px] leading-snug text-fg/55">
+          <p className="truncate text-[15px] font-semibold">{story.supplier.legalName}</p>
+          <p className="truncate text-[12.5px] leading-snug text-fg/55">
             {view.obligation.reference} · {view.obligation.method} {view.obligation.currency}
           </p>
         </div>
@@ -133,8 +205,8 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
               </span>
               <div className={`min-w-0 flex-1 pb-3 ${next ? "tile rounded-[18px]! p-3.5 ring-2 ring-accent" : yours ? "tile rounded-[18px]! p-3.5 ring-1 ring-warn/60" : "pt-1.5"}`}>
                 <div className="flex items-start justify-between gap-2">
-                  <p className={`text-[13px] leading-snug ${later ? "text-fg/40" : "font-medium text-fg"}`}>
-                    <span className="mr-1.5 text-[11px] font-normal text-fg/45">{step.actor === "supplier" ? who : ACTOR_NAME[step.actor]}</span>
+                  <p className={`text-[14.5px] leading-snug ${later ? "text-fg/40" : "font-medium text-fg"}`}>
+                    <span className="mr-1.5 text-[12px] font-normal text-fg/45">{step.actor === "supplier" ? who : ACTOR_NAME[step.actor]}</span>
                     {step.title}
                   </p>
                   {step.state === "done" ? (
@@ -149,7 +221,7 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
                     <Chip tone="warn">To do</Chip>
                   ) : null}
                 </div>
-                {step.state === "done" && step.after ? <p className="mt-1 text-[11.5px] leading-snug text-fg/55">{step.after}</p> : null}
+                {step.state === "done" && step.after ? <p className="mt-1 text-[13px] leading-snug text-fg/60">{step.after}</p> : null}
                 {next ? <div className="mt-3">{button(step)}</div> : null}
               </div>
             </li>

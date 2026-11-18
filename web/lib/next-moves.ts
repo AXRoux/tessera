@@ -29,32 +29,32 @@ const said = (reason: string): string => reasonText(reason).replace(/[.\s]+$/, "
 
 export function moveOf(item: IncidentSummary, options: { reader?: boolean } = {}): Move {
   const base = { item, agentCan: false };
-  if (item.status === "CLOSED") return { ...base, who: "done", label: "Certified", line: "Certified. Nothing left to do.", rank: RANK.DONE };
+  if (item.status === "CLOSED") return { ...base, who: "done", label: "Certified", line: "Certified and closed.", rank: RANK.DONE };
 
   // A person first: nothing the agent does can release an escalation or sign a payment.
   if (item.attention?.kind === "ESCALATED") {
-    return { ...base, who: "you", label: "Decide", line: `Handed to you: ${said(item.attention.reason)}.`, rank: RANK.ESCALATED };
+    return { ...base, who: "you", label: "Decide", line: `With you: ${said(item.attention.reason)}.`, rank: RANK.ESCALATED };
   }
   if (item.attention?.kind === "NEEDS_ACTION") {
     // A Visa card for the invoice waits for a signature: only a person can give it.
     if (item.status === "PAYING" && /Visa card/.test(item.attention.reason)) {
-      return { ...base, who: "you", label: "Sign card", line: "The agent asked for a single-use Visa card to pay it. Sign it, or decline it.", rank: RANK.NEEDS_ACTION };
+      return { ...base, who: "you", label: "Sign card", line: "A single-use Visa card awaits your signature.", rank: RANK.NEEDS_ACTION };
     }
     if (item.next?.action === "PAY_BY_CARD" && item.next.allowed.includes("PAY_BY_CARD")) {
-      return { ...base, who: "you", agentCan: true, label: "Pay by card", line: "Failed, the money is back, and the supplier is chasing it. Pay by single-use Visa card: the agent asks, you sign.", rank: RANK.NEEDS_ACTION };
+      return { ...base, who: "you", agentCan: true, label: "Pay by card", line: "Returned, and the supplier is waiting. Pay by single-use Visa card.", rank: RANK.NEEDS_ACTION };
     }
     // A failed payment is back in the wallet. Within the automatic limit the replacement needs no signature, so the agent
     // may send it as well as you; otherwise (or when Tessera would rather hand it over) it is yours alone.
     if (item.next?.action === "REPLACE" && item.next.allowed.includes("REPLACE") && item.next.autoReplace) {
-      return { ...base, who: "you", agentCan: true, label: "Replace", line: "Failed, and the money is back. The replacement is within the automatic limit: send it, or let the agent.", rank: RANK.NEEDS_ACTION };
+      return { ...base, who: "you", agentCan: true, label: "Replace", line: "Failed; the funds are back. Replace it, or let the agent.", rank: RANK.NEEDS_ACTION };
     }
     if (item.next?.action === "FUND") {
-      return { ...base, who: "you", agentCan: true, label: "Fund", line: "Failed, and its wallet is short for the replacement: one conversion first, then the new payment.", rank: RANK.NEEDS_ACTION };
+      return { ...base, who: "you", agentCan: true, label: "Fund", line: "Failed, and the wallet is short. Fund it, then replace.", rank: RANK.NEEDS_ACTION };
     }
-    return { ...base, who: "you", label: "Decide", line: `Needs your decision: ${said(item.attention.reason)}.`, rank: RANK.NEEDS_ACTION };
+    return { ...base, who: "you", label: "Decide", line: `Your call: ${said(item.attention.reason)}.`, rank: RANK.NEEDS_ACTION };
   }
   if (item.attention?.kind === "DRAFT") {
-    return { ...base, who: "you", label: "Send reply", line: "A reply to the supplier is drafted. Read it, then send it or bin it.", rank: RANK.DRAFT };
+    return { ...base, who: "you", label: "Send reply", line: "A reply to the supplier is ready for review.", rank: RANK.DRAFT };
   }
 
   // A supplier message nobody has read can change the decision, so it comes before anything final.
@@ -64,7 +64,7 @@ export function moveOf(item: IncidentSummary, options: { reader?: boolean } = {}
       who: options.reader === false ? "you" : "agent",
       agentCan: options.reader !== false,
       label: "Read message",
-      line: "The supplier wrote and nothing has read it yet. It may change what happens next.",
+      line: "The supplier has written. Read it before anything moves.",
       rank: RANK.READ,
     };
   }
@@ -74,26 +74,26 @@ export function moveOf(item: IncidentSummary, options: { reader?: boolean } = {}
   switch (next?.action) {
     case "REPLACE":
       return next.allowed.includes("REPLACE")
-        ? agent("Replace", "Failed, and the money is back. A replacement is within the automatic limit.", RANK.MONEY)
-        : { ...base, who: "you", label: "Decide", line: "Failed; replacing it needs your signature.", rank: RANK.NEEDS_ACTION };
+        ? agent("Replace", "Failed; the funds are back. Ready to replace.", RANK.MONEY)
+        : { ...base, who: "you", label: "Decide", line: "Failed. Replacing it needs your signature.", rank: RANK.NEEDS_ACTION };
     case "FUND":
-      return agent("Fund", "Failed, and its wallet is short for the replacement. One conversion first, then the new payment.", RANK.MONEY);
+      return agent("Fund", "Failed, and the wallet is short. Fund it, then replace.", RANK.MONEY);
     case "PAY_BY_CARD":
-      return agent("Pay by card", "Its single-use Visa card is signed. The agent pays the supplier's checkout through Visa TAP.", RANK.MONEY);
+      return agent("Pay by card", "Card signed. The agent pays through Visa TAP.", RANK.MONEY);
     case "RECOVER_INTENT":
-      return agent("Settle", "A request Airwallex never answered. Settle it by its request ID; it can never be sent twice.", RANK.MONEY);
+      return agent("Settle", "Airwallex never answered. Settle it by request ID.", RANK.MONEY);
     case "SEND_PROOF_TO_SUPPLIER":
-      return agent("Send proof", "The supplier says it never arrived, but Airwallex shows it paid. Send proof of payment; never pay twice.", RANK.SUPPLIER);
+      return agent("Send proof", "Paid, but the supplier hasn't seen it. Send proof.", RANK.SUPPLIER);
     case "REQUEST_CORRECTION":
-      return agent("Ask for details", "Bounced on the account details. Ask the supplier for corrected ones.", RANK.SUPPLIER);
+      return agent("Ask for details", "Returned on the account details. Ask for corrections.", RANK.SUPPLIER);
     case "SEND_STATUS_TO_SUPPLIER":
-      return agent("Update", "The supplier asked where it is. Tell them where it stands.", RANK.SUPPLIER);
+      return agent("Update", "The supplier asked for an update.", RANK.SUPPLIER);
     case "CLOSE":
       return next.allowed.includes("CLOSE")
-        ? agent("Certify", "Paid and through its hold window. Certify it to close the books.", RANK.CERTIFY)
-        : { ...base, who: "bank", label: "Holding", line: "Paid. Tessera waits out the hold window before it can be certified.", rank: RANK.WAIT };
+        ? agent("Certify", "Paid and past its hold. Ready to certify.", RANK.CERTIFY)
+        : { ...base, who: "bank", label: "Holding", line: "Paid. Holding before it can be certified.", rank: RANK.WAIT };
     case "ESCALATE":
-      return agent("Hand off", "Needs a person. The agent hands it over with its reasons.", RANK.HANDOFF);
+      return agent("Hand off", "Needs a person. The agent will hand it over.", RANK.HANDOFF);
     case "WAIT":
       return {
         ...base,
@@ -101,12 +101,12 @@ export function moveOf(item: IncidentSummary, options: { reader?: boolean } = {}
         label: item.latest?.state === "PAID" ? "Holding" : "With the bank",
         line:
           item.latest?.state === "PAID"
-            ? "Paid. Tessera waits out the hold window before it can be certified."
-            : "With the bank, inside its normal window. Nothing to do until it lands.",
+            ? "Paid. Holding before it can be certified."
+            : "In flight, within its normal window.",
         rank: RANK.WAIT,
       };
     default:
-      return { ...base, who: "bank", label: item.latest ? "With the bank" : "Not sent", line: "No move to make right now.", rank: RANK.WAIT };
+      return { ...base, who: "bank", label: item.latest ? "With the bank" : "Not sent", line: "Nothing to do yet.", rank: RANK.WAIT };
   }
 }
 

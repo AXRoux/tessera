@@ -16,7 +16,7 @@ function invoice(over: Partial<IncidentSummary> = {}): IncidentSummary {
 describe("the next move on each invoice", () => {
   it("names who makes it: a person for an escalation, the agent for a certifiable payment, nobody for one with the bank", () => {
     expect(moveOf(invoice({ attention: { kind: "ESCALATED", reason: "agent:claude: supplier changed banks by email." } }))).toMatchObject({
-      who: "you", label: "Decide", agentCan: false, line: "Handed to you: supplier changed banks by email.",
+      who: "you", label: "Decide", agentCan: false, line: "With you: supplier changed banks by email.",
     });
     const paid = invoice({ status: "PAID", latest: { seq: 1, state: "PAID", awxStatus: "PAID", failureCode: null }, next: { action: "CLOSE", allowed: ["CLOSE"], recheckAt: null } });
     expect(moveOf(paid)).toMatchObject({ who: "agent", label: "Certify", agentCan: true });

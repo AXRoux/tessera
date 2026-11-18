@@ -24,6 +24,7 @@ import { type ConfiguredModel, modelConfigured, modelFromEnv } from "../commande
 import { Commander } from "../commander/commander";
 import type { StructuredModel } from "../commander/evidence";
 import { DEFAULT_POLICY, LIVE_PACE } from "../commander/policy";
+import { SUPPLIERS } from "../demo/suppliers";
 import { OfflineReader } from "../demo/offline-reader";
 import { ScriptedAgentModel } from "../demo/scripted-agent";
 import { stageWalletOnSandbox } from "../demo/stage-wallet";
@@ -192,7 +193,11 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   const cards = new CardDesk({
     ledger, issuing, charger, balances: api, reserveFloorMinor: policy.reserveFloorMinor, agentKey: agentKeyFrom(approvalSecret),
     // An invoice card is cut for the supplier the invoice pays, by the name Airwallex holds for that beneficiary.
-    payeeName: async (beneficiaryId) => (await api.listBeneficiaries()).find((b) => b.id === beneficiaryId)?.nickname ?? null,
+    // A supplier on file is named as its invoices name it (Modal Labs, Inc.), never by Tessera's nickname for its payee.
+    payeeName: async (beneficiaryId) => {
+      const nickname = (await api.listBeneficiaries()).find((b) => b.id === beneficiaryId)?.nickname ?? null;
+      return SUPPLIERS.find((s) => s.payee.nickname === nickname)?.legalName ?? nickname;
+    },
   });
   // An invoice may be paid by card only where the agent can actually pay one: Issuing and a TAP merchant (sandbox, offline).
   const commander = new Commander({

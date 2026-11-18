@@ -70,25 +70,42 @@ function NotedAction({
   );
 }
 
-/** One move the code can make on its own: what it is, why it is (or is not) open, and the button. */
-function Move({ title, why, open, children }: { title: string; why: string; open: boolean; children: ReactNode }) {
+/** The one card at the top of Decide: what should happen now, in a sentence, with the button that does it. */
+function Now({ kicker, title, children, tone = "accent" }: { kicker: string; title: string; children: ReactNode; tone?: "accent" | "warn" | "quiet" }) {
+  const ring = tone === "accent" ? "ring-2 ring-accent/70" : tone === "warn" ? "ring-2 ring-warn/60" : "ring-1 ring-fg/10";
   return (
-    <li className={`flex items-center gap-4 rounded-[20px] px-4 py-3 ${open ? "tile ring-1 ring-accent/30" : "well"}`}>
-      <span className="min-w-0 flex-1">
-        <span className={`flex items-center gap-2 text-[13px] font-semibold tracking-[-0.01em] ${open ? "text-fg" : "text-fg/65"}`}>
-          <span aria-hidden className={`size-1.5 rounded-full ${open ? "bg-accent" : "bg-fg/25"}`} />
-          {title}
-        </span>
-        <span className="mt-0.5 block text-[12px] leading-snug text-fg/55">{why}</span>
-      </span>
-      <span className="shrink-0">{children}</span>
-    </li>
+    <section className={`tile space-y-3 rounded-[22px]! p-4 ${ring}`}>
+      <div>
+        <span className="kicker block">{kicker}</span>
+        <h3 className="mt-1 text-[17px] font-semibold leading-snug tracking-[-0.02em]">{title}</h3>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** One way to pay the invoice again, stacked above the other. */
+function Rail({ title, facts, children, open }: { title: string; facts: string[]; children: ReactNode; open: boolean }) {
+  return (
+    <div className={`flex flex-col gap-2.5 rounded-[18px] p-3.5 ${open ? "well" : "well opacity-60"}`}>
+      <p className="text-[14px] font-semibold">{title}</p>
+      <ul className="space-y-1">
+        {facts.map((f) => (
+          <li key={f} className="flex gap-2 text-[12.5px] leading-snug text-fg/65">
+            <span aria-hidden className="mt-[7px] size-1 shrink-0 rounded-full bg-fg/40" />
+            {f}
+          </li>
+        ))}
+      </ul>
+      {children}
+    </div>
   );
 }
 
 /**
- * Everything a person can do on an incident, in the order they would reach for it: a draft to send, the moves the code
- * can make by itself, and then the moves that need a signature, each folded until it is wanted.
+ * Everything a person can do on an incident, in the order they would reach for it: a draft to send, then what should
+ * happen now (and, when the invoice may be paid again, the two ways to do it: a transfer, or a single-use Visa card the
+ * agent pays through Visa TAP), then the moves that need a signature, each folded until it is wanted.
  */
 export function ActionsPanel({ view, operator, busy, run }: Props) {
   const noteId = useId();
@@ -103,17 +120,42 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
   const decision = view.assessment?.decision;
   const closed = view.obligation.status === "CLOSED";
   const escalated = view.obligation.status === "ESCALATED";
-  const canReplaceAuto = Boolean(decision?.allowed.includes("REPLACE") && decision.replacement?.autoApprovable);
+  const allowed = decision?.allowed ?? [];
+  const canReplaceAuto = Boolean(allowed.includes("REPLACE") && decision?.replacement?.autoApprovable);
+  const canCard = allowed.includes("PAY_BY_CARD");
   const refusedReplace = decision?.blocked.find((b) => b.action === "REPLACE")?.reason;
   const canRecover = decision?.recommended === "RECOVER_INTENT";
-  const canClose = Boolean(decision?.allowed.includes("CLOSE")) && !closed;
-  const refusedClose = decision?.blocked.find((b) => b.action === "CLOSE")?.reason;
+  const canClose = allowed.includes("CLOSE") && !closed;
   const releasable = (latest?.state === "DEAD" || latest?.state === "ABANDONED") && !closed;
   const canReview = releasable && view.evidenceHash !== null && note.trim().length >= NOTE_MIN;
   const stuck = view.attempts.filter((a) => a.state === "INTENT" || a.state === "LIVE");
   const funding = Boolean(decision?.funding) || view.conversions.length > 0;
   const name = operator.split("@")[0];
   const clean = (reason: string | undefined) => reason?.replace(/agent:[\w-]+:\s*/g, "");
+  const amount = money(view.obligation.amountMinor, view.obligation.currency);
+  const card = view.invoiceCard ?? null;
+  const cardHolds = card !== null && ["PENDING", "ISSUING", "ACTIVE", "FROZEN", "SPENT"].includes(card.state);
+  const supplier = view.story?.supplier.legalName ?? "the supplier";
+  // Airwallex answers "Invalid issuance details" when Issuing is not enabled for the business: say so, do not offer it again.
+  const issuingOff = card?.state === "FAILED" && /issuance/i.test(card.lastError ?? "");
+  const cardOpen = canCard && !issuingOff;
+  const firstReason = clean(decision?.reasons[0]);
+
+  const replace = () =>
+    run("replace", async () => {
+      await api(`obligations/${id}/replace`, Acknowledged, { method: "POST" });
+      return { tone: "ok", title: "Replacement sent", lines: ["New transfer under a fresh request ID. The original stays cancelled."] };
+    });
+  const askCard = () =>
+    run("card", async () => {
+      await api(`obligations/${id}/card`, Acknowledged, { method: "POST", body: {} });
+      return { tone: "ok", title: "Card requested", lines: [`A single-use Visa card for exactly ${amount} waits for your signature. No transfer can be made while it holds the invoice.`] };
+    });
+  const certify = () =>
+    run("close", async () => {
+      const result = await api(`obligations/${id}/close`, Acknowledged, { method: "POST" });
+      return { tone: "ok", title: "Reconciled and certified", lines: [`Certificate ${String(result.hash).slice(0, 16)}…`] };
+    });
 
   const approve = (evidenceHash: string) =>
     run("approve", async () => {
@@ -143,82 +185,113 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
       return { tone: "ok", title: "Released and sent", lines: [`Approved by ${operator}. A new payment is on its way.`] };
     });
 
+  /** What should happen now, decided by policy on the ledger as it stands. */
+  function now(): ReactNode {
+    if (closed) {
+      return (
+        <Now kicker="Done" title="Certified. Nothing left to do." tone="quiet">
+          <p className="text-[13px] leading-relaxed text-fg/65">The certificate is under Evidence, sealed to the history that produced it.</p>
+        </Now>
+      );
+    }
+    if (cardHolds) {
+      return <CardPanel view={view} operator={operator} busy={busy} run={run} />;
+    }
+    if ((allowed.includes("REPLACE") || canCard) && latest?.state === "DEAD") {
+      return (
+        <Now kicker="Now" title={`Pay it again, once: ${amount}`}>
+          <p className="text-[13px] leading-relaxed text-fg/65">{firstReason ?? "The first payment is cancelled and the money is back."} Choose how the second payment travels; either one holds the invoice so it can only be paid once.</p>
+          <div className="grid gap-2.5">
+            <Rail
+              title="Bank transfer"
+              open={canReplaceAuto}
+              facts={["To the account on file, under a fresh request ID", "Arrives within the usual settlement window", canReplaceAuto ? "Within the automatic limit" : (clean(refusedReplace) ?? "Needs a signature")]}
+            >
+              <Btn block disabled={!canReplaceAuto || busy !== null} busy={busy === "replace"} onClick={() => void replace()}>
+                Send replacement
+              </Btn>
+            </Rail>
+            <Rail
+              title="Single-use Visa card"
+              open={cardOpen}
+              facts={[
+                `Exactly ${amount}, payable only to ${supplier}`,
+                "You sign it; the agent pays through Visa TAP",
+                issuingOff ? "Card issuing isn't enabled on this Airwallex account" : canCard ? "Clears in minutes" : "Not offered for this invoice",
+              ]}
+            >
+              <Btn block tone="secondary" disabled={!cardOpen || busy !== null} busy={busy === "card"} onClick={() => void askCard()}>
+                Pay by Visa card
+              </Btn>
+            </Rail>
+          </div>
+          {card && !cardHolds && !issuingOff ? <p className="text-[12px] text-fg/55">The last card was {card.state.toLowerCase()}{card.lastError ? `: ${card.lastError}` : ""}.</p> : null}
+        </Now>
+      );
+    }
+    if (decision?.recommended === "FUND" && funding) {
+      return (
+        <Now kicker="Now" title="Fund the replacement, then send it">
+          <p className="text-[13px] leading-relaxed text-fg/65">{firstReason}</p>
+          <FundingPanel view={view} operator={operator} busy={busy} run={run} />
+        </Now>
+      );
+    }
+    if (canClose) {
+      return (
+        <Now kicker="Now" title="Reconcile and certify">
+          <p className="text-[13px] leading-relaxed text-fg/65">Paid and through its hold window. Tessera matches every wallet line against Airwallex, then signs the certificate.</p>
+          <Btn busy={busy === "close"} disabled={busy !== null} onClick={() => void certify()}>
+            Certify
+          </Btn>
+        </Now>
+      );
+    }
+    if (canRecover) {
+      return (
+        <Now kicker="Now" title="Settle the open request">
+          <p className="text-[13px] leading-relaxed text-fg/65">Airwallex never answered. Tessera looks the attempt up by its original request ID; it never sends a second one.</p>
+          <Btn
+            busy={busy === "recover"}
+            onClick={() =>
+              run("recover", async () => {
+                await api(`obligations/${id}/recover`, Acknowledged, { method: "POST" });
+                return { tone: "ok", title: "Request settled", lines: ["Found by its original request ID. No second payment was created."] };
+              })
+            }
+          >
+            Settle
+          </Btn>
+        </Now>
+      );
+    }
+    if (escalated || decision?.recommended === "ESCALATE") {
+      return (
+        <Now kicker="Now" title="Yours to decide" tone="warn">
+          <p className="text-[13px] leading-relaxed text-fg/65">{firstReason ?? "Policy will not settle this alone."} Nothing moves until you sign one of the moves below.</p>
+        </Now>
+      );
+    }
+    if (decision?.recommended === "SEND_PROOF_TO_SUPPLIER" || decision?.recommended === "SEND_STATUS_TO_SUPPLIER" || decision?.recommended === "REQUEST_CORRECTION") {
+      return (
+        <Now kicker="Now" title="Write to the supplier" tone="quiet">
+          <p className="text-[13px] leading-relaxed text-fg/65">{firstReason} The agent can draft the reply under Ask the agent; a person sends it.</p>
+        </Now>
+      );
+    }
+    return (
+      <Now kicker="Now" title="Nothing to do yet" tone="quiet">
+        <p className="text-[13px] leading-relaxed text-fg/65">{firstReason ?? "No move is needed right now."}</p>
+        {decision?.recheckAt ? <p className="text-[12px] text-fg/50">Tessera looks again at {new Date(decision.recheckAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</p> : null}
+      </Now>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <DraftPanel view={view} busy={busy} run={run} />
 
-      <CardPanel view={view} operator={operator} busy={busy} run={run} />
-
-      <div>
-        <span className="kicker block">Moves policy allows</span>
-        <ul className="mt-2.5 space-y-2">
-          <Move
-            title="Replace the payment"
-            open={canReplaceAuto}
-            why={
-              canReplaceAuto
-                ? "Within the automatic limit. The original stays cancelled; the new one gets a fresh request ID."
-                : (clean(refusedReplace) ?? "An automatic replacement does not apply here.")
-            }
-          >
-            <Btn
-              tone={canReplaceAuto ? "primary" : "secondary"}
-              disabled={!canReplaceAuto}
-              busy={busy === "replace"}
-              onClick={() =>
-                run("replace", async () => {
-                  await api(`obligations/${id}/replace`, Acknowledged, { method: "POST" });
-                  return { tone: "ok", title: "Replacement sent", lines: ["A new payment is on its way under a fresh request ID. The original stays cancelled."] };
-                })
-              }
-            >
-              Replace
-            </Btn>
-          </Move>
-
-          {canRecover ? (
-            <Move title="Settle the open request" open why="Tessera looks the attempt up by its original request ID. It will never send a second one.">
-              <Btn
-                busy={busy === "recover"}
-                onClick={() =>
-                  run("recover", async () => {
-                    await api(`obligations/${id}/recover`, Acknowledged, { method: "POST" });
-                    return { tone: "ok", title: "Request settled", lines: ["Found by its original request ID. No second payment was created."] };
-                  })
-                }
-              >
-                Settle
-              </Btn>
-            </Move>
-          ) : null}
-
-          <Move
-            title="Reconcile and certify"
-            open={canClose}
-            why={
-              closed
-                ? "Already certified. The certificate sits under The evidence."
-                : canClose
-                  ? "Match every wallet line against Airwallex, then seal the certificate."
-                  : (clean(refusedClose) ?? "Certifying is not yet among the safe moves.")
-            }
-          >
-            <Btn
-              tone={canClose ? "primary" : "secondary"}
-              disabled={!canClose}
-              busy={busy === "close"}
-              onClick={() =>
-                run("close", async () => {
-                  const result = await api(`obligations/${id}/close`, Acknowledged, { method: "POST" });
-                  return { tone: "ok", title: "Reconciled and certified", lines: [`Certificate ${String(result.hash).slice(0, 16)}…`] };
-                })
-              }
-            >
-              Certify
-            </Btn>
-          </Move>
-        </ul>
-      </div>
+      {now()}
 
       <div>
         <span className="kicker block">Moves that need your signature</span>
@@ -275,7 +348,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
             </Fold>
           ))}
 
-          {funding ? (
+          {funding && decision?.recommended !== "FUND" ? (
             <Fold title="Fund the replacement" sub="Convert from another wallet, within the policy's floors">
               <FundingPanel view={view} operator={operator} busy={busy} run={run} />
             </Fold>

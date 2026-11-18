@@ -44,14 +44,14 @@ export function attentionOf(
     return { kind: "ESCALATED", reason: obligation.escalationReason ?? "Handed to a person." };
   }
   if (obligation.status !== "CLOSED" && card?.state === "PENDING") {
-    return { kind: "NEEDS_ACTION", reason: "A single-use Visa card to pay this invoice is waiting for your signature." };
+    return { kind: "NEEDS_ACTION", reason: "A single-use Visa card awaits your signature." };
   }
   if (obligation.status === "NEEDS_ACTION" && latest) {
-    const code = latest.failureCode ? ` with failure ${latest.failureCode}` : "";
-    return { kind: "NEEDS_ACTION", reason: `Attempt ${latest.seq} was cancelled${code}. The money is back; a replacement needs a decision.` };
+    const code = latest.failureCode ? ` (${latest.failureCode})` : "";
+    return { kind: "NEEDS_ACTION", reason: `Payment ${latest.seq} failed${code}; the funds are back. Decide how to pay it again.` };
   }
   if (obligation.status !== "CLOSED" && pendingDraft(events)) {
-    return { kind: "DRAFT", reason: "A drafted reply to the supplier is waiting for a person to send it." };
+    return { kind: "DRAFT", reason: "A reply to the supplier is ready to send." };
   }
   return null;
 }
