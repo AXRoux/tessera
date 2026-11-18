@@ -37,7 +37,7 @@ export function SandboxPanel({ view, busy, run, clockMs = null }: { view: Incide
 
   return (
     <div className="space-y-4">
-      <p className="well rounded-[18px]! px-4 py-3 text-[12.5px] leading-relaxed text-fg/65">
+      <p className="well rounded-[18px]! px-4 py-3 text-[13.5px] leading-relaxed text-fg/65">
         Play the bank&rsquo;s part. These buttons drive Airwallex&rsquo;s own simulator, so you can carry an exception from first failure to certificate without waiting on anyone. Sandbox only;
         no real money.
         {clockMs ? (
@@ -48,7 +48,7 @@ export function SandboxPanel({ view, busy, run, clockMs = null }: { view: Incide
         ) : null}
       </p>
       {!movable ? (
-        <p className="text-[12px] leading-relaxed text-fg/50">There is no live transfer on this incident to move just now.</p>
+        <p className="text-[13px] leading-relaxed text-fg/50">There is no live transfer on this incident to move just now.</p>
       ) : null}
       <div>
         <span className="kicker block">A good outcome</span>

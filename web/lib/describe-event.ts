@@ -1,9 +1,13 @@
-import { actorLabel, reasonText } from "./agent-verdict";
+import { actorLabel, actorSubject, reasonText } from "./agent-verdict";
 import { money, titleCase } from "./format";
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value)) : {};
 }
+
+/** Who acted, opening a sentence ("The agent", or the person's address) or inside one ("the agent"). */
+const subject = (value: string | null, fallback: string): string => (value ? actorSubject(value) : fallback);
+const object = (value: string | null, fallback: string): string => (value ? actorSubject(value).replace(/^The /, "the ") : fallback);
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
 /** A minor-unit amount from an event payload, or "?" when the payload does not carry one. */
@@ -169,12 +173,12 @@ export function describeEvent(type: string, payload: unknown): string {
       return `Handed to a person: ${bare(reasonText(text(p.reason) ?? "")) || "no reason recorded"}.`;
     case "EVIDENCE_RECORDED": {
       const evidence = record(p.evidence);
-      const by = text(p.enteredBy) ?? "an operator";
+      const by = object(text(p.enteredBy), "an operator");
       const who = text(p.source) === "model" ? `read by the reader model, called by ${by}` : `entered by hand by ${by}`;
       return `Supplier evidence ${who}: ${text(evidence.summary) ?? "no summary"}`;
     }
     case "AGENT_TOOL_CALL": {
-      const who = actorLabel(text(p.actor) ?? "agent");
+      const who = actorSubject(text(p.actor) ?? "agent:agent");
       const raw = text(p.tool) ?? "a tool";
       const outcome = text(p.outcome);
       if (outcome === "ok") return `${who} ${TOOL_DONE[raw] ?? `used “${raw.replaceAll("_", " ")}”`}.`;
@@ -182,19 +186,19 @@ export function describeEvent(type: string, payload: unknown): string {
       return `${who} tried to ${TOOL_TRIED[raw] ?? raw.replaceAll("_", " ")}, and policy ${outcome === "refused" ? "refused" : "turned it away"}${detail ? `: ${detail}.` : "."}`;
     }
     case "DRAFT_REPLY":
-      return `${text(p.actor) ?? "An agent"} drafted a ${(text(p.kind) ?? "reply").toLowerCase()} reply for the supplier. Nothing was sent; a person decides.`;
+      return `${subject(text(p.actor), "The agent")} drafted a ${(text(p.kind) ?? "reply").toLowerCase()} reply for the supplier. Nothing was sent; a person decides.`;
     case "DRAFT_RESOLVED":
       return text(p.resolution) === "SENT"
-        ? `${text(p.by) ?? "A person"} sent the drafted reply to the supplier.`
-        : `${text(p.by) ?? "A person"} discarded the drafted reply.`;
+        ? `${subject(text(p.by), "A person")} sent the drafted reply to the supplier.`
+        : `${subject(text(p.by), "A person")} discarded the drafted reply.`;
     case "AGENT_DEFERRED":
-      return `${text(p.actor) ?? "An agent"} chose to wait: ${bare(text(p.note)) ?? "no reason recorded"}.`;
+      return `${subject(text(p.actor), "The agent")} chose to wait: ${bare(text(p.note)) ?? "no reason recorded"}.`;
     case "CLOSED":
       return "Every line matched against Airwallex. Certified, and sealed.";
     case "ESCALATION_RESOLVED":
-      return `${text(p.by) ?? "A person"} took the incident back from escalation: "${bare(text(p.note)) ?? "no note"}".`;
+      return `${subject(text(p.by), "A person")} took the incident back from escalation: "${bare(text(p.note)) ?? "no note"}".`;
     case "ATTEMPT_RESOLVED":
-      return `${text(p.by) ?? "A person"} released the payment lock after checking Airwallex (${text(p.from) ?? "?"} to ${text(p.to) ?? "?"}): "${bare(text(p.note)) ?? "no note"}".`;
+      return `${subject(text(p.by), "A person")} released the payment lock after checking Airwallex (${text(p.from) ?? "?"} to ${text(p.to) ?? "?"}): "${bare(text(p.note)) ?? "no note"}".`;
     case "INTENT_STALE":
       return `An attempt has waited ${String(p.ageHours ?? "?")}h without a transfer at Airwallex. Its lock stays until a person releases it.`;
     case "CERTIFICATE_REVOKED":
@@ -207,9 +211,9 @@ export function describeEvent(type: string, payload: unknown): string {
       return `${what}. Verified on receipt.`;
     }
     case "REQUEST_APPROVED":
-      return `Approved by ${text(p.by) ?? "a person"}: “${bare(text(p.note)) ?? "no note"}”.`;
+      return `Approved by ${object(text(p.by), "a person")}: “${bare(text(p.note)) ?? "no note"}”.`;
     case "REQUEST_DECLINED":
-      return `Declined by ${text(p.by) ?? "a person"}: “${bare(text(p.note)) ?? "no note"}”.`;
+      return `Declined by ${object(text(p.by), "a person")}: “${bare(text(p.note)) ?? "no note"}”.`;
     case "STORY_STEP":
       return text(p.actor) === "bank"
         ? `Airwallex sandbox update${text(p.failureType) ? `: ${titleCase(text(p.failureType)!)}` : ""}, run by ${text(p.by) ?? "the operator"}. Tessera read the result back from Airwallex.`
@@ -217,7 +221,7 @@ export function describeEvent(type: string, payload: unknown): string {
     case "INBOX_RECEIVED":
       return `A message from ${text(p.from) ?? "the supplier"} arrived in the inbox (${String(p.chars ?? "?")} characters). Only its fingerprint is in the ledger.`;
     case "PAYMENT_REFUSED":
-      return `A payment requested by ${text(p.by) ?? "someone"} was refused by policy${text(p.message) ? `: ${bare(withoutIds(text(p.message)))}` : ""}.`;
+      return `A payment requested by ${object(text(p.by), "someone")} was refused by policy${text(p.message) ? `: ${bare(withoutIds(text(p.message)))}` : ""}.`;
     case "WEBHOOK_RECEIVED": {
       const claimed = text(p.claimedStatus);
       const outcome = WEBHOOK_OUTCOME[text(p.outcome) ?? ""] ?? "it was recorded";
@@ -236,7 +240,7 @@ export function describeEvent(type: string, payload: unknown): string {
     case "AGENT_WAKE": {
       const names = Array.isArray(p.eventNames) ? p.eventNames.filter((n): n is string => typeof n === "string") : [];
       const cause = names.length > 0 ? names.join(" and ") : "a bank-side change";
-      const who = text(p.actor) ?? "An agent";
+      const who = subject(text(p.actor), "The agent");
       if (text(p.outcome) === "started") return `${who} was woken by ${cause} to work this incident only.`;
       return `${who} was not woken for ${cause} (${text(p.outcome) ?? "skipped"}): ${bare(text(p.detail)) ?? "no reason recorded"}.`;
     }
@@ -273,15 +277,15 @@ export function describeEvent(type: string, payload: unknown): string {
     case "FUNDING_REPLANNED":
       return `A quote was thrown away and the conversion planned again: ${bare(text(p.reason)) ?? "no reason given"}.`;
     case "CARD_REQUESTED":
-      return `${actorLabel(text(p.requestedBy) ?? "someone")} asked for a single-use Visa card for exactly ${amount(p.amountMinor, p.currency)}, payable only to ${bare(text(p.merchant)) ?? "the supplier"}. It takes the invoice's lock: no transfer while it holds. A person must sign it.`;
+      return `${actorSubject(text(p.requestedBy) ?? "someone")} asked for a single-use Visa card for exactly ${amount(p.amountMinor, p.currency)}, payable only to ${bare(text(p.merchant)) ?? "the supplier"}. It takes the invoice's lock: no transfer while it holds. A person must sign it.`;
     case "CARD_REFUSED": {
       const reasons = Array.isArray(p.reasons) ? p.reasons.filter((r): r is string => typeof r === "string") : [];
       return `The card policy refused the card: ${bare(reasons.join("; ")) || "no reason given"}.`;
     }
     case "CARD_DECIDED":
       return text(p.decision) === "APPROVED"
-        ? `${text(p.by) ?? "A person"} signed the card: "${bare(text(p.note)) ?? "no note"}".`
-        : `${text(p.by) ?? "A person"} declined the card, releasing the invoice: "${bare(text(p.note)) ?? "no note"}".`;
+        ? `${subject(text(p.by), "A person")} signed the card: "${bare(text(p.note)) ?? "no note"}".`
+        : `${subject(text(p.by), "A person")} declined the card, releasing the invoice: "${bare(text(p.note)) ?? "no note"}".`;
     case "CARD_ISSUE_INTENT":
       return "The card's issue was sealed in the ledger before Airwallex was asked to cut it.";
     case "CARD_ISSUED":
@@ -292,7 +296,7 @@ export function describeEvent(type: string, payload: unknown): string {
       const tap = record(p.tap);
       const verdict = tap.verified === true ? "verified the agent's Visa Trusted Agent Protocol signature" : `rejected the agent's signature (${bare(text(tap.reason)) ?? "no reason"})`;
       const status = text(p.status);
-      return `${actorLabel(text(p.actor) ?? "The agent")} paid at the supplier's checkout${text(p.invoice) ? ` for ${text(p.invoice)}` : ""}. The merchant ${verdict}${status === "APPROVED" ? `, and the charge went through (order ${text(p.orderId) ?? "?"}).` : status === "DECLINED" ? `, but the card declined: ${bare(text(p.reason)) ?? "no reason"}.` : "."}`;
+      return `${actorSubject(text(p.actor) ?? "agent:agent")} paid at the supplier's checkout${text(p.invoice) ? ` for ${text(p.invoice)}` : ""}. The merchant ${verdict}${status === "APPROVED" ? `, and the charge went through (order ${text(p.orderId) ?? "?"}).` : status === "DECLINED" ? `, but the card declined: ${bare(text(p.reason)) ?? "no reason"}.` : "."}`;
     }
     case "CARD_CHARGE":
       return `Airwallex reported a card ${(text(p.type) ?? "charge").toLowerCase()} of ${amount(p.amountMinor, p.currency)} at ${text(p.merchant) ?? "an unnamed merchant"}: ${(text(p.status) ?? "unknown").toLowerCase()}${text(p.failureReason) ? ` (${text(p.failureReason)})` : ""}.`;

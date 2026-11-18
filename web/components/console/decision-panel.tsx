@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { actorLabel, reasonText } from "@/lib/agent-verdict";
+import { actorSubject, reasonText } from "@/lib/agent-verdict";
 import { Acknowledged, api } from "@/lib/client-api";
 import type { RunAction } from "@/lib/use-incident";
 import { ago } from "@/lib/format";
@@ -58,7 +58,7 @@ function SeverityMeter({ severity }: { severity: Decision["severity"] }) {
           <span key={n} className={`h-3 w-[5px] rounded-full ${n <= level ? on : "bg-fg/20"}`} />
         ))}
       </span>
-      <span className="text-[11.5px] font-medium text-fg/80">{label}</span>
+      <span className="text-[12.5px] font-medium text-fg/80">{label}</span>
     </span>
   );
 }
@@ -73,7 +73,7 @@ function escalatedBy(events: IncidentView["events"]): { by: string | null; at: s
     return p?.tool === "escalate_to_human" && p.outcome === "ok";
   });
   const actor = (audit?.payload as { actor?: unknown } | null | undefined)?.actor;
-  return { by: typeof actor === "string" ? actorLabel(actor) : null, at: escalated.ts };
+  return { by: typeof actor === "string" ? actorSubject(actor).replace(/^The /, "the ") : null, at: escalated.ts };
 }
 
 /** Reasons arrive with the agent's own prefix ("agent:claude: …"); in a sentence the prefix is noise. */
@@ -127,7 +127,7 @@ export function DecisionPanel({ view, step = 1, act }: { view: IncidentView; ste
         {!assessment ? (
           <>
             <h2 className="mt-3 text-[clamp(26px,2.4vw,38px)] font-semibold leading-[1.05] tracking-[-0.045em]">No recommendation, for now</h2>
-            <p className="mt-3 max-w-xl text-[13.5px] leading-relaxed text-fg/65">{assessmentError ?? "The assessment could not be reached."} The history alongside remains the record of truth.</p>
+            <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-fg/65">{assessmentError ?? "The assessment could not be reached."} The history alongside remains the record of truth.</p>
           </>
         ) : (
           <Recommendation view={view} decision={assessment.decision} act={act} />
@@ -154,12 +154,12 @@ function Recommendation({ view, decision: d, act }: { view: IncidentView; decisi
 
   return (
     <>
-      <p className="mt-3 text-[12.5px] text-fg/55">Tessera recommends</p>
+      <p className="mt-3 text-[13.5px] text-fg/55">Tessera recommends</p>
       <h2 className="mt-1 text-[clamp(28px,2.6vw,42px)] font-semibold leading-[1.02] tracking-[-0.05em]">{closed ? "Certified. Nothing left to do." : HEADLINE[d.recommended]}</h2>
 
       <div className="mt-4 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[12px] text-fg/55">Safe right now</span>
-        {d.allowed.length === 0 ? <span className="text-[12px] text-fg/50">nothing</span> : null}
+        <span className="mr-1 text-[13px] text-fg/55">Safe right now</span>
+        {d.allowed.length === 0 ? <span className="text-[13px] text-fg/50">nothing</span> : null}
         {d.allowed.map((action) => (
           <Chip key={action} tone={action === d.recommended ? "accent" : "neutral"}>
             {SHORT[action]}
@@ -170,7 +170,7 @@ function Recommendation({ view, decision: d, act }: { view: IncidentView; decisi
       {act && !closed && d.recommended === "CLOSE" && d.allowed.includes("CLOSE") ? (
         // Paid is not the end: the last step is a person's (or the agent's), and it belongs next to the recommendation.
         <Tile className="mt-5 rounded-[22px]! px-4 py-4">
-          <p className="text-[13px] leading-relaxed text-fg/80">
+          <p className="text-[14px] leading-relaxed text-fg/80">
             {unread > 0
               ? `Paid, but the supplier has written since. Read ${unread === 1 ? "their message" : "their messages"} under Evidence › Supplier before certifying.`
               : "Paid. One step remains: Tessera matches every wallet line against Airwallex and signs the certificate."}
@@ -188,7 +188,7 @@ function Recommendation({ view, decision: d, act }: { view: IncidentView; decisi
             >
               Certify and close
             </Btn>
-            <span className="text-[11.5px] text-fg/50">Moves no money.</span>
+            <span className="text-[12.5px] text-fg/50">Moves no money.</span>
           </div>
         </Tile>
       ) : null}
@@ -199,7 +199,7 @@ function Recommendation({ view, decision: d, act }: { view: IncidentView; decisi
         {escalated ? (
           <Tile className="rounded-[22px]! px-4 py-3.5">
             <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-[13px] font-semibold">
+              <span className="flex items-center gap-2 text-[14px] font-semibold">
                 <span aria-hidden className="size-2 rounded-full bg-warn" />
                 Handed to you{handoff?.by ? ` by ${handoff.by}` : ""}
               </span>
@@ -209,8 +209,8 @@ function Recommendation({ view, decision: d, act }: { view: IncidentView; decisi
                 </span>
               ) : null}
             </div>
-            <blockquote className="mt-2 text-[13.5px] leading-relaxed text-fg/90">&ldquo;{reasonText(view.obligation.escalationReason ?? "No reason was recorded.")}&rdquo;</blockquote>
-            <p className="mt-2.5 text-[12px] leading-relaxed text-fg/50">Nothing moves until you decide. Take it back in writing under Your move, or leave it where it is.</p>
+            <blockquote className="mt-2 text-[15px] leading-relaxed text-fg/90">&ldquo;{reasonText(view.obligation.escalationReason ?? "No reason was recorded.")}&rdquo;</blockquote>
+            <p className="mt-2.5 text-[13px] leading-relaxed text-fg/50">Nothing moves until you decide. Take it back in writing under Your move, or leave it where it is.</p>
           </Tile>
         ) : null}
       </div>
@@ -222,7 +222,7 @@ function Recommendation({ view, decision: d, act }: { view: IncidentView; decisi
             {reasons.map((reason, i) => (
               <li key={i} className="flex gap-3">
                 <span className="well readout mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full! text-[10.5px] text-fg/70">{i + 1}</span>
-                <p className="text-[13.5px] leading-relaxed text-fg/85">{reason}</p>
+                <p className="text-[15px] leading-relaxed text-fg/85">{reason}</p>
               </li>
             ))}
           </ol>
@@ -235,13 +235,13 @@ function Recommendation({ view, decision: d, act }: { view: IncidentView; decisi
           <ul className="mt-2.5 space-y-2">
             {blocked.map((group) => (
               <li key={group.action} className="well rounded-[18px]! px-4 py-2.5">
-                <span className="flex items-center gap-2 text-[12.5px] font-semibold">
+                <span className="flex items-center gap-2 text-[13.5px] font-semibold">
                   <span aria-hidden className="size-1.5 rounded-full bg-bad" />
                   {SHORT[group.action]}
                 </span>
                 <ul className="mt-1 space-y-0.5">
                   {[...new Set(group.reasons)].map((reason) => (
-                    <li key={reason} className="text-[12.5px] leading-relaxed text-fg/60">
+                    <li key={reason} className="text-[13.5px] leading-relaxed text-fg/60">
                       {reason}
                     </li>
                   ))}

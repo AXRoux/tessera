@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Acknowledged, api } from "@/lib/client-api";
-import { actorLabel } from "@/lib/agent-verdict";
+import { actorSubject } from "@/lib/agent-verdict";
 import { ago } from "@/lib/format";
 import type { IncidentView } from "../../../src/server/wire";
 
@@ -38,20 +38,20 @@ export function DraftPanel({ view, busy, run }: { view: IncidentView; busy: stri
   return (
     <div className="tile rounded-[22px]! p-4 ring-1 ring-accent/30">
       <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-2 text-[13.5px] font-semibold"><span aria-hidden className="size-2 rounded-full bg-accent" />A reply, drafted for you</span>
+        <span className="flex items-center gap-2 text-[15px] font-semibold"><span aria-hidden className="size-2 rounded-full bg-accent" />A reply, drafted for you</span>
         <span className="well rounded-full! px-2.5 py-1 text-[11px] font-medium text-accent">{KIND[draft.kind]}</span>
       </div>
-      <p className="well mt-3 whitespace-pre-line rounded-[16px]! px-4 py-3 text-[13px] leading-relaxed">{draft.message}</p>
+      <p className="well mt-3 whitespace-pre-line rounded-[16px]! px-4 py-3 text-[14px] leading-relaxed">{draft.message}</p>
       <div className="mt-2.5">
         <p className="text-[11px] text-fg/45">Added by Tessera from the ledger, not by the agent</p>
-        <ul className="mt-1 space-y-0.5 readout text-[11.5px] text-fg/65">
+        <ul className="mt-1 space-y-0.5 readout text-[12.5px] text-fg/65">
           {draft.facts.map((fact) => (
             <li key={fact}>{fact}</li>
           ))}
         </ul>
       </div>
-      <p suppressHydrationWarning className="mt-3 text-[12px] leading-relaxed text-fg/55">
-        Written by {actorLabel(draft.actor)} {ago(draft.at)}. Tessera sends nothing on its own: copy it, send it from your mail, then mark it here. Drafts carrying account details,
+      <p suppressHydrationWarning className="mt-3 text-[13px] leading-relaxed text-fg/55">
+        Written by {actorSubject(draft.actor).replace(/^The /, "the ")} {ago(draft.at)}. Tessera sends nothing on its own: copy it, send it from your mail, then mark it here. Drafts carrying account details,
         links or a promise of another payment are refused by policy.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -65,7 +65,7 @@ export function DraftPanel({ view, busy, run }: { view: IncidentView; busy: stri
           type="button"
           disabled={busy !== null}
           onClick={() => resolve("DISCARDED")}
-          className="ml-auto cursor-pointer text-[12px] text-fg/55 underline underline-offset-4 hover:text-fg disabled:opacity-50"
+          className="ml-auto cursor-pointer text-[13px] text-fg/55 underline underline-offset-4 hover:text-fg disabled:opacity-50"
         >
           Set it aside
         </button>

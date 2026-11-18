@@ -22,7 +22,7 @@ function Step({ n, label, state }: { n: number; label: string; state: "done" | "
       >
         {state === "done" ? "✓" : n}
       </span>
-      <span className={`text-[12.5px] ${state === "later" ? "text-fg/45" : "text-fg/85"}`}>{label}</span>
+      <span className={`text-[13.5px] ${state === "later" ? "text-fg/45" : "text-fg/85"}`}>{label}</span>
     </li>
   );
 }
@@ -80,7 +80,7 @@ export function CardPanel({ view, operator, busy, run }: { view: IncidentView; o
     <div className="tile space-y-4 rounded-[22px]! p-4">
       <div>
         <span className="kicker block">Pay by Visa card</span>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-fg/60">
+        <p className="mt-1.5 text-[13px] leading-relaxed text-fg/60">
           Instead of a second transfer: one single-use card for exactly {amount}, payable only to this supplier, sharing the invoice&rsquo;s lock so it can never be paid twice. A person signs it; the agent
           pays the supplier&rsquo;s checkout through Visa&rsquo;s Trusted Agent Protocol.
         </p>
@@ -101,7 +101,7 @@ export function CardPanel({ view, operator, busy, run }: { view: IncidentView; o
 
       {!holds && allowed ? (
         <>
-          {card ? <p className="text-[12px] leading-relaxed text-fg/55">The last card was {card.state.toLowerCase()}{card.lastError ? `: ${card.lastError}` : ""}.</p> : null}
+          {card ? <p className="text-[13px] leading-relaxed text-fg/55">The last card was {card.state.toLowerCase()}{card.lastError ? `: ${card.lastError}` : ""}.</p> : null}
           <Btn block busy={busy === "card"} onClick={() => void ask()}>
             Ask for a card for {amount}
           </Btn>
@@ -109,7 +109,7 @@ export function CardPanel({ view, operator, busy, run }: { view: IncidentView; o
       ) : null}
 
       {!holds && !allowed && card ? (
-        <p className="text-[12px] leading-relaxed text-fg/55">
+        <p className="text-[13px] leading-relaxed text-fg/55">
           The card was {card.state.toLowerCase()}
           {card.lastError ? `: ${card.lastError}` : ""}. {decision?.blocked.find((b) => b.action === "PAY_BY_CARD")?.reason ?? "Paying by card is not among the safe moves right now."}
         </p>
@@ -117,7 +117,7 @@ export function CardPanel({ view, operator, busy, run }: { view: IncidentView; o
 
       {card && card.state === "PENDING" ? (
         <div className="space-y-3">
-          <p className="text-[12px] leading-relaxed text-fg/60">
+          <p className="text-[13px] leading-relaxed text-fg/60">
             Asked for by {card.byAgent ? card.requestedBy.replace(/^agent:/, "the agent ") : card.requestedBy} {ago(card.createdAt)}: &ldquo;{card.reason}&rdquo;
           </p>
           <Field label="Why is it safe to pay this supplier by card?" htmlFor={noteId} hint={note.trim().length < NOTE_MIN ? "A sentence, in your own words." : undefined}>
@@ -139,14 +139,14 @@ export function CardPanel({ view, operator, busy, run }: { view: IncidentView; o
           <Btn block disabled={!allowed} busy={busy === "card-pay"} onClick={() => void pay()}>
             Have the agent pay {amount} through Visa TAP
           </Btn>
-          <p className="text-[11.5px] leading-relaxed text-fg/50">
+          <p className="text-[12.5px] leading-relaxed text-fg/50">
             Signed with the agent&rsquo;s key over this invoice&rsquo;s own payment path; the merchant verifies it before it charges. The amount is the invoice&rsquo;s, never typed.
           </p>
         </div>
       ) : null}
 
       {card && card.spentMinor > 0 ? (
-        <ul className="space-y-1 text-[12px] leading-relaxed text-fg/70">
+        <ul className="space-y-1 text-[13px] leading-relaxed text-fg/70">
           <li>
             Charged {money(card.spentMinor, card.currency)}
             {checkout ? `, order ${checkout.orderId ?? "?"}, TAP signature ${checkout.tapVerified ? "verified" : "not verified"}` : ""}

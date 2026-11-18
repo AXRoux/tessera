@@ -41,14 +41,24 @@ export function agentVerdict({ tool, outcome }: Pick<VerdictInput, "tool" | "out
   return { label: REFUSED[tool] ?? `${toolLabel(tool)} refused`, refused: true };
 }
 
-/** "agent:claude" as "Claude", "agent:scripted" as "Scripted agent", "agent:hermes-4-405b" as "Hermes 4 405b". */
+/**
+ * Who acted, as the console names them. Tessera is agent-agnostic, so whichever model drives the agent it is simply
+ * "Agent" (the model is metadata on the Keys page, never a name in the record). The deterministic scripted agent and
+ * the guardrail test's adversary keep their names, because those say what they are. A person is shown as given.
+ */
 export function actorLabel(actor: string): string {
-  const name = actor.startsWith("agent:") ? actor.slice("agent:".length) : actor;
+  if (!actor.startsWith("agent:")) return actor;
+  const name = actor.slice("agent:".length);
   if (name === "scripted") return "Scripted agent";
-  if (name === "claude") return "Claude";
-  const words = name.split(/[-_\s]+/).filter(Boolean);
-  if (words.length === 0) return "Agent";
-  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  if (name === "adversary") return "Adversary";
+  return "Agent";
+}
+
+/** The same, at the start of a sentence: "The agent handed it over", "The scripted agent", "The adversary". */
+export function actorSubject(actor: string): string {
+  if (!actor.startsWith("agent:")) return actor;
+  const label = actorLabel(actor);
+  return `The ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
 }
 
 /** Escalation reasons are stored as "agent:scripted: <reason>". Next to a "handed over by" line the prefix is noise; the full text stays in the tooltip. */

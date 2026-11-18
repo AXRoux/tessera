@@ -125,7 +125,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
             />
           </div>
           <div role="tabpanel" className="thin-scroll min-h-0 flex-1 overflow-y-auto p-1">
-            {evidence === "history" ? <LedgerLog events={view.events} chain={view.chain} /> : null}
+            {evidence === "history" ? <LedgerLog events={view.events} chain={view.chain} supplier={view.story?.supplier ?? null} operator={health?.operator ?? null} /> : null}
             {evidence === "attempts" ? <AttemptsRail attempts={view.attempts} /> : null}
             {evidence === "supplier" ? <SupplierPanel view={view} reader={reader} busy={busy} run={run} /> : null}
             {evidence === "certificate" ? <CertificatePanel view={view} /> : null}

@@ -52,7 +52,7 @@ function NotedAction({
   const [note, setNote] = useState("");
   return (
     <div className="space-y-3">
-      <p className="text-[12px] leading-relaxed text-fg/60">{hint}</p>
+      <p className="text-[13px] leading-relaxed text-fg/60">{hint}</p>
       <Field label={label} htmlFor={noteId} hint={noteHint(note)}>
         <TextArea id={noteId} value={note} onChange={(e) => setNote(e.target.value)} placeholder={placeholder} maxLength={500} />
       </Field>
@@ -77,7 +77,7 @@ function Now({ kicker, title, children, tone = "accent" }: { kicker: string; tit
     <section className={`tile space-y-3 rounded-[22px]! p-4 ${ring}`}>
       <div>
         <span className="kicker block">{kicker}</span>
-        <h3 className="mt-1 text-[17px] font-semibold leading-snug tracking-[-0.02em]">{title}</h3>
+        <h3 className="mt-1 text-[18.5px] font-semibold leading-snug tracking-[-0.02em]">{title}</h3>
       </div>
       {children}
     </section>
@@ -88,10 +88,10 @@ function Now({ kicker, title, children, tone = "accent" }: { kicker: string; tit
 function Rail({ title, facts, children, open }: { title: string; facts: string[]; children: ReactNode; open: boolean }) {
   return (
     <div className={`flex flex-col gap-2.5 rounded-[18px] p-3.5 ${open ? "well" : "well opacity-60"}`}>
-      <p className="text-[14px] font-semibold">{title}</p>
+      <p className="text-[15px] font-semibold">{title}</p>
       <ul className="space-y-1">
         {facts.map((f) => (
-          <li key={f} className="flex gap-2 text-[12.5px] leading-snug text-fg/65">
+          <li key={f} className="flex gap-2 text-[13.5px] leading-snug text-fg/65">
             <span aria-hidden className="mt-[7px] size-1 shrink-0 rounded-full bg-fg/40" />
             {f}
           </li>
@@ -190,7 +190,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
     if (closed) {
       return (
         <Now kicker="Done" title="Certified. Nothing left to do." tone="quiet">
-          <p className="text-[13px] leading-relaxed text-fg/65">The certificate is under Evidence, sealed to the history that produced it.</p>
+          <p className="text-[14px] leading-relaxed text-fg/65">The certificate is under Evidence, sealed to the history that produced it.</p>
         </Now>
       );
     }
@@ -200,7 +200,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
     if ((allowed.includes("REPLACE") || canCard) && latest?.state === "DEAD") {
       return (
         <Now kicker="Now" title={`Pay it again, once: ${amount}`}>
-          <p className="text-[13px] leading-relaxed text-fg/65">{firstReason ?? "The first payment is cancelled and the money is back."} Choose how the second payment travels; either one holds the invoice so it can only be paid once.</p>
+          <p className="text-[14px] leading-relaxed text-fg/65">{firstReason ?? "The first payment is cancelled and the money is back."} Choose how the second payment travels; either one holds the invoice so it can only be paid once.</p>
           <div className="grid gap-2.5">
             <Rail
               title="Bank transfer"
@@ -225,14 +225,14 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
               </Btn>
             </Rail>
           </div>
-          {card && !cardHolds && !issuingOff ? <p className="text-[12px] text-fg/55">The last card was {card.state.toLowerCase()}{card.lastError ? `: ${card.lastError}` : ""}.</p> : null}
+          {card && !cardHolds && !issuingOff ? <p className="text-[13px] text-fg/55">The last card was {card.state.toLowerCase()}{card.lastError ? `: ${card.lastError}` : ""}.</p> : null}
         </Now>
       );
     }
     if (decision?.recommended === "FUND" && funding) {
       return (
         <Now kicker="Now" title="Fund the replacement, then send it">
-          <p className="text-[13px] leading-relaxed text-fg/65">{firstReason}</p>
+          <p className="text-[14px] leading-relaxed text-fg/65">{firstReason}</p>
           <FundingPanel view={view} operator={operator} busy={busy} run={run} />
         </Now>
       );
@@ -240,7 +240,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
     if (canClose) {
       return (
         <Now kicker="Now" title="Reconcile and certify">
-          <p className="text-[13px] leading-relaxed text-fg/65">Paid and through its hold window. Tessera matches every wallet line against Airwallex, then signs the certificate.</p>
+          <p className="text-[14px] leading-relaxed text-fg/65">Paid and through its hold window. Tessera matches every wallet line against Airwallex, then signs the certificate.</p>
           <Btn busy={busy === "close"} disabled={busy !== null} onClick={() => void certify()}>
             Certify
           </Btn>
@@ -250,7 +250,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
     if (canRecover) {
       return (
         <Now kicker="Now" title="Settle the open request">
-          <p className="text-[13px] leading-relaxed text-fg/65">Airwallex never answered. Tessera looks the attempt up by its original request ID; it never sends a second one.</p>
+          <p className="text-[14px] leading-relaxed text-fg/65">Airwallex never answered. Tessera looks the attempt up by its original request ID; it never sends a second one.</p>
           <Btn
             busy={busy === "recover"}
             onClick={() =>
@@ -268,21 +268,21 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
     if (escalated || decision?.recommended === "ESCALATE") {
       return (
         <Now kicker="Now" title="Yours to decide" tone="warn">
-          <p className="text-[13px] leading-relaxed text-fg/65">{firstReason ?? "Policy will not settle this alone."} Nothing moves until you sign one of the moves below.</p>
+          <p className="text-[14px] leading-relaxed text-fg/65">{firstReason ?? "Policy will not settle this alone."} Nothing moves until you sign one of the moves below.</p>
         </Now>
       );
     }
     if (decision?.recommended === "SEND_PROOF_TO_SUPPLIER" || decision?.recommended === "SEND_STATUS_TO_SUPPLIER" || decision?.recommended === "REQUEST_CORRECTION") {
       return (
         <Now kicker="Now" title="Write to the supplier" tone="quiet">
-          <p className="text-[13px] leading-relaxed text-fg/65">{firstReason} The agent can draft the reply under Ask the agent; a person sends it.</p>
+          <p className="text-[14px] leading-relaxed text-fg/65">{firstReason} The agent can draft the reply under Ask the agent; a person sends it.</p>
         </Now>
       );
     }
     return (
       <Now kicker="Now" title="Nothing to do yet" tone="quiet">
-        <p className="text-[13px] leading-relaxed text-fg/65">{firstReason ?? "No move is needed right now."}</p>
-        {decision?.recheckAt ? <p className="text-[12px] text-fg/50">Tessera looks again at {new Date(decision.recheckAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</p> : null}
+        <p className="text-[14px] leading-relaxed text-fg/65">{firstReason ?? "No move is needed right now."}</p>
+        {decision?.recheckAt ? <p className="text-[13px] text-fg/50">Tessera looks again at {new Date(decision.recheckAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</p> : null}
       </Now>
     );
   }
@@ -328,7 +328,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
                 hint={
                   <>
                     Tessera asks Airwallex once more before it lets go. The lock lifts only if the transfer shows as cancelled, or if this attempt never reached Airwallex at all: no transfer
-                    for request <span className="readout text-[11.5px] text-fg/80">{shortHash(attempt.requestId, 8)}</span>, and at least ten minutes old, so a slow send cannot still
+                    for request <span className="readout text-[12.5px] text-fg/80">{shortHash(attempt.requestId, 8)}</span>, and at least ten minutes old, so a slow send cannot still
                     land. A transfer waiting in an approval queue stays locked until it is cancelled, and a live {money(attempt.amountMinor, attempt.currency)} transfer is never released.
                   </>
                 }
@@ -356,7 +356,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
 
           <Fold title="Pay again, in writing" sub={releasable ? "Release a replacement policy would not make alone" : "Opens once the last attempt has ended"}>
             <div className="space-y-3">
-              <p className="text-[12px] leading-relaxed text-fg/60">
+              <p className="text-[13px] leading-relaxed text-fg/60">
                 Some replacements policy will never make on its own. An authorized individual may release one, in writing. You review first, and your approval is bound to the exact facts you
                 reviewed: if anything shifts in between, it is refused.
               </p>
@@ -389,20 +389,20 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
                     Review before signing
                   </Btn>
                   {releasable && view.evidenceHash === null ? (
-                    <p className="text-[12px] leading-relaxed text-fg/55">The assessment failed, so there is nothing to approve against. {view.assessmentError ?? ""}</p>
+                    <p className="text-[13px] leading-relaxed text-fg/55">The assessment failed, so there is nothing to approve against. {view.assessmentError ?? ""}</p>
                   ) : null}
                 </>
               ) : (
                 <div className="space-y-3 rounded-2xl border border-fg/15 well p-4">
-                  <p className="text-[12.5px] font-medium">You are approving</p>
-                  <ul className="space-y-1 text-[12.5px] leading-relaxed text-fg/80">
+                  <p className="text-[13.5px] font-medium">You are approving</p>
+                  <ul className="space-y-1 text-[13.5px] leading-relaxed text-fg/80">
                     <li>
                       A new payment of <strong className="tnum text-fg">{money(view.obligation.amountMinor, view.obligation.currency)}</strong> for {view.obligation.reference}
                     </li>
-                    <li>To {payee.trim() ? <span className="readout text-[12px]">{payee.trim()}</span> : "the same payee as before"}</li>
+                    <li>To {payee.trim() ? <span className="readout text-[13px]">{payee.trim()}</span> : "the same payee as before"}</li>
                     <li>Recommended at review: {decision?.recommended.toLowerCase().replaceAll("_", " ") ?? "nothing"}</li>
                     <li>
-                      Facts fingerprint <span className="readout text-[11.5px]">{shortHash(reviewed, 16)}</span>
+                      Facts fingerprint <span className="readout text-[12.5px]">{shortHash(reviewed, 16)}</span>
                     </li>
                   </ul>
                   <div className="grid grid-cols-2 gap-2">

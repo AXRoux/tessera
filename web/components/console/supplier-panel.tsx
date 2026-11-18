@@ -62,29 +62,29 @@ function Said({ record, view, reader }: { record: Recorded; view: IncidentView; 
     <div className="tile rounded-[20px]! p-4">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
         <Chip tone={record.source === "model" ? "accent" : "neutral"}>{record.source === "model" ? `Read from their message by ${reader ?? "the reader"}` : "From a call or chat, recorded by hand"}</Chip>
-        <span suppressHydrationWarning className="text-[11.5px] text-fg/45">
+        <span suppressHydrationWarning className="text-[12.5px] text-fg/45">
           {record.enteredBy.replace(/^agent:/, "")}, {ago(record.at)}
         </span>
       </div>
-      <blockquote className="mt-3 border-l-2 border-fg/15 pl-3 text-[14px] leading-relaxed text-fg">{record.evidence.summary}</blockquote>
+      <blockquote className="mt-3 border-l-2 border-fg/15 pl-3 text-[15px] leading-relaxed text-fg">{record.evidence.summary}</blockquote>
       {lines.length === 0 ? (
-        <p className="mt-3 text-[12.5px] leading-relaxed text-fg/55">No claims that change anything: no missing money, no new bank details.</p>
+        <p className="mt-3 text-[13.5px] leading-relaxed text-fg/55">No claims that change anything: no missing money, no new bank details.</p>
       ) : (
         <ul className="mt-3.5 space-y-2.5 border-t border-fg/[0.06] pt-3">
           {lines.map((line) => (
             <li key={line.tag} className="flex flex-col items-start gap-1.5">
               <Chip tone={TAG_TONE[line.tone]}>{line.tag}</Chip>
-              <p className="text-[12.5px] leading-relaxed text-fg/65">{line.means}</p>
+              <p className="text-[13.5px] leading-relaxed text-fg/65">{line.means}</p>
             </li>
           ))}
         </ul>
       )}
       {record.source === "model" && fixed.length > 0 ? (
         <div className="well mt-3 rounded-[14px]! px-3 py-2.5">
-          <p className="text-[11.5px] font-medium text-fg">Where code overruled the reader</p>
+          <p className="text-[12.5px] font-medium text-fg">Where code overruled the reader</p>
           <ul className="mt-1 space-y-0.5">
             {fixed.map((a) => (
-              <li key={a} className="text-[12px] leading-relaxed text-fg/65">
+              <li key={a} className="text-[13px] leading-relaxed text-fg/65">
                 {a}
               </li>
             ))}
@@ -152,7 +152,7 @@ export function SupplierPanel({ view, reader, busy, run }: { view: IncidentView;
         {view.evidence ? (
           <Said record={view.evidence} view={view} reader={reader} />
         ) : (
-          <p className="well rounded-[18px]! px-4 py-3.5 text-[12.5px] leading-relaxed text-fg/60">
+          <p className="well rounded-[18px]! px-4 py-3.5 text-[13.5px] leading-relaxed text-fg/60">
             {view.inbox.length > 0
               ? "Their message has not been read yet. Until it is, Tessera decides from the ledger and the bank alone."
               : "Nothing from the supplier yet. Tessera decides from the ledger and the bank alone, which is all a routine payment needs."}
@@ -161,13 +161,13 @@ export function SupplierPanel({ view, reader, busy, run }: { view: IncidentView;
       </Section>
 
       {view.inbox.length > 0 ? (
-        <Section title="Their messages" aside={<span className="tnum text-[11.5px] text-fg/45">{view.inbox.length}</span>}>
+        <Section title="Their messages" aside={<span className="tnum text-[12.5px] text-fg/45">{view.inbox.length}</span>}>
           <ul className="tile divide-y divide-fg/[0.06] rounded-[20px]!">
             {view.inbox.map((message) => (
               <li key={message.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                 <span className="min-w-0">
-                  <span className="block truncate text-[13px]">{message.from}</span>
-                  <span suppressHydrationWarning className="block text-[11.5px] text-fg/45">
+                  <span className="block truncate text-[14px]">{message.from}</span>
+                  <span suppressHydrationWarning className="block text-[12.5px] text-fg/45">
                     arrived {ago(message.receivedAt)}
                   </span>
                 </span>
@@ -199,7 +199,7 @@ export function SupplierPanel({ view, reader, busy, run }: { view: IncidentView;
 
           {how === "email" ? (
             <div className="space-y-3">
-              <p className="text-[12px] leading-relaxed text-fg/55">
+              <p className="text-[13px] leading-relaxed text-fg/55">
                 Paste their email, or upload the .eml exactly as it arrived. {readerName ? `${readerName} reads it` : "The reader reads it"}; code then checks every claim against the text before it counts.
               </p>
               <Field label="Their message" htmlFor={ids.email} hint={eml ? "A raw email: the sender and subject come from its headers." : undefined}>
@@ -218,11 +218,11 @@ export function SupplierPanel({ view, reader, busy, run }: { view: IncidentView;
                     e.target.value = "";
                   }}
                 />
-                <button type="button" onClick={() => fileInput.current?.click()} className="cursor-pointer text-[12.5px] text-accent underline decoration-fg/20 underline-offset-4 hover:text-fg">
+                <button type="button" onClick={() => fileInput.current?.click()} className="cursor-pointer text-[13.5px] text-accent underline decoration-fg/20 underline-offset-4 hover:text-fg">
                   Upload a .eml or .txt
                 </button>
                 {fileError ? (
-                  <span role="alert" className="text-[12px] text-bad">
+                  <span role="alert" className="text-[13px] text-bad">
                     {fileError}
                   </span>
                 ) : null}
@@ -260,12 +260,12 @@ export function SupplierPanel({ view, reader, busy, run }: { view: IncidentView;
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-[12px] leading-relaxed text-fg/55">Write down what they told you. It is recorded under your name, and it counts as their word.</p>
+              <p className="text-[13px] leading-relaxed text-fg/55">Write down what they told you. It is recorded under your name, and it counts as their word.</p>
               <Field label="What they said, in one line" htmlFor={ids.summary}>
                 <TextInput id={ids.summary} value={summary} onChange={(e) => setSummary(e.target.value)} maxLength={400} placeholder="Their statement shows our payment landed on the 13th" />
               </Field>
               <fieldset>
-                <legend className="mb-1 text-[12px] font-medium text-fg/70">Did they…</legend>
+                <legend className="mb-1 text-[13px] font-medium text-fg/70">Did they…</legend>
                 <Check id={`${ids.flags}-c`} label={`mention ${view.obligation.reference}`} checked={flags.referencesObligation} onChange={(v) => setFlags({ ...flags, referencesObligation: v })} />
                 <Check id={`${ids.flags}-a`} label="say the money never arrived" checked={flags.claimsNonReceipt} onChange={(v) => setFlags({ ...flags, claimsNonReceipt: v })} />
                 <Check id={`${ids.flags}-b`} label="ask to change their bank details" checked={flags.requestsDetailChange} onChange={(v) => setFlags({ ...flags, requestsDetailChange: v })} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { actorLabel, agentVerdict, reasonText } from "../web/lib/agent-verdict";
+import { actorLabel, actorSubject, agentVerdict, reasonText } from "../web/lib/agent-verdict";
 
 describe("agent verdict wording", () => {
   it("says what each successful verdict did, in plain words", () => {
@@ -29,9 +29,12 @@ describe("agent verdict wording", () => {
 describe("actor names", () => {
   it("never turns the scripted agent into Claude", () => {
     expect(actorLabel("agent:scripted")).toBe("Scripted agent");
-    expect(actorLabel("agent:claude")).toBe("Claude");
+    expect(actorLabel("agent:claude")).toBe("Agent");
     expect(actorLabel("agent:adversary")).toBe("Adversary");
-    expect(actorLabel("agent:claude-desktop")).toBe("Claude Desktop");
+    expect(actorLabel("agent:deepseek-v4-pro")).toBe("Agent");
+    expect(actorLabel("ops@acme.example")).toBe("ops@acme.example");
+    expect(actorSubject("agent:deepseek-v4-pro")).toBe("The agent");
+    expect(actorSubject("agent:scripted")).toBe("The scripted agent");
   });
 });
 

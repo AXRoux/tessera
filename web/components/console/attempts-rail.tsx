@@ -6,14 +6,14 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   return (
     <div className="min-w-0">
       <Kicker>{label}</Kicker>
-      <dd className="readout mt-1 truncate text-[12.5px]">{children}</dd>
+      <dd className="readout mt-1 truncate text-[13.5px]">{children}</dd>
     </div>
   );
 }
 
 /** Every attempt to pay, oldest first, on a spine. Only the newest is ever allowed to still be open. */
 export function AttemptsRail({ attempts }: { attempts: IncidentView["attempts"] }) {
-  if (attempts.length === 0) return <p className="well rounded-[18px]! px-4 py-6 text-center text-[13px] text-fg/55">No payment has been attempted yet.</p>;
+  if (attempts.length === 0) return <p className="well rounded-[18px]! px-4 py-6 text-center text-[14px] text-fg/55">No payment has been attempted yet.</p>;
   return (
     <>
       <ol>
@@ -49,13 +49,13 @@ export function AttemptsRail({ attempts }: { attempts: IncidentView["attempts"] 
                     </Fact>
                   ) : null}
                 </dl>
-                {a.lastError ? <p className="well mt-3 rounded-[12px]! px-3 py-2 text-[12px] leading-relaxed text-fg/60">{a.lastError}</p> : null}
+                {a.lastError ? <p className="well mt-3 rounded-[12px]! px-3 py-2 text-[13px] leading-relaxed text-fg/60">{a.lastError}</p> : null}
               </Tile>
             </li>
           );
         })}
       </ol>
-      <p className="mt-1 pl-11 text-[12px] leading-relaxed text-fg/45">
+      <p className="mt-1 pl-11 text-[13px] leading-relaxed text-fg/45">
         Only the newest attempt may still be moving. Each is sealed in the ledger before it is sent, so the same invoice can never be paid twice by accident.
       </p>
     </>

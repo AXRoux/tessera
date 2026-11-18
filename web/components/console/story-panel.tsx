@@ -98,7 +98,7 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
 
   function button(step: StoryStep) {
     if (step.play) {
-      if (!story!.playable) return <p className="text-[12px] text-fg/50">Waiting on {step.actor === "bank" ? "Airwallex" : who}.</p>;
+      if (!story!.playable) return <p className="text-[13px] text-fg/50">Waiting on {step.actor === "bank" ? "Airwallex" : who}.</p>;
       const label = step.actor === "bank" ? "Get the next Airwallex update" : `Receive ${who}'s email`;
       return (
         <Btn busy={busy === `story-${step.id}`} disabled={busy !== null} onClick={() => play(step)} icon={<Icon name={step.actor === "bank" ? "bolt" : "mail"} className="size-4" />}>
@@ -113,16 +113,16 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
         <div className="space-y-2.5">
           <div className="grid gap-2">
             <div className="well space-y-2 rounded-[16px]! p-3">
-              <p className="text-[13px] font-semibold">Bank transfer</p>
-              <p className="text-[12.5px] leading-snug text-fg/60">A new transfer to the account on file. Arrives within the usual settlement window.</p>
+              <p className="text-[14px] font-semibold">Bank transfer</p>
+              <p className="text-[13.5px] leading-snug text-fg/60">A new transfer to the account on file. Arrives within the usual settlement window.</p>
               <Btn block busy={busy === "story-replace"} disabled={busy !== null || !allowed.includes("REPLACE")} onClick={replace}>
                 Send replacement
               </Btn>
             </div>
             {byCard ? (
               <div className="well space-y-2 rounded-[16px]! p-3">
-                <p className="text-[13px] font-semibold">Single-use Visa card</p>
-                <p className="text-[12.5px] leading-snug text-fg/60">
+                <p className="text-[14px] font-semibold">Single-use Visa card</p>
+                <p className="text-[13.5px] leading-snug text-fg/60">
                   {issuingOff ? "Card issuing isn't enabled on this Airwallex account." : `Exactly ${amount}, payable only to ${who}. You sign; the agent pays through Visa TAP. Clears in minutes.`}
                 </p>
                 <Btn block tone="secondary" busy={busy === "story-card"} disabled={busy !== null || issuingOff} onClick={askCard}>
@@ -138,7 +138,7 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
       const text = note.trim() || `${who} is waiting on ${view.obligation.reference}; paying it once by single-use card.`;
       return (
         <div className="space-y-2.5">
-          <label htmlFor={noteId} className="block text-[12px] text-fg/60">
+          <label htmlFor={noteId} className="block text-[13px] text-fg/60">
             Your reason, signed onto the card
           </label>
           <TextArea id={noteId} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={500} placeholder={text} />
@@ -169,11 +169,11 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
           <Btn busy={busy === "story-certify"} disabled={busy !== null || !ready} onClick={certify}>
             Certify
           </Btn>
-          {!ready ? <span className="text-[12px] text-fg/50">Available once the hold window passes.</span> : null}
+          {!ready ? <span className="text-[13px] text-fg/50">Available once the hold window passes.</span> : null}
         </div>
       );
     }
-    if (step.id === "card-clear") return <p className="text-[12.5px] text-fg/55">Waiting for Visa to clear the charge. Tessera proves it against the signed terms the moment it does.</p>;
+    if (step.id === "card-clear") return <p className="text-[13.5px] text-fg/55">Waiting for Visa to clear the charge. Tessera proves it against the signed terms the moment it does.</p>;
     return null;
   }
 
@@ -185,8 +185,8 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
       <div className="tile flex items-center gap-3 rounded-[20px]! p-3.5">
         <SupplierMark supplier={story.supplier} size={42} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold">{story.supplier.legalName}</p>
-          <p className="truncate text-[12.5px] leading-snug text-fg/55">
+          <p className="truncate text-[16px] font-semibold">{story.supplier.legalName}</p>
+          <p className="truncate text-[13.5px] leading-snug text-fg/55">
             {view.obligation.reference} · {view.obligation.method} {view.obligation.currency}
           </p>
         </div>
@@ -205,8 +205,8 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
               </span>
               <div className={`min-w-0 flex-1 pb-3 ${next ? "tile rounded-[18px]! p-3.5 ring-2 ring-accent" : yours ? "tile rounded-[18px]! p-3.5 ring-1 ring-warn/60" : "pt-1.5"}`}>
                 <div className="flex items-start justify-between gap-2">
-                  <p className={`text-[14.5px] leading-snug ${later ? "text-fg/40" : "font-medium text-fg"}`}>
-                    <span className="mr-1.5 text-[12px] font-normal text-fg/45">{step.actor === "supplier" ? who : ACTOR_NAME[step.actor]}</span>
+                  <p className={`text-[15.5px] leading-snug ${later ? "text-fg/40" : "font-medium text-fg"}`}>
+                    <span className="mr-1.5 text-[13px] font-normal text-fg/45">{step.actor === "supplier" ? who : ACTOR_NAME[step.actor]}</span>
                     {step.title}
                   </p>
                   {step.state === "done" ? (
@@ -221,7 +221,7 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
                     <Chip tone="warn">To do</Chip>
                   ) : null}
                 </div>
-                {step.state === "done" && step.after ? <p className="mt-1 text-[13px] leading-snug text-fg/60">{step.after}</p> : null}
+                {step.state === "done" && step.after ? <p className="mt-1 text-[14px] leading-snug text-fg/60">{step.after}</p> : null}
                 {next ? <div className="mt-3">{button(step)}</div> : null}
               </div>
             </li>

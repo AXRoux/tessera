@@ -79,7 +79,7 @@ export function FundingPanel({ view, operator, busy, run }: { view: IncidentView
         {plan ? <Chip tone={plan.autoApprovable ? "accent" : "neutral"}>{plan.autoApprovable ? "Within the automatic limit" : "Needs a person"}</Chip> : null}
         {plan ? (
           <>
-            <ul className="space-y-1 text-[12.5px] leading-relaxed">
+            <ul className="space-y-1 text-[13.5px] leading-relaxed">
               <li>
                 {cur} wallet <strong className="readout">{money(plan.availableMinor, cur)}</strong>, reserve floor <span className="readout">{money(plan.floorMinor, cur)}</span>
               </li>
@@ -93,10 +93,10 @@ export function FundingPanel({ view, operator, busy, run }: { view: IncidentView
             </ul>
             <div>
               <Kicker>Wallets that may fund it, in policy order</Kicker>
-              <ul className="mt-2 divide-y divide-fg/10 border-y border-fg/10 text-[12.5px]">
+              <ul className="mt-2 divide-y divide-fg/10 border-y border-fg/10 text-[13.5px]">
                 {plan.sources.map((s) => (
                   <li key={s.currency} className={`grid grid-cols-[48px_1fr_auto] gap-3 px-3 py-2 ${s.ok ? "" : "text-fg/55"}`}>
-                    <span className="readout text-[12px] font-medium">{s.currency}</span>
+                    <span className="readout text-[13px] font-medium">{s.currency}</span>
                     <span className="readout">
                       {money(s.availableMinor, s.currency)} / keeps {money(s.floorMinor, s.currency)}
                     </span>
@@ -105,7 +105,7 @@ export function FundingPanel({ view, operator, busy, run }: { view: IncidentView
                 ))}
               </ul>
             </div>
-            <p className="text-[12px] leading-relaxed text-fg/55">{plan.summary}</p>
+            <p className="text-[13px] leading-relaxed text-fg/55">{plan.summary}</p>
           </>
         ) : null}
 
@@ -124,7 +124,7 @@ export function FundingPanel({ view, operator, busy, run }: { view: IncidentView
         {plan && fundable && !plan.autoApprovable ? (
           quote === null ? (
             <div className="space-y-3">
-              <p className="text-[12px] leading-relaxed text-fg/55">
+              <p className="text-[13px] leading-relaxed text-fg/55">
                 This conversion needs a person. Fetch a live quote first: your signature is bound to that quote, those wallets and the facts you reviewed.
               </p>
               <Btn
@@ -151,7 +151,7 @@ export function FundingPanel({ view, operator, busy, run }: { view: IncidentView
                   Rate {quote.rate} {quote.currencyPair}, quote {shortHash(quote.quoteId, 8)}, valid for {until(quote.validTo)}
                 </li>
                 <li>
-                  Facts fingerprint <span className="readout text-[12px]">{shortHash(quote.fingerprint, 16)}</span>
+                  Facts fingerprint <span className="readout text-[13px]">{shortHash(quote.fingerprint, 16)}</span>
                 </li>
               </ul>
               <Field label="Why is this conversion right?" htmlFor={noteId} hint={note.trim().length < NOTE_MIN ? `A written note: at least ${NOTE_MIN} characters.` : undefined}>
@@ -169,7 +169,7 @@ export function FundingPanel({ view, operator, busy, run }: { view: IncidentView
           )
         ) : null}
 
-        {plan && !fundable ? <p className="text-[12px] leading-relaxed text-fg/55">{refusedFund ?? "Converting is not among the safe moves just now."}</p> : null}
+        {plan && !fundable ? <p className="text-[13px] leading-relaxed text-fg/55">{refusedFund ?? "Converting is not among the safe moves just now."}</p> : null}
 
         {view.conversions.length > 0 ? (
           <div>
