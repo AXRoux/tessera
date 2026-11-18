@@ -187,6 +187,8 @@ export const SupplierCardSchema = SupplierBadgeSchema.extend({
   bills: z.string(),
   domain: z.string(),
   nextReference: z.string(),
+  /** Days until the invoice it would send next falls due. */
+  dueInDays: z.number().int(),
   amountMinor: z.number().int(),
   currency: z.string(),
   lines: z.array(z.object({ description: z.string(), detail: z.string(), amountMinor: z.number().int() })),

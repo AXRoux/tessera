@@ -8,7 +8,7 @@ import { Chip } from "../kit/widgets";
 import { SupplierMark } from "../suppliers/supplier-mark";
 import type { RunAction } from "./actions-panel";
 
-const ACTOR_NAME = { bank: "The bank", you: "You" } as const;
+const ACTOR_NAME = { bank: "Airwallex", you: "You" } as const;
 
 function Who({ step, story }: { step: StoryStep; story: Story }) {
   if (step.actor === "supplier") return <SupplierMark supplier={story.supplier} size={30} />;
@@ -36,15 +36,15 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
       await api(`obligations/${id}/story/play`, Acknowledged, { method: "POST", body: { step: step.id } });
       return {
         tone: "ok",
-        title: step.actor === "bank" ? "The bank answered" : `${who} wrote`,
-        lines: [step.actor === "bank" ? "Played on the simulator; Tessera read the result back from Airwallex and weighed the invoice again." : "Their message is in the inbox; only its fingerprint is in the ledger."],
+        title: step.actor === "bank" ? "Airwallex update received" : `Email from ${who}`,
+        lines: [step.actor === "bank" ? "Tessera read the transfer back from Airwallex and reassessed the invoice." : "Filed with the invoice. Only its fingerprint goes in the ledger."],
       };
     });
 
   const replace = () =>
     run("story-replace", async () => {
       await api(`obligations/${id}/replace`, Acknowledged, { method: "POST" });
-      return { tone: "ok", title: "Replacement sent", lines: ["A new payment under a fresh request ID. The original stays cancelled."] };
+      return { tone: "ok", title: "Replacement sent", lines: ["New transfer under a fresh request ID. The original stays cancelled."] };
     });
 
   // The point of this step is the refusal: a 409 from policy is the expected answer, shown as such.
@@ -52,10 +52,10 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
     run("story-retry", async () => {
       try {
         await api(`obligations/${id}/replace`, Acknowledged, { method: "POST" });
-        return { tone: "refused", title: "It went through", lines: ["Policy allowed this one. The story expected a refusal."] };
+        return { tone: "ok", title: "Sent", lines: ["Policy allowed it."] };
       } catch (error) {
         if (error instanceof ApiProblem && error.status === 409) {
-          return { tone: "refused", title: "Refused. One open payment per invoice.", lines: error.problem.reasons ?? [error.problem.message] };
+          return { tone: "refused", title: "Declined by policy", lines: error.problem.reasons ?? [error.problem.message] };
         }
         throw error;
       }
@@ -64,13 +64,13 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
   const certify = () =>
     run("story-certify", async () => {
       await api(`obligations/${id}/close`, Acknowledged, { method: "POST" });
-      return { tone: "ok", title: "Reconciled and certified", lines: ["Every wallet line matched against Airwallex, and the certificate is signed."] };
+      return { tone: "ok", title: "Reconciled and certified", lines: ["Matched line by line against Airwallex. Certificate signed."] };
     });
 
   function button(step: StoryStep) {
     if (step.play) {
-      if (!story!.playable) return <p className="text-[12px] text-fg/50">The supplier and the bank play their parts only on the sandbox or offline.</p>;
-      const label = step.actor === "bank" ? "Play the bank" : step.id === "resend" ? `Have ${who} send it again` : `Have ${who} write`;
+      if (!story!.playable) return <p className="text-[12px] text-fg/50">Waiting on {step.actor === "bank" ? "Airwallex" : who}.</p>;
+      const label = step.actor === "bank" ? "Get the next Airwallex update" : `Receive ${who}'s email`;
       return (
         <Btn busy={busy === `story-${step.id}`} disabled={busy !== null} onClick={() => play(step)} icon={<Icon name={step.actor === "bank" ? "bolt" : "mail"} className="size-4" />}>
           {label}
@@ -80,14 +80,14 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
     if (step.action === "replace") {
       return (
         <Btn busy={busy === "story-replace"} disabled={busy !== null || !allowed.includes("REPLACE")} onClick={replace}>
-          Replace
+          Send replacement
         </Btn>
       );
     }
     if (step.action === "retry") {
       return (
         <Btn tone="secondary" busy={busy === "story-retry"} disabled={busy !== null} onClick={retry}>
-          Press it
+          {step.title}
         </Btn>
       );
     }
@@ -98,39 +98,36 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
           <Btn busy={busy === "story-certify"} disabled={busy !== null || !ready} onClick={certify}>
             Certify
           </Btn>
-          {!ready ? <span className="text-[12px] text-fg/50">Opens when the hold window passes.</span> : null}
+          {!ready ? <span className="text-[12px] text-fg/50">Available once the hold window passes.</span> : null}
         </div>
       );
     }
     return null;
   }
 
-  const done = story.steps.filter((s) => s.state === "done").length;
-  const total = story.steps.filter((s) => s.id !== "yours").length;
+  // What has happened, and the one thing next: nothing further is shown before it happens.
+  const shown = story.steps.filter((s) => s.state !== "later");
 
   return (
     <div className="space-y-4">
       <div className="tile flex items-center gap-3 rounded-[20px]! p-3.5">
         <SupplierMark supplier={story.supplier} size={42} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13.5px] font-semibold">
-            {who} · {story.story.label}
+          <p className="truncate text-[13.5px] font-semibold">{story.supplier.legalName}</p>
+          <p className="truncate text-[11.5px] leading-snug text-fg/55">
+            {view.obligation.reference} · {view.obligation.method} {view.obligation.currency}
           </p>
-          <p className="line-clamp-2 text-[11.5px] leading-snug text-fg/55">{story.story.ending}</p>
         </div>
-        <span className="readout shrink-0 text-[11px] text-fg/45">
-          {done}/{total}
-        </span>
       </div>
 
       <ol className="relative space-y-1">
-        {story.steps.map((step, i) => {
+        {shown.map((step, i) => {
           const next = step.state === "next";
           const yours = step.state === "yours";
           const later = step.state === "later";
           return (
             <li key={step.id} className="relative flex gap-3">
-              {i < story.steps.length - 1 ? <span aria-hidden className="absolute left-[14.5px] top-[34px] bottom-[-6px] w-px bg-fg/10" /> : null}
+              {i < shown.length - 1 ? <span aria-hidden className="absolute left-[14.5px] top-[34px] bottom-[-6px] w-px bg-fg/10" /> : null}
               <span className={`relative z-[1] mt-1 ${later ? "opacity-40" : ""}`}>
                 <Who step={step} story={story} />
               </span>
@@ -149,7 +146,7 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
                       Next
                     </Chip>
                   ) : yours ? (
-                    <Chip tone="warn">Yours</Chip>
+                    <Chip tone="warn">To do</Chip>
                   ) : null}
                 </div>
                 {step.state === "done" && step.after ? <p className="mt-1 text-[11.5px] leading-snug text-fg/55">{step.after}</p> : null}

@@ -115,7 +115,7 @@ function Nav({ waiting, requests, accounts }: { waiting: number; requests: numbe
   const pathname = usePathname();
   const items: { href: string; label: string; icon: Parameters<typeof Icon>[0]["name"]; on: boolean; count?: number }[] = [
     { href: "/dashboard", label: "Control room", icon: "dashboard", on: pathname === "/dashboard" },
-    { href: "/requests", label: "Requests", icon: "mail", on: pathname === "/requests", count: requests },
+    { href: "/requests", label: "Payables", icon: "mail", on: pathname === "/requests", count: requests },
     { href: "/queue", label: "Queue", icon: "inbox", on: pathname === "/queue", count: waiting },
     ...(accounts ? [{ href: "/workspace", label: "Keys", icon: "lock" as const, on: pathname === "/workspace" }] : []),
   ];

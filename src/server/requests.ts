@@ -81,7 +81,7 @@ export function createRequests(deps: RequestDeps) {
   }
 
   const card = (s: Supplier): SupplierCard => ({
-    ...badgeOf(s), bills: s.bills, domain: s.domain, nextReference: nextReference(s), amountMinor: invoiceTotal(s), currency: "USD",
+    ...badgeOf(s), bills: s.bills, domain: s.domain, nextReference: nextReference(s), dueInDays: s.dueInDays, amountMinor: invoiceTotal(s), currency: "USD",
     lines: s.lines, story: STORIES[s.story],
   });
 

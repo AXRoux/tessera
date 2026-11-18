@@ -101,10 +101,10 @@ const TITLES: Record<string, string> = {
   INTENT_STALE: "Stale intent",
   CERTIFICATE_REVOKED: "Revoked",
   INBOX_RECEIVED: "Mail arrived",
-  REQUEST_RECEIVED: "Request arrived",
-  REQUEST_APPROVED: "Request approved",
-  REQUEST_DECLINED: "Request declined",
-  STORY_STEP: "Played",
+  REQUEST_RECEIVED: "Invoice received",
+  REQUEST_APPROVED: "Approved",
+  REQUEST_DECLINED: "Declined",
+  STORY_STEP: "Sandbox",
   PAYMENT_REFUSED: "Refused",
   WEBHOOK_RECEIVED: "Webhook",
   INCIDENT_REACTION: "Reassessed",
@@ -202,18 +202,18 @@ export function describeEvent(type: string, payload: unknown): string {
     case "REQUEST_RECEIVED": {
       const verdict = text(p.verdict);
       const what = `${text(p.reference) ?? "An invoice"} for ${amount(p.amountMinor, p.currency)} arrived from ${text(p.from) ?? "a supplier"}`;
-      if (verdict === "DUPLICATE") return `${what} again. It is a copy of this invoice, so it was filed here and never opened as a new one.`;
-      if (verdict === "HELD") return `${what}. It failed the door's checks and was held for a person; nothing was opened or paid.`;
-      return `${what}. It passed every check at the door.`;
+      if (verdict === "DUPLICATE") return `${what} again. Filed with this invoice rather than paid again.`;
+      if (verdict === "HELD") return `${what}. It failed verification and was put on hold; nothing was opened or paid.`;
+      return `${what}. Verified on receipt.`;
     }
     case "REQUEST_APPROVED":
-      return `${text(p.by) ?? "A person"} approved the supplier's request, which opened this invoice: “${bare(text(p.note)) ?? "no note"}”.`;
+      return `Approved by ${text(p.by) ?? "a person"}: “${bare(text(p.note)) ?? "no note"}”.`;
     case "REQUEST_DECLINED":
-      return `${text(p.by) ?? "A person"} declined the supplier's request: “${bare(text(p.note)) ?? "no note"}”.`;
+      return `Declined by ${text(p.by) ?? "a person"}: “${bare(text(p.note)) ?? "no note"}”.`;
     case "STORY_STEP":
       return text(p.actor) === "bank"
-        ? `The bank's part was played on the simulator at ${text(p.by) ?? "the operator"}'s request${text(p.failureType) ? `: ${titleCase(text(p.failureType)!)}` : ""}. Everything after it came from Airwallex.`
-        : `The supplier's part was played at ${text(p.by) ?? "the operator"}'s request: their message arrived in the inbox.`;
+        ? `Airwallex sandbox update${text(p.failureType) ? `: ${titleCase(text(p.failureType)!)}` : ""}, run by ${text(p.by) ?? "the operator"}. Tessera read the result back from Airwallex.`
+        : `Supplier email received on the sandbox, run by ${text(p.by) ?? "the operator"}.`;
     case "INBOX_RECEIVED":
       return `A message from ${text(p.from) ?? "the supplier"} arrived in the inbox (${String(p.chars ?? "?")} characters). Only its fingerprint is in the ledger.`;
     case "PAYMENT_REFUSED":

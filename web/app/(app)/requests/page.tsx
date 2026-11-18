@@ -6,8 +6,8 @@ import { HealthSchema, RequestListSchema, SuppliersSchema } from "../../../../sr
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Requests · Tessera",
-  description: "Where a payment starts: a supplier's invoice, checked at the door in code, approved by a person.",
+  title: "Payables · Tessera",
+  description: "Suppliers waiting on payment: each invoice verified on receipt, approved by a person, paid once.",
 };
 
 export default async function RequestsPage() {

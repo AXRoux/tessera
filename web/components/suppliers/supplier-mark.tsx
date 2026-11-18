@@ -1,7 +1,7 @@
 import type { SupplierBadge } from "../../../src/server/wire";
 
 /** Marks drawn a little larger inside their tile, because the artwork itself has room around it. */
-const SCALE: Record<string, number> = { framer: 0.5, langchain: 0.56, modal: 0.6, primeintellect: 0.66, replicate: 0.52, fal: 0.5 };
+const SCALE: Record<string, number> = { framer: 0.5, langchain: 0.52, modal: 0.6, primeintellect: 0.66, replicate: 0.52, fal: 0.5 };
 
 /**
  * A supplier's mark on its own tile, in the brand's colours. The logo is a single-colour SVG used as a mask, so it is

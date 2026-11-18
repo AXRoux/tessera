@@ -113,9 +113,9 @@ export function IncidentsPanel({ items, onCompose }: { items: IncidentSummary[];
         <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
           {items.length === 0 ? (
             <div className="flex h-full min-h-[110px] flex-col items-center justify-center gap-3 px-6 text-center text-[13px] text-fg/55">
-              The ledger is empty. Every payout lands here, from a supplier&rsquo;s request or one you send yourself.
+              The ledger is empty. Every payout lands here, from an approved invoice or one you send yourself.
               <span className="flex flex-wrap items-center justify-center gap-2">
-                <LinkBtn href="/requests">Open supplier requests</LinkBtn>
+                <LinkBtn href="/requests">Open payables</LinkBtn>
                 <Btn tone="secondary" onClick={onCompose}>
                   Send a payout
                 </Btn>

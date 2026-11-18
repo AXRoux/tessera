@@ -147,7 +147,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
               onChange={setMove}
               className="w-fit"
               options={[
-                ...(view.story ? [{ id: "story" as Move, label: "Story" }] : []),
+                ...(view.story ? [{ id: "story" as Move, label: "Timeline" }] : []),
                 { id: "decide" as Move, label: "Decide" },
                 { id: "agent" as Move, label: "Ask the agent" },
                 ...(health?.sandbox ? [{ id: "simulate" as Move, label: "Simulate" }] : []),

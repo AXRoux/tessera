@@ -76,10 +76,10 @@ function definitions(supplier: Supplier, story: StoryId, o: Obligation): StepDef
   const amount = formatMinor(o.amountMinor, o.currency);
   const who = supplier.name;
   const head: StepDef[] = [
-    { id: "sent", actor: "supplier", title: `${who} sends invoice ${o.reference} for ${amount}`, after: "Checked at the door: sender on file, amount stated, the account on file.", done: () => true },
+    { id: "sent", actor: "supplier", title: `Invoice ${o.reference} received, ${amount}`, after: "Verified on receipt against the vendor record.", done: () => true },
     {
-      id: "approved", actor: "you", title: `You approve it, and Tessera pays ${supplier.legalName}`,
-      after: "The intent was sealed in the ledger before a cent moved, then the transfer went out at Airwallex.",
+      id: "approved", actor: "you", title: `Approved; transfer sent to ${supplier.legalName}`,
+      after: "Recorded in the ledger before any money moved. Airwallex accepted the transfer.",
       done: (s) => s.attempts.length > 0,
     },
   ];
@@ -89,8 +89,8 @@ function definitions(supplier: Supplier, story: StoryId, o: Obligation): StepDef
   };
   const latestPaid = (s: StoryState) => s.obligation.status === "CLOSED" || s.attempts.at(-1)?.state === "PAID";
   const certify: StepDef = {
-    id: "certify", actor: "you", title: "Certify it once the hold window passes", action: "certify",
-    after: "Every wallet line matched against Airwallex, and a signed certificate issued.",
+    id: "certify", actor: "you", title: "Reconcile and certify", action: "certify",
+    after: "Matched line by line against Airwallex. Certificate signed.",
     done: (s) => s.obligation.status === "CLOSED",
   };
 
@@ -98,59 +98,59 @@ function definitions(supplier: Supplier, story: StoryId, o: Obligation): StepDef
     case "timeout":
       return [
         ...head,
-        { id: "chase", actor: "supplier", title: `The transfer is delayed, and ${who} writes: “it hasn't shown up yet”`, play: { kind: "message", followUp: true },
-          after: "Tessera holds steady. A delayed transfer can still land, and paying again now could pay twice." },
-        { id: "fail", actor: "bank", title: "The bank times out (91402) and returns the money", play: { kind: "fail", failureType: "CHANNEL_TIMEOUT" },
-          after: "Tessera read the transfer back from Airwallex: cancelled, money in the wallet. A replacement is now allowed.",
+        { id: "chase", actor: "supplier", title: `${who} follows up: payment hasn't arrived`, play: { kind: "message", followUp: true },
+          after: "Tessera holds. The transfer is still inside its settlement window, so sending again could pay twice." },
+        { id: "fail", actor: "bank", title: "Airwallex: transfer failed, channel timeout (91402)", play: { kind: "fail", failureType: "CHANNEL_TIMEOUT" },
+          after: "Confirmed with Airwallex, not taken from a message: cancelled, funds back in the wallet. A replacement is now allowed.",
           done: (s) => s.attempts.length > 1 || s.attempts[0]?.state === "DEAD" },
-        { id: "replace", actor: "you", title: "Replace the payment", action: "replace",
-          after: "A new transfer under a fresh request ID. The original stays cancelled.",
+        { id: "replace", actor: "you", title: "Send a replacement", action: "replace",
+          after: "New transfer under a fresh request ID. The original stays cancelled.",
           done: (s) => s.attempts.length > 1 || s.hasCard },
-        { id: "retry", actor: "you", title: "Press Replace again", action: "retry",
-          after: "Refused, and written to the ledger. One open payment per invoice, never two.", done: retryDone("replace") },
-        { id: "pay", actor: "bank", title: "The bank pays the replacement", play: { kind: "pay" }, done: latestPaid },
+        { id: "retry", actor: "you", title: "Send it again", action: "retry",
+          after: "Declined by policy and logged. One open payment per invoice.", done: retryDone("replace") },
+        { id: "pay", actor: "bank", title: "Airwallex: replacement paid", play: { kind: "pay" }, done: latestPaid },
         certify,
-        { id: "yours", actor: "you", title: `Still yours: reply to ${who}. Tessera drafts, a person sends.`, yours: true },
+        { id: "yours", actor: "you", title: `Reply to ${who} with the payment details.`, yours: true },
       ];
     case "inflight":
       return [
         ...head,
-        { id: "chase", actor: "supplier", title: `The transfer is delayed, and ${who} asks you to send it again`, play: { kind: "message", followUp: true },
-          after: "Tessera holds steady. The first transfer is still moving and may land at any moment." },
-        { id: "retry", actor: "you", title: "Send it again, as they asked", action: "retry",
-          after: "Refused, and written to the ledger. The first payment is still in flight.", done: retryDone("chase") },
-        { id: "pay", actor: "bank", title: "The first transfer lands", play: { kind: "pay" }, done: latestPaid,
-          after: "Waiting was right: one payment, delivered." },
+        { id: "chase", actor: "supplier", title: `${who} asks for the payment to be sent again`, play: { kind: "message", followUp: true },
+          after: "Tessera holds. The original transfer is still in flight." },
+        { id: "retry", actor: "you", title: "Send it again", action: "retry",
+          after: "Declined by policy and logged. The original is still in flight.", done: retryDone("chase") },
+        { id: "pay", actor: "bank", title: "Airwallex: transfer paid", play: { kind: "pay" }, done: latestPaid,
+          after: "The original landed. Paid once." },
         certify,
-        { id: "yours", actor: "you", title: `Still yours: tell ${who} it landed.`, yours: true },
+        { id: "yours", actor: "you", title: `Let ${who} know the payment has landed.`, yours: true },
       ];
     case "returned":
       return [
         ...head,
-        { id: "fail", actor: "bank", title: "The bank returns it as a duplicate (91301)", play: { kind: "fail", failureType: "DUPLICATION_RETURN" },
-          after: `${who} may already hold the money. Replacing is refused and the invoice goes to a person.`,
+        { id: "fail", actor: "bank", title: "Airwallex: transfer returned, duplication (91301)", play: { kind: "fail", failureType: "DUPLICATION_RETURN" },
+          after: `${who} may already hold the funds. Replacement blocked and assigned to you.`,
           done: (s) => s.attempts[0]?.state === "DEAD" },
-        { id: "retry", actor: "you", title: "Try to replace it anyway", action: "retry",
-          after: "Refused, and written to the ledger. Only a named person can release this, in writing.", done: retryDone("fail") },
-        { id: "yours", actor: "you", title: `Still yours: confirm with ${who} whether it arrived, then release in writing only if it did not.`, yours: true },
+        { id: "retry", actor: "you", title: "Send a replacement", action: "retry",
+          after: "Declined by policy and logged. A second payment needs a named approver, in writing.", done: retryDone("fail") },
+        { id: "yours", actor: "you", title: `Confirm with ${who} whether the first payment arrived before releasing another.`, yours: true },
       ];
     case "reminder":
       return [
         ...head,
-        { id: "resend", actor: "supplier", title: `The transfer is delayed, and ${who} sends ${o.reference} again`, play: { kind: "resend" },
-          after: "Matched to the invoice already on the ledger and filed with it. Never opened as a new one." },
-        { id: "pay", actor: "bank", title: "The bank pays it", play: { kind: "pay" }, done: latestPaid },
+        { id: "resend", actor: "supplier", title: `${who} sends a second notice for ${o.reference}`, play: { kind: "resend" },
+          after: "Matched to the open invoice and filed with it. Not paid again." },
+        { id: "pay", actor: "bank", title: "Airwallex: transfer paid", play: { kind: "pay" }, done: latestPaid },
         certify,
       ];
     case "missing":
       return [
         ...head,
-        { id: "pay", actor: "bank", title: "The bank pays it", play: { kind: "pay" }, done: latestPaid },
-        { id: "chase", actor: "supplier", title: `${who} writes: “it's not on our statement”`, play: { kind: "message", followUp: true },
-          after: "Airwallex shows it paid, so replacing is refused. Tessera's move is proof of payment." },
-        { id: "retry", actor: "you", title: "Try to pay it again", action: "retry",
-          after: "Refused, and written to the ledger. The money has left your account.", done: retryDone("chase") },
-        { id: "yours", actor: "you", title: `Still yours: send ${who} proof of payment and ask their bank to trace it.`, yours: true },
+        { id: "pay", actor: "bank", title: "Airwallex: transfer paid", play: { kind: "pay" }, done: latestPaid },
+        { id: "chase", actor: "supplier", title: `${who}: the payment isn't on their statement`, play: { kind: "message", followUp: true },
+          after: "Airwallex shows it paid, so a second payment is blocked. Next: proof of payment." },
+        { id: "retry", actor: "you", title: "Send it again", action: "retry",
+          after: "Declined by policy and logged. The money has already left.", done: retryDone("chase") },
+        { id: "yours", actor: "you", title: `Send ${who} proof of payment and ask their bank to trace it.`, yours: true },
       ];
     case "impostor":
       return head.slice(0, 1);

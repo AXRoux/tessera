@@ -24,12 +24,18 @@ import { SupplierMark } from "./supplier-mark";
 const NOTE_MIN = 10;
 
 const STATUS: Record<SupplierRequestView["status"], { label: string; tone: ChipTone; pulse: boolean }> = {
-  RECEIVED: { label: "Waiting on you", tone: "accent", pulse: true },
-  HELD: { label: "Held at the door", tone: "bad", pulse: false },
-  DUPLICATE: { label: "Copy, filed", tone: "neutral", pulse: false },
-  OPENED: { label: "Approved and paid", tone: "solid", pulse: false },
+  RECEIVED: { label: "To approve", tone: "accent", pulse: true },
+  HELD: { label: "On hold", tone: "bad", pulse: false },
+  DUPLICATE: { label: "Filed with original", tone: "neutral", pulse: false },
+  OPENED: { label: "Approved", tone: "solid", pulse: false },
   DECLINED: { label: "Declined", tone: "neutral", pulse: false },
 };
+
+/** "Due 21 Nov", and how soon. */
+function dueLine(days: number): { text: string; soon: boolean } {
+  const date = new Date(Date.now() + days * 86_400_000).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return { text: days <= 1 ? `Due tomorrow, ${date}` : `Due ${date}, in ${days} days`, soon: days <= 2 };
+}
 
 /** Requests, kept current: a story played on an invoice can file a new one (a supplier sending its invoice again). */
 function useRequests(initial: SupplierRequestView[]) {
@@ -51,16 +57,13 @@ function problemText(error: unknown): string {
 }
 
 function SupplierTile({ supplier, rehearsal, busy, onSend }: { supplier: SupplierCard; rehearsal: boolean; busy: boolean; onSend: () => void }) {
-  const impostor = supplier.story.id === "impostor";
+  const due = dueLine(supplier.dueInDays);
   return (
     <Tile as="li" className="flex flex-col gap-2.5 rounded-[22px]! p-3.5">
       <div className="flex items-start gap-3">
         <SupplierMark supplier={supplier} size={44} />
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 truncate text-[14.5px] font-semibold tracking-[-0.01em]">
-            {supplier.name}
-            {supplier.story.id === "timeout" ? <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold tracking-normal text-white">Start here</span> : null}
-          </p>
+          <p className="truncate text-[14.5px] font-semibold tracking-[-0.01em]">{supplier.name}</p>
           <p className="truncate text-[12px] text-fg/50">{supplier.bills}</p>
         </div>
       </div>
@@ -68,14 +71,12 @@ function SupplierTile({ supplier, rehearsal, busy, onSend }: { supplier: Supplie
         <span className="readout truncate text-[12px] text-fg/60">{supplier.nextReference}</span>
         <span className="readout text-[15px] font-medium tracking-[-0.02em]">{money(supplier.amountMinor, supplier.currency)}</span>
       </div>
-      <div title={supplier.story.ending}>
-        <Chip tone={impostor ? "bad" : "warn"} className="max-w-full">
-          <span className="truncate">{impostor ? `Posing as ${supplier.name}: ${supplier.story.label}` : supplier.story.label}</span>
-        </Chip>
+      <div>
+        <Chip tone={due.soon ? "warn" : "neutral"}>{due.text}</Chip>
       </div>
       {rehearsal ? (
         <Btn tone="secondary" block busy={busy} onClick={onSend} icon={<Icon name="mail" className="size-4" />}>
-          {impostor ? "Send the fake invoice" : "Send their invoice"}
+          Review invoice
         </Btn>
       ) : null}
     </Tile>
@@ -159,7 +160,7 @@ function Checks({ request }: { request: SupplierRequestView }) {
   return (
     <section className="space-y-2.5">
       <div className="flex items-center justify-between">
-        <span className="kicker">What Tessera checked, in code</span>
+        <span className="kicker">Verified on receipt</span>
         <span className="readout text-[11px] text-fg/45">
           {request.checks.filter((c) => c.ok).length}/{request.checks.length}
         </span>
@@ -186,8 +187,8 @@ function Decide({ request, operator, onDone }: { request: SupplierRequestView; o
   const held = request.status === "HELD";
   const [note, setNote] = useState(
     held
-      ? `Not from ${request.supplier.name}'s domain on file, and it asks to pay another account. Declined; reported to security.`
-      : `${request.supplier.name} invoice ${request.reference}, checked against the vendor record.`,
+      ? `Not from ${request.supplier.name}'s billing domain, and the bank details differ from the vendor record. Declined and flagged to security.`
+      : `${request.supplier.name} invoice ${request.reference}, matched to the vendor record.`,
   );
   const [busy, setBusy] = useState<"approve" | "decline" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -244,9 +245,9 @@ function Decide({ request, operator, onDone }: { request: SupplierRequestView; o
 }
 
 /**
- * Where a payment starts. Left, the suppliers on file, each with the invoice it would send next and what will go wrong
- * after it is paid; middle, every request as it arrived; right, the selected one: the email, the door's checks, and
- * the decision that only a person makes.
+ * Payables: suppliers waiting on payment. Left, the vendors with an invoice due; middle, every invoice as it arrived;
+ * right, the selected one: the email, what was verified on receipt, and the decision only a person makes. (The invoices
+ * are illustrative; the companies' names and marks belong to them.)
  */
 export function RequestsRoom({ health, initialSuppliers, initialRequests }: { health: Health | null; initialSuppliers: Suppliers | null; initialRequests: SupplierRequestView[] }) {
   const router = useRouter();
@@ -280,10 +281,10 @@ export function RequestsRoom({ health, initialSuppliers, initialRequests }: { he
     <Workspace>
       <div className="flex shrink-0 flex-wrap items-end justify-between gap-4 px-1">
         <div className="min-w-0">
-          <Kicker>Requests</Kicker>
-          <h1 className="mt-2 text-[clamp(22px,1.9vw,30px)] font-semibold leading-[1.1] tracking-[-0.04em]">A supplier asks to be paid. Then the transfer is late.</h1>
-          <p className="mt-1.5 max-w-[700px] text-[13px] leading-snug text-fg/55">
-            Pick a supplier and follow its invoice: checked at the door in code, approved by you, paid to the account on file. Then the transfer is delayed, the supplier chases, and Tessera resolves it without paying twice.
+          <Kicker>Payables</Kicker>
+          <h1 className="mt-2 text-[clamp(22px,1.9vw,30px)] font-semibold leading-[1.1] tracking-[-0.04em]">Suppliers waiting on payment.</h1>
+          <p className="mt-1.5 max-w-[640px] text-[13px] leading-snug text-fg/55">
+            Invoices due from the vendors you pay. Review one and approve it; Tessera pays the account on file and stays with the transfer until it lands.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -297,12 +298,12 @@ export function RequestsRoom({ health, initialSuppliers, initialRequests }: { he
       </div>
 
       <div className="grid min-h-0 gap-4 xl:flex-1 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.85fr)_minmax(380px,1fr)]">
-        <Tray label="Suppliers on file" className="min-h-[520px] gap-3 p-3 xl:min-h-0">
+        <Tray label="Awaiting payment" className="min-h-[520px] gap-3 p-3 xl:min-h-0">
           <TrayHead
             className="px-2 pt-1"
             n={1}
-            title="Suppliers on file"
-            note={rehearsal ? (health?.offline ? "Each one plays its part on the simulated Airwallex" : "Each one plays its part on the Airwallex sandbox") : "Vendor records: who they are and the account Tessera pays"}
+            title="Awaiting payment"
+            note={rehearsal ? (health?.offline ? "Vendors with an invoice due · simulated Airwallex" : "Vendors with an invoice due · Airwallex sandbox") : "Vendors on file"}
           />
           {error ? (
             <p role="alert" className="well mx-1 shrink-0 rounded-[14px]! px-4 py-2.5 text-[12.5px] text-bad">
@@ -314,21 +315,20 @@ export function RequestsRoom({ health, initialSuppliers, initialRequests }: { he
               <SupplierTile key={s.id} supplier={s} rehearsal={rehearsal} busy={sending === s.id} onSend={() => void send(s.id)} />
             ))}
           </ul>
-          <p className="shrink-0 px-2 text-[10.5px] leading-snug text-fg/35">Illustrative invoices for a rehearsal. The companies did not send them; their names and marks belong to them.</p>
         </Tray>
 
-        <Tray label="Inbox" className="min-h-[420px] gap-3 p-3 xl:min-h-0">
-          <TrayHead className="px-2 pt-1" n={2} title="Inbox" note="Every request as it arrived, newest first" />
+        <Tray label="Received" className="min-h-[420px] gap-3 p-3 xl:min-h-0">
+          <TrayHead className="px-2 pt-1" n={2} title="Received" note="Newest first" />
           {items.length === 0 ? (
             <div className="well flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-[24px]! px-6 text-center">
               <span className="flex size-14 items-center justify-center rounded-full bg-fg/[0.06] text-fg/60">
                 <Icon name="inbox" className="size-6" />
               </span>
-              <p className="text-[14px] font-semibold">No requests yet</p>
-              <p className="max-w-[240px] text-[12px] leading-relaxed text-fg/50">{rehearsal ? "Ask a supplier on the left to send its invoice." : "Supplier invoices land here as they arrive."}</p>
+              <p className="text-[14px] font-semibold">Nothing received yet</p>
+              <p className="max-w-[240px] text-[12px] leading-relaxed text-fg/50">{rehearsal ? "Review an invoice on the left and it lands here." : "Supplier invoices land here as they arrive."}</p>
             </div>
           ) : (
-            <ul className="thin-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-1" role="listbox" aria-label="Supplier requests">
+            <ul className="thin-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-1" role="listbox" aria-label="Invoices received">
               {items.map((r) => (
                 <RequestRow key={r.id} request={r} on={r.id === current?.id} onPick={() => setPick(r.id)} />
               ))}
@@ -336,11 +336,11 @@ export function RequestsRoom({ health, initialSuppliers, initialRequests }: { he
           )}
         </Tray>
 
-        <Tray label="The request" className="min-h-[620px] gap-3 p-3 xl:min-h-0">
+        <Tray label="Invoice" className="min-h-[620px] gap-3 p-3 xl:min-h-0">
           <TrayHead
             className="px-2 pt-1"
             n={3}
-            title="The request"
+            title="Invoice"
             note={current ? `${current.supplier.name} · ${current.reference}` : "Nothing selected"}
             right={current ? <Chip tone={STATUS[current.status].tone} pulse={STATUS[current.status].pulse}>{STATUS[current.status].label}</Chip> : null}
           />
@@ -367,7 +367,7 @@ export function RequestsRoom({ health, initialSuppliers, initialRequests }: { he
                 ) : null}
                 {(current.status === "OPENED" || current.status === "DUPLICATE") && current.obligationId ? (
                   <LinkBtn block href={`/incidents/${current.obligationId}`}>
-                    {current.status === "OPENED" ? `Open ${current.reference}` : `Open the invoice it copies`}
+                    {current.status === "OPENED" ? `Track ${current.reference}` : `Open the original`}
                   </LinkBtn>
                 ) : null}
                 {current.decidedBy ? (
@@ -378,7 +378,7 @@ export function RequestsRoom({ health, initialSuppliers, initialRequests }: { he
                 ) : null}
               </>
             ) : (
-              <Tile className="flex flex-1 items-center justify-center rounded-[24px]! text-[13px] text-fg/45">Pick a request from the inbox.</Tile>
+              <Tile className="flex flex-1 items-center justify-center rounded-[24px]! text-[13px] text-fg/45">Select an invoice.</Tile>
             )}
           </div>
         </Tray>

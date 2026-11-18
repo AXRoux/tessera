@@ -161,7 +161,7 @@ export const SUPPLIERS: Supplier[] = [
     legalName: "LangChain, Inc.",
     bills: "LangSmith Plus, 10 seats",
     domain: "langchain.com",
-    tile: { bg: "#1c3c3c", fg: "#ffffff" },
+    tile: { bg: "#030710", fg: "#7fc8ff" },
     invoicePrefix: "LC",
     invoiceBase: 7731,
     lines: [
