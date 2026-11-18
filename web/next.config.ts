@@ -40,6 +40,9 @@ const config: NextConfig = {
   // `bun run demo` serves the dev build; the framework's corner badge has no place on a stage.
   devIndicators: false,
   outputFileTracingRoot: root,
+  // Next.js reminds an agent working on this app of security releases (and only those), so a vulnerable version is
+  // upgraded promptly; set by `next upgrade --agent=security`.
+  experimental: { agentUpgrade: "security" },
   async headers() {
     // React's dev tooling needs eval, so the strict policy applies to production builds only.
     return process.env.NODE_ENV === "production" ? [{ source: "/:path*", headers: securityHeaders }] : [];
