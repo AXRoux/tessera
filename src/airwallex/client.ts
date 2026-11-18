@@ -45,7 +45,7 @@ import {
   type IssuingApi,
   type SimulatedCharge,
 } from "./issuing";
-import { fitToSchema, type SchemaAnswer, type SchemaFit } from "./beneficiary-schema";
+import { fitToSchema, missingDropped, restoreFields, type SchemaAnswer, type SchemaFit } from "./beneficiary-schema";
 
 export interface ClientOptions {
   baseUrl: string;
@@ -253,8 +253,18 @@ export class AirwallexClient implements PayoutApi, ReconciliationApi, BalanceApi
   }
 
   private async createFitted(request: Record<string, unknown>, nickname: string): Promise<Beneficiary> {
-    const { request: fitted } = await this.fitBeneficiary(request);
-    const body = await this.request("POST", "/api/v1/beneficiaries/create", { body: fitted });
+    const { request: fitted, dropped } = await this.fitBeneficiary(request);
+    let body: unknown;
+    try {
+      body = await this.request("POST", "/api/v1/beneficiaries/create", { body: fitted });
+    } catch (error) {
+      // The schema endpoint can call a field irrelevant that the create then requires (seen on the sandbox for
+      // bank_account_category, 2026-11-17). A validation failure created nothing, so putting back exactly the fields
+      // the fit removed and Airwallex names is one safe retry; anything else is thrown as it came.
+      const restore = missingDropped(error, dropped);
+      if (restore.length === 0) throw error;
+      body = await this.request("POST", "/api/v1/beneficiaries/create", { body: restoreFields(fitted, request, restore) });
+    }
     // The create response nests the record id at the top level next to `beneficiary`.
     const created = this.parse(z.looseObject({ id: z.string() }), body);
     return { id: created.id, nickname };

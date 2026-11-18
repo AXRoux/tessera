@@ -1,3 +1,4 @@
+import { z } from "zod";
 /**
  * Fits a create-beneficiary request to Airwallex's live schema before it is sent.
  *
@@ -74,4 +75,37 @@ export function fitToSchema(request: Record<string, unknown>, answer: SchemaAnsw
     if (!present(at(fitted, name))) problems.push(`${name} is required`);
   }
   return { request: fitted, dropped, problems };
+}
+
+/**
+ * The fields the fit dropped that a create's `validation_failed` names as wrong: the schema endpoint called them
+ * irrelevant, the create requires them. Empty for any other error, or when the error names nothing the fit removed.
+ */
+export function missingDropped(error: unknown, dropped: readonly string[]): string[] {
+  if (dropped.length === 0 || error === null || typeof error !== "object") return [];
+  const { status, body } = error as { status?: unknown; body?: unknown };
+  if (status !== 400) return [];
+  const parsed = z
+    .object({ code: z.literal("validation_failed"), details: z.object({ errors: z.array(z.object({ source: z.string() })) }) })
+    .safeParse(body);
+  if (!parsed.success) return [];
+  const named = new Set(parsed.data.details.errors.map((e) => e.source));
+  return dropped.filter((field) => named.has(field));
+}
+
+/** `fitted` with each of `fields` copied back from the original request. */
+export function restoreFields(fitted: Record<string, unknown>, original: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> {
+  const out = structuredClone(fitted);
+  for (const field of fields) {
+    const keys = field.split(".");
+    const value = at(original, field);
+    if (value === undefined) continue;
+    let node = out;
+    for (const key of keys.slice(0, -1)) {
+      if (node[key] === null || typeof node[key] !== "object") node[key] = {};
+      node = node[key] as Record<string, unknown>;
+    }
+    node[keys[keys.length - 1]!] = structuredClone(value);
+  }
+  return out;
 }

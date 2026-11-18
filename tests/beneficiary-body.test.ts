@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { fitToSchema, type SchemaAnswer } from "../src/airwallex/beneficiary-schema";
+import { fitToSchema, missingDropped, restoreFields, type SchemaAnswer } from "../src/airwallex/beneficiary-schema";
 import { AirwallexClient, usBeneficiaryRequest } from "../src/airwallex/client";
 import { SPIKE_SUPPLIER } from "../src/airwallex/types";
 
@@ -84,5 +84,23 @@ describe("the US supplier payee Tessera creates on connect", () => {
     const { api, sent } = client(Response.json({ code: "internal_error", message: "boom" }, { status: 500 }));
     expect(await api.createBeneficiary(SPIKE_SUPPLIER)).toEqual({ id: "ben_1", nickname: SPIKE_SUPPLIER.nickname });
     expect(sent.map((s) => s.path)).toEqual(["/api/v1/beneficiaries/schema", "/api/v1/beneficiaries/create"]);
+  });
+});
+
+describe("a field the schema dropped but the create requires", () => {
+  const refused = { status: 400, body: { code: "validation_failed", details: { errors: [{ source: "beneficiary.bank_details.bank_account_category" }] } } };
+
+  it("names only fields the fit removed, and only for a validation failure", () => {
+    expect(missingDropped(refused, ["beneficiary.bank_details.bank_account_category"])).toEqual(["beneficiary.bank_details.bank_account_category"]);
+    expect(missingDropped(refused, ["beneficiary.address.state"])).toEqual([]);
+    expect(missingDropped({ status: 500, body: refused.body }, ["beneficiary.bank_details.bank_account_category"])).toEqual([]);
+    expect(missingDropped({ status: 400, body: { code: "other" } }, ["beneficiary.bank_details.bank_account_category"])).toEqual([]);
+  });
+
+  it("copies exactly those fields back from the original request", () => {
+    const original = { beneficiary: { bank_details: { account_number: "1", bank_account_category: "Checking" } } };
+    const fitted = { beneficiary: { bank_details: { account_number: "1" } } };
+    expect(restoreFields(fitted, original, ["beneficiary.bank_details.bank_account_category"])).toEqual(original);
+    expect(fitted.beneficiary.bank_details).toEqual({ account_number: "1" });
   });
 });
