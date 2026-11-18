@@ -1,3 +1,4 @@
+import { LIVE_PACE } from "../commander/policy";
 /**
  * The single-operator API process (the default; see main.ts). Holds every credential (Airwallex, approval signing, the model's key); the Next.js app talks to it
  * server-side with TESSERA_API_TOKEN, so no secret ever reaches a browser.
@@ -101,7 +102,7 @@ if (idleResetMs > 0) {
 const agentLabel = agent ? (agent.kind === "scripted" ? "scripted, not a model" : `${agent.name} (${process.env.TESSERA_MODEL})`) : "off";
 const readerLabel = model ? (agent?.kind === "scripted" ? "offline keyword reader, not a model" : (readerName ?? "model")) : "off";
 console.log(`tessera api  http://${server.hostname}:${server.port}${offline ? "  ·  OFFLINE: simulated Airwallex, no money moves" : ""}`);
-console.log(`  ledger ${dbPath}  |  recovered ${recoveredAtStart} unresolved attempt(s)  |  hold ${paidHoldMs}ms  |  pace ${first.pace}${first.pace === "live" ? " (overdue after 5 min LOCAL / 10 min SWIFT)" : ""}`);
+console.log(`  ledger ${dbPath}  |  recovered ${recoveredAtStart} unresolved attempt(s)  |  hold ${paidHoldMs}ms  |  pace ${first.pace}${first.pace === "live" ? ` (overdue after ${LIVE_PACE.settlementSlaMs.LOCAL / 60_000} min LOCAL / ${LIVE_PACE.settlementSlaMs.SWIFT / 60_000} min SWIFT)` : ""}`);
 console.log(`  agent ${agentLabel}  |  reader ${readerLabel}  |  simulator ${simulator ? "on" : "off"}  |  webhooks ${webhookSecret ? (offline ? "simulated" : "on") : "off"}  |  agent on event ${agentOnEvent ? "on" : "off"}  |  sweep ${sweepMs > 0 ? `${sweepMs}ms` : "off"}${offline ? `  |  reset on${idleResetMs > 0 ? ` (idle ${idleResetMs}ms)` : ""}` : ""}`);
 if (listener) {
   console.log(`  webhook listener  http://${listener.hostname}:${listener.port}/api/webhooks/airwallex  (POST only; tunnel THIS port, never ${port})${sourceAllowlist ? `  |  sources: ${sourceAllowlist.size} allowed IPs` : ""}`);
