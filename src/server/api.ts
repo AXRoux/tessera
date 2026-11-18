@@ -45,6 +45,8 @@ import type { AgentStreamEvent, CardView, Cards, FundingQuote, FundingResultWire
 import type { CardDesk } from "../cards/desk";
 import { CARD_CATEGORIES } from "../cards/policy";
 import { heldFrom, type CardRow } from "../ledger/cards";
+import type { BeneficiaryApi } from "../airwallex/types";
+import { createRequests, Forbidden, PlayBody } from "./requests";
 
 /** Sandbox or offline only: moves a transfer through Airwallex's simulator (or the fake's). Kept behind one interface so it can be removed. */
 export interface Simulator {
@@ -108,6 +110,10 @@ export interface ApiDeps {
   reactor?: Pick<Reactor, "react">;
   /** Offline demo only: throw the in-memory state away and start empty. Absent means the route answers 403. */
   reset?: () => Promise<void>;
+  /** Finds or creates each supplier's payee at Airwallex (src/server/requests.ts). Absent: supplier invoices pay `beneficiaryId`. */
+  beneficiaries?: Pick<BeneficiaryApi, "listBeneficiaries" | "createBeneficiary"> | null;
+  /** Pause between polls while the bank catches up on a played story step; tests set 0. */
+  storyPollMs?: number;
 }
 
 /** What any one route accepts after reading the body (checked on the text, so it counts characters). */
@@ -218,6 +224,7 @@ const PAYMENT_REFUSALS: Array<new (...args: never[]) => Error> = [
 ];
 
 function problem(error: unknown): Response {
+  if (error instanceof Forbidden) return json({ error: "Forbidden", message: error.message }, 403);
   if (error instanceof NotClosable) return json({ error: error.name, message: error.message, blockers: error.blockers }, 409);
   if (error instanceof AutoReplacementRefused) {
     return json({ error: error.name, message: error.message, reasons: error.decision.reasons }, 409);
@@ -250,6 +257,11 @@ const MessageRefSchema = z.object({ messageId: z.string() });
 
 export function createApi(deps: ApiDeps): (request: Request) => Promise<Response> {
   const { ledger, gateway, commander, closer } = deps;
+  const requests = createRequests({
+    ledger, gateway, commander, simulator: deps.simulator, beneficiaries: deps.beneficiaries ?? null, defaultBeneficiaryId: deps.beneficiaryId,
+    operator: deps.operator, maxAmount: deps.maxAmount ?? 1_000, ...(deps.reactor ? { reactor: deps.reactor } : {}),
+    ...(deps.storyPollMs !== undefined ? { pollMs: deps.storyPollMs } : {}),
+  });
 
   const authorized = (request: Request): boolean => {
     const given = Buffer.from(request.headers.get("x-tessera-token") ?? "");
@@ -302,6 +314,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       lastReaction: lastReaction(events),
       next: await nextFor(o, attempts, events, wallets),
       unread: ledger.inboxMessages(o.id).filter((m) => !read.has(m.id)).length,
+      supplier: requests.badgeFor(o.id),
     };
   };
 
@@ -334,6 +347,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       chain: { ok: chain.ok, brokenAt: chain.ok ? null : chain.brokenAt },
       paidHoldMs: deps.paidHoldMs,
       invoiceCard: invoiceCardView(id),
+      story: requests.storyFor(id),
     };
   };
 
@@ -645,6 +659,9 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         const payee: Payee = { beneficiaryId: deps.beneficiaryId, nickname, currency: "USD", method: "LOCAL", maxAmount: deps.maxAmount ?? 1_000, operator: deps.operator };
         return json(payee);
       }
+      if (path === "/api/suppliers" || path === "/api/requests" || path.startsWith("/api/requests/")) {
+        return (await requests.route(request, path, body)) ?? json({ error: "NotFound", message: "no such route" }, 404);
+      }
       if (request.method === "GET" && path === "/api/obligations") {
         const wallets = await boardWallets();
         return json({ items: (await Promise.all(ledger.listObligations().map((o) => summary(o, wallets)))).toReversed() });
@@ -817,6 +834,11 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
           if (!open || open.seq !== input.draftSeq) return json({ error: "Conflict", message: "that draft is no longer waiting for a person" }, 409);
           // Tessera sends nothing. SENT means a named person sent it outside Tessera and is saying so on the record.
           ledger.append(id, "DRAFT_RESOLVED", { draftSeq: input.draftSeq, resolution: input.resolution, by: deps.operator });
+          return json({ ok: true });
+        }
+        case "story/play": {
+          const { step } = await body(request, PlayBody);
+          await requests.play(id, step);
           return json({ ok: true });
         }
         case "simulate": {

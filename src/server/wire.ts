@@ -171,6 +171,86 @@ export type FundingQuote = z.infer<typeof FundingQuoteSchema>;
 
 export const RecordedEvidenceSchema = EvidenceRecordedSchema.extend({ at: z.string() });
 
+/** A supplier's mark as the console draws it: the tile behind the logo and the logo's own colour. */
+export const SupplierBadgeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  legalName: z.string(),
+  tile: z.object({ bg: z.string(), fg: z.string() }),
+});
+export type SupplierBadge = z.infer<typeof SupplierBadgeSchema>;
+
+export const StoryInfoSchema = z.object({ id: z.string(), label: z.string(), ending: z.string() });
+
+/** A supplier on file, as the requests page shows it, with the invoice it would send next. */
+export const SupplierCardSchema = SupplierBadgeSchema.extend({
+  bills: z.string(),
+  domain: z.string(),
+  nextReference: z.string(),
+  amountMinor: z.number().int(),
+  currency: z.string(),
+  lines: z.array(z.object({ description: z.string(), detail: z.string(), amountMinor: z.number().int() })),
+  story: StoryInfoSchema,
+});
+export type SupplierCard = z.infer<typeof SupplierCardSchema>;
+
+export const SuppliersSchema = z.object({
+  /** Suppliers can be asked to send their invoices (the sandbox or the offline demo); never against production. */
+  rehearsal: z.boolean(),
+  suppliers: z.array(SupplierCardSchema),
+});
+export type Suppliers = z.infer<typeof SuppliersSchema>;
+
+export const IntakeCheckSchema = z.object({ id: z.string(), ok: z.boolean(), label: z.string(), detail: z.string() });
+
+/** A supplier's request as it arrived, what the door made of it, and what became of it. */
+export const SupplierRequestSchema = z.object({
+  id: z.string(),
+  supplier: SupplierBadgeSchema,
+  story: StoryInfoSchema.nullable(),
+  reference: z.string(),
+  amountMinor: z.number().int(),
+  currency: z.string(),
+  sender: z.string(),
+  subject: z.string(),
+  body: z.string(),
+  receivedAt: z.string(),
+  verdict: z.enum(["PAYABLE", "HELD", "DUPLICATE"]),
+  status: z.enum(["RECEIVED", "OPENED", "HELD", "DUPLICATE", "DECLINED"]),
+  checks: z.array(IntakeCheckSchema),
+  summary: z.string(),
+  /** The invoice it opened (OPENED), or the one it is a copy of (DUPLICATE). */
+  obligationId: z.string().nullable(),
+  decidedBy: z.string().nullable(),
+  decidedAt: z.string().nullable(),
+  note: z.string().nullable(),
+});
+export type SupplierRequestView = z.infer<typeof SupplierRequestSchema>;
+
+export const RequestListSchema = z.object({ items: z.array(SupplierRequestSchema) });
+export const RequestOpenedSchema = z.object({ obligationId: z.string() });
+
+export const StoryStepSchema = z.object({
+  id: z.string(),
+  actor: z.enum(["supplier", "bank", "you"]),
+  title: z.string(),
+  after: z.string().nullable(),
+  state: z.enum(["done", "next", "later", "yours"]),
+  play: z.boolean(),
+  action: z.enum(["replace", "retry", "certify"]).nullable(),
+});
+export type StoryStep = z.infer<typeof StoryStepSchema>;
+
+/** The invoice's story: the supplier it came from, what goes wrong, and each step so far. */
+export const StorySchema = z.object({
+  supplier: SupplierBadgeSchema,
+  story: StoryInfoSchema,
+  /** The supplier's and the bank's parts can be played here (sandbox or offline). */
+  playable: z.boolean(),
+  steps: z.array(StoryStepSchema),
+});
+export type Story = z.infer<typeof StorySchema>;
+
 export const IncidentSummarySchema = z.object({
   id: z.string(),
   reference: z.string(),
@@ -222,6 +302,8 @@ export const IncidentSummarySchema = z.object({
     .optional(),
   /** Supplier messages in the inbox that nothing has read yet. */
   unread: z.number().int().optional(),
+  /** The supplier whose request a person approved into this invoice, if it came from one. */
+  supplier: SupplierBadgeSchema.nullable().optional(),
 });
 export type IncidentSummary = z.infer<typeof IncidentSummarySchema>;
 
@@ -258,6 +340,8 @@ export const IncidentViewSchema = z.object({
    * (refused, declined or failed). Null when the invoice has never had a card.
    */
   invoiceCard: z.lazy(() => CardViewSchema).nullable().optional(),
+  /** Where the invoice came from and what happens next, when a supplier's request opened it. */
+  story: StorySchema.nullable().optional(),
 });
 export type IncidentView = z.infer<typeof IncidentViewSchema>;
 

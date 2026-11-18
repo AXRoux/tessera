@@ -11,6 +11,7 @@ import type { Instance } from "./resettable";
 import { type buildRuntime, resolveBeneficiary } from "./runtime";
 import { WakeScheduler } from "./wake";
 import { createWebhookHandler } from "./webhook";
+import { isStoryInvoice } from "./requests";
 import { publicWebhookRoutes } from "./webhook-listener";
 
 export type Runtime = ReturnType<typeof buildRuntime>;
@@ -52,7 +53,7 @@ export async function assemble(runtime: Runtime, options: AssembleOptions): Prom
   const reactor = new Reactor({ ledger, commander, wake: wakes ? (id, cause) => wakes.request(id, cause) : null });
   const webhook = webhookSecret ? createWebhookHandler({ ledger, gateway, secret: webhookSecret, reactor }) : undefined;
   // The sandbox and the offline simulator never move a transfer by themselves; this answers for the bank (bank-clock.ts).
-  const bankClock = simulator && bankClockMs > 0 ? new BankClock({ ledger, gateway, simulator, afterMs: bankClockMs }) : null;
+  const bankClock = simulator && bankClockMs > 0 ? new BankClock({ ledger, gateway, simulator, afterMs: bankClockMs, skip: (id) => isStoryInvoice(ledger, id) }) : null;
   // Offline deliveries go through the same route function the public listener serves.
   if (webhook) offlineWebhooks?.bind(publicWebhookRoutes(webhook));
   return {
@@ -61,6 +62,7 @@ export async function assemble(runtime: Runtime, options: AssembleOptions): Prom
       ledger, gateway, commander, closer, cards, model, readerName, simulator, token: options.token, operator: options.operator, beneficiaryId, eurBeneficiaryId,
       paidHoldMs, agent, offline, bankClockMs: bankClock ? bankClockMs : null,
       payees: () => api.listBeneficiaries(),
+      beneficiaries: api,
       webhooks: { listening: webhook !== undefined, agentOnEvent: wakes !== null }, agentGate, reactor,
       reset: offline ? options.reset : undefined,
     }),

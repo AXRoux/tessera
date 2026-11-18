@@ -114,12 +114,12 @@ const SYSTEM_PROMPT = [
   "statementCredit is set only if the supplier's statement shows a credit from us; give the amount in minor units (cents).",
 ].join("\n");
 
-/** Wider than the model on purpose: a false positive only escalates to a person. */
-const DETAIL_CHANGE =
+/** Wider than the model on purpose: a false positive only escalates to a person. Also screens supplier requests (intake.ts). */
+export const DETAIL_CHANGE =
   /\b(new|updated|changed|different|revised)\b[^.\n]{0,40}\b(bank|account|iban|swift|bic|routing)\b|\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/i;
-const EMBEDDED_INSTRUCTION = /\b(ignore|disregard|forget)\b[^.\n]{0,30}\b(previous|prior|above|all|instructions)\b|system prompt|you are now/i;
+export const EMBEDDED_INSTRUCTION = /\b(ignore|disregard|forget)\b[^.\n]{0,30}\b(previous|prior|above|all|instructions)\b|system prompt|you are now/i;
 
-function mentionsAmount(text: string, amountMinor: number, currency: string): boolean {
+export function mentionsAmount(text: string, amountMinor: number, currency: string): boolean {
   const normalized = text.replace(/[,\s]/g, "");
   const major = fromMinor(amountMinor, currency);
   const forms = new Set([major.toFixed(currencyExponent(currency)), String(major)]);

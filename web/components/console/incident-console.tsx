@@ -21,6 +21,8 @@ import { NoticeBox } from "./fields";
 import { LedgerLog } from "./ledger-log";
 import { SandboxPanel } from "./sandbox-panel";
 import { SupplierPanel, supplierCount } from "./supplier-panel";
+import { StoryPanel } from "./story-panel";
+import { SupplierMark } from "../suppliers/supplier-mark";
 
 function Figure({ label, value, tone = "" }: { label: string; value: string; tone?: string }) {
   return (
@@ -32,7 +34,7 @@ function Figure({ label, value, tone = "" }: { label: string; value: string; ton
 }
 
 type Evidence = "history" | "attempts" | "supplier" | "certificate";
-type Move = "decide" | "agent" | "simulate";
+type Move = "story" | "decide" | "agent" | "simulate";
 
 /**
  * One incident, composed to fit one screen and read in order, left to right: 01 the situation and what Tessera
@@ -46,7 +48,9 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
   const agent = useAgentRun();
   const needsPerson = viewNeedsPerson(view);
   const [evidence, setEvidence] = useState<Evidence>("history");
-  const [move, setMove] = useState<Move>(needsPerson || !health?.agent ? "decide" : "agent");
+  // An invoice opened from a supplier's request opens on its story while there is a step left to play or press.
+  const storyLive = initial.story?.steps.some((s) => s.state === "next") ?? false;
+  const [move, setMove] = useState<Move>(storyLive ? "story" : needsPerson || !health?.agent ? "decide" : "agent");
 
   // The walkthrough's "take over" step is done once the operator has looked at an incident that was waiting for them.
   useEffect(() => {
@@ -76,8 +80,9 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
             <Icon name="back" className="size-[18px]" />
           </MetalCircle>
           <div className="min-w-0">
-            <Kicker>Incident</Kicker>
+            <Kicker>{view.story ? `Invoice from ${view.story.supplier.name}` : "Incident"}</Kicker>
             <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
+              {view.story ? <SupplierMark supplier={view.story.supplier} size={28} /> : null}
               <h1 className="readout text-[clamp(20px,1.7vw,26px)] font-medium leading-none tracking-[-0.03em]">{o.reference}</h1>
               <Chip tone={chip.tone} pulse={chip.pulse}>
                 {chip.label}
@@ -142,6 +147,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
               onChange={setMove}
               className="w-fit"
               options={[
+                ...(view.story ? [{ id: "story" as Move, label: "Story" }] : []),
                 { id: "decide" as Move, label: "Decide" },
                 { id: "agent" as Move, label: "Ask the agent" },
                 ...(health?.sandbox ? [{ id: "simulate" as Move, label: "Simulate" }] : []),
@@ -157,6 +163,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
             </div>
           ) : null}
           <div role="tabpanel" className="thin-scroll flex min-h-0 flex-1 flex-col overflow-y-auto p-1">
+            {move === "story" ? <StoryPanel view={view} busy={busy} run={run} /> : null}
             {move === "decide" ? <ActionsPanel view={view} operator={operator} busy={busy} run={run} /> : null}
             {move === "agent" ? <AgentPanel incidentId={id} health={health} refresh={() => void refresh().catch(() => undefined)} /> : null}
             {move === "simulate" && health?.sandbox ? <SandboxPanel view={view} busy={busy} run={run} clockMs={health?.bankClockMs ?? null} /> : null}

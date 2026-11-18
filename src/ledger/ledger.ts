@@ -103,6 +103,30 @@ export interface InboxMessage {
   statementText?: string;
 }
 
+/** A supplier's request for payment, as it arrived and as the door judged it (src/commander/intake.ts). */
+export interface SupplierRequest {
+  id: string;
+  supplierId: string;
+  story: string | null;
+  reference: string;
+  amountMinor: number;
+  currency: string;
+  sender: string;
+  subject: string;
+  body: string;
+  receivedAt: string;
+  verdict: "PAYABLE" | "HELD" | "DUPLICATE";
+  status: "RECEIVED" | "OPENED" | "HELD" | "DUPLICATE" | "DECLINED";
+  checks: { id: string; ok: boolean; label: string; detail: string }[];
+  summary: string;
+  obligationId: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  note: string | null;
+}
+type SupplierRequestRow = Omit<SupplierRequest, "checks"> & { checks: string };
+const toSupplierRequest = (row: SupplierRequestRow): SupplierRequest => ({ ...row, checks: JSON.parse(row.checks) as SupplierRequest["checks"] });
+
 /** A verified Airwallex webhook delivery, as far as the ledger needs it for dedupe. */
 export interface WebhookEventRecord {
   id: string;
@@ -302,6 +326,28 @@ CREATE TABLE IF NOT EXISTS cards (
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL,
   obligationId TEXT REFERENCES obligations(id)
+);
+-- Supplier requests (src/server/requests.ts): every invoice a supplier sent, as it arrived, and what the door made of it.
+-- A request becomes an invoice only when a person approves it; until then it is not an obligation.
+CREATE TABLE IF NOT EXISTS supplier_requests (
+  id TEXT PRIMARY KEY,
+  supplierId TEXT NOT NULL,
+  story TEXT,
+  reference TEXT NOT NULL,
+  amountMinor INTEGER NOT NULL CHECK (amountMinor > 0),
+  currency TEXT NOT NULL,
+  sender TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  receivedAt TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('PAYABLE','HELD','DUPLICATE')),
+  status TEXT NOT NULL CHECK (status IN ('RECEIVED','OPENED','HELD','DUPLICATE','DECLINED')),
+  checks TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  obligationId TEXT REFERENCES obligations(id),
+  decidedBy TEXT,
+  decidedAt TEXT,
+  note TEXT
 );
 -- Every charge or decline Airwallex reported on a card, once: the transaction id is the dedupe key.
 CREATE TABLE IF NOT EXISTS card_charges (
@@ -990,6 +1036,83 @@ export class Ledger {
       this.db.query("DELETE FROM certificates WHERE obligationId = ?").run(obligationId);
       this.append(obligationId, "CERTIFICATE_REVOKED", { certificateHash: row.hash, reason });
       this.escalate(obligationId, reason);
+    });
+  }
+
+  // ---- supplier requests -------------------------------------------------
+
+  /**
+   * Files a supplier's request as it arrived, with the door's verdict. The chain records who sent it, the invoice it
+   * names, a hash of the text and the verdict; a copy of an invoice already on the ledger is chained to that invoice.
+   */
+  addSupplierRequest(input: Omit<SupplierRequest, "id" | "receivedAt" | "status" | "obligationId" | "decidedBy" | "decidedAt" | "note"> & { duplicateOf?: string | null }): SupplierRequest {
+    return this.tx(() => {
+      const id = crypto.randomUUID();
+      const receivedAt = this.now().toISOString();
+      const status: SupplierRequest["status"] = input.verdict === "PAYABLE" ? "RECEIVED" : input.verdict;
+      const duplicateOf = input.verdict === "DUPLICATE" ? (input.duplicateOf ?? null) : null;
+      this.db
+        .query(
+          `INSERT INTO supplier_requests (id, supplierId, story, reference, amountMinor, currency, sender, subject, body, receivedAt, verdict, status, checks, summary, obligationId)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(id, input.supplierId, input.story, input.reference, input.amountMinor, input.currency, input.sender, input.subject, input.body, receivedAt,
+          input.verdict, status, JSON.stringify(input.checks), input.summary, duplicateOf);
+      this.append(duplicateOf, "REQUEST_RECEIVED", {
+        requestId: id, supplierId: input.supplierId, from: input.sender, reference: input.reference, amountMinor: input.amountMinor,
+        currency: input.currency, verdict: input.verdict, bodySha256: sha256Hex(`${input.subject}\n${input.body}`),
+        failedChecks: input.checks.filter((c) => !c.ok).map((c) => c.id),
+      });
+      return this.requireSupplierRequest(id);
+    });
+  }
+
+  supplierRequests(): SupplierRequest[] {
+    return (this.db.query("SELECT * FROM supplier_requests ORDER BY receivedAt DESC, rowid DESC").all() as SupplierRequestRow[]).map(toSupplierRequest);
+  }
+
+  getSupplierRequest(id: string): SupplierRequest | null {
+    const row = this.db.query("SELECT * FROM supplier_requests WHERE id = ?").get(id) as SupplierRequestRow | null;
+    return row ? toSupplierRequest(row) : null;
+  }
+
+  requireSupplierRequest(id: string): SupplierRequest {
+    const request = this.getSupplierRequest(id);
+    if (!request) throw new Error(`no supplier request ${id}`);
+    return request;
+  }
+
+  /** The request a person approved into this invoice, if it came from one. */
+  requestForObligation(obligationId: string): SupplierRequest | null {
+    const row = this.db.query("SELECT * FROM supplier_requests WHERE obligationId = ? AND status = 'OPENED'").get(obligationId) as SupplierRequestRow | null;
+    return row ? toSupplierRequest(row) : null;
+  }
+
+  /**
+   * A person approved the request: the invoice is opened from it in one transaction, with the email filed in its
+   * inbox and the approval chained to it. Only a RECEIVED (payable) request can be opened, and only once.
+   */
+  openFromRequest(requestId: string, obligation: NewObligation, by: string, note: string): Obligation {
+    return this.tx(() => {
+      const request = this.requireSupplierRequest(requestId);
+      if (request.status !== "RECEIVED") throw new StateConflict(`request ${requestId} is ${request.status.toLowerCase()}, so it cannot be opened`);
+      const opened = this.createObligation(obligation);
+      const ts = this.now().toISOString();
+      this.db.query("UPDATE supplier_requests SET status = 'OPENED', obligationId = ?, decidedBy = ?, decidedAt = ?, note = ? WHERE id = ?").run(opened.id, by, ts, note, requestId);
+      this.append(opened.id, "REQUEST_APPROVED", { requestId, supplierId: request.supplierId, story: request.story, by, note });
+      this.addInboxMessage({ incidentId: opened.id, from: request.sender, email: `Subject: ${request.subject}\n\n${request.body}` });
+      return this.requireObligation(opened.id);
+    });
+  }
+
+  /** A person turned a request down. Nothing was opened or paid; the decision is chained. */
+  declineRequest(requestId: string, by: string, note: string): SupplierRequest {
+    return this.tx(() => {
+      const request = this.requireSupplierRequest(requestId);
+      if (request.status === "OPENED" || request.status === "DECLINED") throw new StateConflict(`request ${requestId} is already ${request.status.toLowerCase()}`);
+      this.db.query("UPDATE supplier_requests SET status = 'DECLINED', decidedBy = ?, decidedAt = ?, note = ? WHERE id = ?").run(by, this.now().toISOString(), note, requestId);
+      this.append(request.obligationId, "REQUEST_DECLINED", { requestId, supplierId: request.supplierId, by, note });
+      return this.requireSupplierRequest(requestId);
     });
   }
 

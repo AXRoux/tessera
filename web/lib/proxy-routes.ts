@@ -5,6 +5,8 @@
  *
  * `auth/*` is Better Auth (multi-tenant mode), served by the API process; `workspace/*` manages a person's own keys.
  *
+ * `suppliers` and `requests/*` are where a payment starts: a supplier's invoice, judged at the door, approved by a person.
+ *
  * Deliberately absent: `webhooks/airwallex`. Airwallex cannot hold the operator token; it talks to the API directly.
  */
-export const PROXIED_ROUTE = /^(health|metrics|wallets(\/stage)?|payee|demo\/(seed|reset)|agent\/run|obligations(\/[\w-]+(\/[\w/-]+)?)?|cards(\/[\w-]+\/[a-z]+)?|tap\/keys|workspace(\/[\w/-]+)?|auth\/[\w/-]+)$/;
+export const PROXIED_ROUTE = /^(health|metrics|wallets(\/stage)?|payee|demo\/(seed|reset)|suppliers|requests(\/[\w-]+\/(approve|decline))?|agent\/run|obligations(\/[\w-]+(\/[\w/-]+)?)?|cards(\/[\w-]+\/[a-z]+)?|tap\/keys|workspace(\/[\w/-]+)?|auth\/[\w/-]+)$/;

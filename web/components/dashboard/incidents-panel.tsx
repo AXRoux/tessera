@@ -11,7 +11,8 @@ import { moveOf } from "@/lib/next-moves";
 import { AgentMark } from "../kit/agent-mark";
 import { Icon } from "../landing/icons";
 import { useShell } from "../shell";
-import { Btn } from "../kit/metal";
+import { Btn, LinkBtn } from "../kit/metal";
+import { SupplierMark } from "../suppliers/supplier-mark";
 import { Chip, STATUS_CHIP, Toggle, Tray, TrayHead } from "../kit/widgets";
 
 type Filter = "all" | "live" | "you" | "certify" | "done";
@@ -112,8 +113,13 @@ export function IncidentsPanel({ items, onCompose }: { items: IncidentSummary[];
         <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
           {items.length === 0 ? (
             <div className="flex h-full min-h-[110px] flex-col items-center justify-center gap-3 px-6 text-center text-[13px] text-fg/55">
-              The ledger is empty. Every payout you send lands here.
-              <Btn onClick={onCompose}>Send a payout</Btn>
+              The ledger is empty. Every payout lands here, from a supplier&rsquo;s request or one you send yourself.
+              <span className="flex flex-wrap items-center justify-center gap-2">
+                <LinkBtn href="/requests">Open supplier requests</LinkBtn>
+                <Btn tone="secondary" onClick={onCompose}>
+                  Send a payout
+                </Btn>
+              </span>
             </div>
           ) : shown.length === 0 ? (
             <p className="px-6 py-8 text-center text-[13px] text-fg/55">
@@ -140,11 +146,14 @@ export function IncidentsPanel({ items, onCompose }: { items: IncidentSummary[];
                   className={`group relative grid ${COLUMNS} cursor-pointer items-center gap-4 border-b border-fg/[0.05] px-5 py-2.5 transition-colors last:border-b-0 hover:bg-fg/[0.035] short:py-2`}
                 >
                   {item.attention ? <span aria-hidden className="absolute inset-y-2.5 left-1.5 w-[3px] rounded-full bg-warn" /> : null}
-                  <span role="cell" className="min-w-0">
-                    <Link href={`/incidents/${item.id}`} onClick={(e) => e.stopPropagation()} className="readout block truncate text-[12.5px] font-medium group-hover:text-accent">
-                      {item.reference}
-                    </Link>
-                    <span className="readout block text-[10px] text-fg/40">{item.method}</span>
+                  <span role="cell" className="flex min-w-0 items-center gap-2.5">
+                    {item.supplier ? <SupplierMark supplier={item.supplier} size={26} /> : null}
+                    <span className="min-w-0">
+                      <Link href={`/incidents/${item.id}`} onClick={(e) => e.stopPropagation()} className="readout block truncate text-[12.5px] font-medium group-hover:text-accent">
+                        {item.reference}
+                      </Link>
+                      <span className="readout block truncate text-[10px] text-fg/40">{item.supplier ? `${item.supplier.name} · ${item.method}` : item.method}</span>
+                    </span>
                   </span>
                   <span role="cell" className="readout truncate text-[13px] font-medium">
                     {money(item.amountMinor, item.currency)}

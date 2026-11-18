@@ -6,7 +6,7 @@ import { authClient } from "@/lib/auth-client";
 import type { AgentFaceChoice } from "@/lib/agent-face";
 import { initialsOf } from "@/lib/initials";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IncidentListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
+import { IncidentListSchema, RequestListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
 import { api } from "@/lib/client-api";
 import { needsYou } from "@/lib/tour-steps";
 import { agentName, useAgentRun } from "./agent/agent-run";
@@ -42,6 +42,25 @@ export function useShell(): ShellState {
   const shell = useContext(ShellContext);
   if (!shell) throw new Error("useShell needs <AppShell>");
   return shell;
+}
+
+/** Supplier requests a person has not dealt with yet: new ones to approve, and ones held at the door. */
+function useRequestsWaiting(): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api("requests", RequestListSchema)
+        .then((list) => alive && setCount(list.items.filter((r) => r.status === "RECEIVED" || r.status === "HELD").length))
+        .catch(() => undefined);
+    void load();
+    const timer = setInterval(() => !document.hidden && void load(), 5000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+  return count;
 }
 
 function useWaiting(): ShellState["waiting"] {
@@ -92,10 +111,11 @@ function SearchField() {
 }
 
 /** Where you are, as a segmented track of links: the room, the queue, and the incident when you are in one. */
-function Nav({ waiting, accounts }: { waiting: number; accounts: boolean }) {
+function Nav({ waiting, requests, accounts }: { waiting: number; requests: number; accounts: boolean }) {
   const pathname = usePathname();
   const items: { href: string; label: string; icon: Parameters<typeof Icon>[0]["name"]; on: boolean; count?: number }[] = [
     { href: "/dashboard", label: "Control room", icon: "dashboard", on: pathname === "/dashboard" },
+    { href: "/requests", label: "Requests", icon: "mail", on: pathname === "/requests", count: requests },
     { href: "/queue", label: "Queue", icon: "inbox", on: pathname === "/queue", count: waiting },
     ...(accounts ? [{ href: "/workspace", label: "Keys", icon: "lock" as const, on: pathname === "/workspace" }] : []),
   ];
@@ -216,6 +236,7 @@ function AccountMenu({ account }: { account: Account }) {
 function Menubar({ health, account }: { health: Health | null; account: Account | null }) {
   const agent = useAgentRun();
   const { waiting } = useShell();
+  const requestsWaiting = useRequestsWaiting();
   const model = health?.agent ? agentName(health.agent, true) : null;
   return (
     <header className="relative z-30 shrink-0 px-4 pt-4 sm:px-6 xl:px-7">
@@ -227,7 +248,7 @@ function Menubar({ health, account }: { health: Health | null; account: Account 
           <span className="hidden text-[16px] font-semibold tracking-[-0.03em] 2xl:block">Tessera</span>
         </Link>
 
-        <Nav waiting={waiting.length} accounts={account !== null} />
+        <Nav waiting={waiting.length} requests={requestsWaiting} accounts={account !== null} />
 
         <div className="hidden min-w-0 max-w-[380px] flex-1 sm:block">
           <SearchField />

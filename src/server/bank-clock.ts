@@ -32,6 +32,8 @@ export interface BankClockDeps {
   simulator: Pick<Simulator, "advance">;
   afterMs: number;
   now?: () => number;
+  /** Invoices whose bank is played by their story (src/demo/story.ts): the clock leaves them alone. */
+  skip?: (obligationId: string) => boolean;
 }
 
 export class BankClock {
@@ -43,7 +45,8 @@ export class BankClock {
     const now = (this.deps.now ?? Date.now)();
     const due = ledger
       .syncableAttempts()
-      .filter((a) => a.state === "LIVE" && a.awxStatus === "PROCESSING" && a.transferId !== null && now - Date.parse(a.createdAt) >= afterMs);
+      .filter((a) => a.state === "LIVE" && a.awxStatus === "PROCESSING" && a.transferId !== null && now - Date.parse(a.createdAt) >= afterMs)
+      .filter((a) => !this.deps.skip?.(a.obligationId));
     const paid: string[] = [];
     const failures: unknown[] = [];
     for (const attempt of due) {

@@ -101,6 +101,10 @@ const TITLES: Record<string, string> = {
   INTENT_STALE: "Stale intent",
   CERTIFICATE_REVOKED: "Revoked",
   INBOX_RECEIVED: "Mail arrived",
+  REQUEST_RECEIVED: "Request arrived",
+  REQUEST_APPROVED: "Request approved",
+  REQUEST_DECLINED: "Request declined",
+  STORY_STEP: "Played",
   PAYMENT_REFUSED: "Refused",
   WEBHOOK_RECEIVED: "Webhook",
   INCIDENT_REACTION: "Reassessed",
@@ -195,6 +199,21 @@ export function describeEvent(type: string, payload: unknown): string {
       return `An attempt has waited ${String(p.ageHours ?? "?")}h without a transfer at Airwallex. Its lock stays until a person releases it.`;
     case "CERTIFICATE_REVOKED":
       return `The certificate was revoked: ${bare(text(p.reason)) ?? "no reason recorded"}.`;
+    case "REQUEST_RECEIVED": {
+      const verdict = text(p.verdict);
+      const what = `${text(p.reference) ?? "An invoice"} for ${amount(p.amountMinor, p.currency)} arrived from ${text(p.from) ?? "a supplier"}`;
+      if (verdict === "DUPLICATE") return `${what} again. It is a copy of this invoice, so it was filed here and never opened as a new one.`;
+      if (verdict === "HELD") return `${what}. It failed the door's checks and was held for a person; nothing was opened or paid.`;
+      return `${what}. It passed every check at the door.`;
+    }
+    case "REQUEST_APPROVED":
+      return `${text(p.by) ?? "A person"} approved the supplier's request, which opened this invoice: “${bare(text(p.note)) ?? "no note"}”.`;
+    case "REQUEST_DECLINED":
+      return `${text(p.by) ?? "A person"} declined the supplier's request: “${bare(text(p.note)) ?? "no note"}”.`;
+    case "STORY_STEP":
+      return text(p.actor) === "bank"
+        ? `The bank's part was played on the simulator at ${text(p.by) ?? "the operator"}'s request${text(p.failureType) ? `: ${titleCase(text(p.failureType)!)}` : ""}. Everything after it came from Airwallex.`
+        : `The supplier's part was played at ${text(p.by) ?? "the operator"}'s request: their message arrived in the inbox.`;
     case "INBOX_RECEIVED":
       return `A message from ${text(p.from) ?? "the supplier"} arrived in the inbox (${String(p.chars ?? "?")} characters). Only its fingerprint is in the ledger.`;
     case "PAYMENT_REFUSED":
