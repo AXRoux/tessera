@@ -227,6 +227,22 @@ describe("stories", () => {
     expect((await r.view(id)).story!.steps.at(-1)!.state).toBe("yours");
   });
 
+  it("returned: once an authorized individual releases a second payment in writing, the story carries on to payment and certification", async () => {
+    const r = rig();
+    const id = await r.approve((await r.send("langchain")).id);
+    await r.play(id, "fail");
+    expect((await r.call("POST", `/api/obligations/${id}/replace`)).status).toBe(409);
+    const v = await r.view(id);
+    const released = await r.call("POST", `/api/obligations/${id}/approve`, { note: "Called LangChain: the first payment never arrived.", evidenceHash: v.evidenceHash });
+    expect(released.status).toBe(201);
+    expect(await r.next(id)).toBe("pay");
+    expect((await r.view(id)).story!.steps.find((s) => s.id === "retry")!.title).toBe("Released a second payment, in writing");
+    await r.play(id, "pay");
+    expect(await r.next(id)).toBe("certify");
+    expect((await r.call("POST", `/api/obligations/${id}/close`)).status).toBe(200);
+    expect(r.liveTransfers((await r.view(id)).obligation.reference)).toBe(1);
+  });
+
   it("reminder: the second copy is matched to the invoice on the ledger, filed with it, and never opened", async () => {
     const r = rig();
     const id = await r.approve((await r.send("replicate")).id);

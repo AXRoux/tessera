@@ -50,14 +50,15 @@ export const DEFAULT_POLICY: CommanderPolicy = {
 };
 
 /**
- * The same policy at a pace a live audience can watch: a transfer is overdue after minutes rather than days, a FAILED
- * transfer is chased after two minutes, and PAID is final after thirty seconds. Only ever applied to the Airwallex
- * sandbox or the offline demo (see TESSERA_PACE in the runtime); real money keeps the banking windows above.
+ * The same policy at a pace a stage can hold: the whole story of a delayed transfer fits a five-minute demo. A transfer
+ * is overdue after two minutes rather than two days, a FAILED transfer is chased after one, and PAID is final after
+ * fifteen seconds. Only ever applied to the Airwallex sandbox or the offline demo (see TESSERA_PACE in the runtime);
+ * real money keeps the banking windows above.
  */
 export const LIVE_PACE: Pick<CommanderPolicy, "settlementSlaMs" | "failedSlaMs" | "paidHoldMs"> = {
-  settlementSlaMs: { LOCAL: 5 * 60_000, SWIFT: 10 * 60_000 },
-  failedSlaMs: 2 * 60_000,
-  paidHoldMs: 30_000,
+  settlementSlaMs: { LOCAL: 2 * 60_000, SWIFT: 4 * 60_000 },
+  failedSlaMs: 60_000,
+  paidHoldMs: 15_000,
 };
 
 /** A length of time as a sentence says it: "40 seconds", "5 minutes", "877 hours". */

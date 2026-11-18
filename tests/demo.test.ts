@@ -38,7 +38,7 @@ describe("offline runtime", () => {
   it("runs at live pace offline: minutes, not days", () => {
     const runtime = buildRuntime({ TESSERA_OFFLINE: "1" });
     expect(runtime.pace).toBe("live");
-    expect(runtime.policy.settlementSlaMs.LOCAL).toBe(5 * 60_000);
+    expect(runtime.policy.settlementSlaMs.LOCAL).toBe(2 * 60_000);
     expect(buildRuntime({ TESSERA_OFFLINE: "1", TESSERA_PACE: "real" }).policy.settlementSlaMs.LOCAL).toBe(48 * 3600_000);
   });
 

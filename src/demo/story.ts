@@ -156,16 +156,30 @@ function definitions(supplier: Supplier, story: StoryId, o: Obligation, st: Stor
         certify,
         { id: "yours", actor: "you", title: `Let ${who} know the payment has landed.`, yours: true },
       ];
-    case "returned":
-      return [
+    case "returned": {
+      const returned: StepDef[] = [
         ...head,
         { id: "fail", actor: "bank", title: "Airwallex: transfer returned, duplication (91301)", play: { kind: "fail", failureType: "DUPLICATION_RETURN" },
           after: `${who} may already hold the funds. Replacement blocked and assigned to you.`,
-          done: (s) => s.attempts[0]?.state === "DEAD" },
+          done: (s) => s.attempts[0]?.state === "DEAD" || s.attempts.length > 1 },
+      ];
+      // An authorized individual confirmed with the supplier and released a second payment in writing: it is paid like any other.
+      if (st.attempts.length > 1) {
+        return [
+          ...returned,
+          { id: "retry", actor: "you", title: "Released a second payment, in writing", action: "retry",
+            after: "Signed by an authorized individual after confirming with the supplier. Policy would never have made it alone.", done: () => true },
+          { id: "pay", actor: "bank", title: "Airwallex: replacement paid", play: { kind: "pay" }, done: latestPaid },
+          certify,
+        ];
+      }
+      return [
+        ...returned,
         { id: "retry", actor: "you", title: "Send a replacement", action: "retry",
           after: "Declined by policy and logged. A second payment requires an authorized individual, in writing.", done: retryDone("fail") },
-        { id: "yours", actor: "you", title: `Confirm with ${who} whether the first payment arrived before releasing another.`, yours: true },
+        { id: "yours", actor: "you", title: `Confirm with ${who} whether the first payment arrived, then release it in writing under Decide.`, yours: true },
       ];
+    }
     case "reminder":
       return [
         ...head,
