@@ -24,7 +24,7 @@ const HEADLINE: Record<Action, string> = {
   FUND: "Fund the replacement",
   PAY_BY_CARD: "Pay it by Visa card",
   CLOSE: "Close and certify",
-  ESCALATE: "This needs a person",
+  ESCALATE: "This requires human oversight",
 };
 
 /** The same steps, short enough for a chip. */
