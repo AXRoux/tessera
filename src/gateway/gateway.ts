@@ -367,7 +367,7 @@ export class PayoutGateway {
           throw new ApprovalRejected(
             "terms_mismatch",
             attempts.length > 0
-              ? "the terms differ from the obligation's; only a named person with a written note may correct them"
+              ? "the terms differ from the obligation's; only an authorized individual with a written note may correct them"
               : "first attempt must use the obligation's own terms",
           );
         }

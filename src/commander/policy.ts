@@ -429,8 +429,8 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
     raise("CRITICAL");
     candidates.push("ESCALATE");
     reasons.push(`Already with a person: ${(obligation.escalationReason ?? "no reason recorded").replace(/[.\s]+$/, "")}.`);
-    refuse("REPLACE", "Only a named person can release an escalated invoice.");
-    refuse("PAY_BY_CARD", "Only a named person can release an escalated invoice.");
+    refuse("REPLACE", "Only an authorized individual can release an escalated invoice.");
+    refuse("PAY_BY_CARD", "Only an authorized individual can release an escalated invoice.");
     refuse("CLOSE", "An escalated invoice cannot be closed until a person resolves the escalation.");
   }
   if (evidence?.requestsDetailChange) {
@@ -556,7 +556,7 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         fromState = "ESCALATE";
         candidates.push("ESCALATE");
         raise(entry.class === "POSSIBLE_DUPLICATE" || entry.class === "COMPLIANCE_OR_RECALL" ? "CRITICAL" : "ATTENTION");
-        refuse("REPLACE", "This kind of failure is never replaced automatically. A named person must approve it, in writing.");
+        refuse("REPLACE", "This kind of failure is never replaced automatically. It requires an authorized individual to approve it, in writing.");
         break;
       }
       if (entry.replace === "AFTER_CHANGE") {

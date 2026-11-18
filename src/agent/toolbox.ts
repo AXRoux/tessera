@@ -503,7 +503,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
       ...decorator({ schema: z.object({ incidentId: IncidentId, reason: z.string().min(1).max(300) }) }),
       name: "escalate_to_human",
       description:
-        "Hand the incident to a named person with a reason. Always allowed, because it only removes your authority: once escalated, only a person can release a payment. Use for anything you are unsure about, anything involving bank-detail changes, and anything the code blocks.",
+        "Hand the incident to an authorized individual with a reason. Always allowed, because it only removes your authority: once escalated, only a person can release a payment. Use for anything you are unsure about, anything involving bank-detail changes, and anything the code blocks.",
       schema: z.object({ incidentId: IncidentId, reason: z.string().min(1).max(300) }),
       annotations: hints({ idempotentHint: true }),
       run: async ({ incidentId, reason }) => {
@@ -537,7 +537,7 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
             ...decorator({ schema: z.strictObject({ incidentId: IncidentId, reason: z.string().min(12).max(300) }) }),
             name: "pay_invoice_by_card",
             description:
-              "When assess_incident allows PAY_BY_CARD: pay this supplier invoice with a single-use Visa card instead of a second bank transfer. The first call asks for the card: every term comes from the invoice (the exact amount and currency, the invoice's supplier as the only merchant, single use), it takes the invoice's duplicate lock so no transfer can be made while it holds, and it waits for a named person to sign it (you cannot). Once assess_incident shows the card ACTIVE and recommends PAY_BY_CARD, call again: Tessera pays the supplier's checkout for exactly the invoice amount through Visa's Trusted Agent Protocol, signed with your agent key and verified by the merchant before it charges. You give only the incident and a reason: no amount, no merchant, no card.",
+              "When assess_incident allows PAY_BY_CARD: pay this supplier invoice with a single-use Visa card instead of a second bank transfer. The first call asks for the card: every term comes from the invoice (the exact amount and currency, the invoice's supplier as the only merchant, single use), it takes the invoice's duplicate lock so no transfer can be made while it holds, and it waits for an authorized individual to sign it (you cannot). Once assess_incident shows the card ACTIVE and recommends PAY_BY_CARD, call again: Tessera pays the supplier's checkout for exactly the invoice amount through Visa's Trusted Agent Protocol, signed with your agent key and verified by the merchant before it charges. You give only the incident and a reason: no amount, no merchant, no card.",
             // Strict: an amount, a merchant or a card in the input is refused, not silently ignored.
             schema: z.strictObject({
               incidentId: IncidentId,
@@ -697,7 +697,7 @@ function cardTools(desk: CardDesk, actor: string): Tool[] {
     tool({
       name: "request_virtual_card",
       description:
-        "Ask for a single-use Visa virtual card for one purchase. Code checks it first (category, your limit as an agent, today's total, the wallet above its reserve floor); if it passes, it waits as PENDING until a named person signs it, and only then is it issued, with the cap, currency, merchant categories and an end date as the card's own controls. You cannot sign it. Ask only for what a task needs.",
+        "Ask for a single-use Visa virtual card for one purchase. Code checks it first (category, your limit as an agent, today's total, the wallet above its reserve floor); if it passes, it waits as PENDING until an authorized individual signs it, and only then is it issued, with the cap, currency, merchant categories and an end date as the card's own controls. You cannot sign it. Ask only for what a task needs.",
       schema: z.object({
         purpose: z.string().min(3).max(120).describe("What the purchase is, e.g. \"Figma, two editor seats\"."),
         merchant: z.string().min(2).max(60).describe("The merchant the card is for. The card pays only this merchant."),
@@ -711,7 +711,7 @@ function cardTools(desk: CardDesk, actor: string): Tool[] {
       run: async (input) => {
         const card = await desk.request({ ...input, requestedBy: actor });
         if (card.state === "REFUSED") throw new CardRefused(`the card policy refused this card: ${card.lastError ?? "no reason given"}`);
-        return { cardId: card.id, state: card.state, cap: money(card.amountMinor, card.currency), next: "a named person must sign this card before it exists; it is not usable yet" };
+        return { cardId: card.id, state: card.state, cap: money(card.amountMinor, card.currency), next: "an authorized individual must sign this card before it exists; it is not usable yet" };
       },
     }),
     tool({

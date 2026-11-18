@@ -163,7 +163,7 @@ function definitions(supplier: Supplier, story: StoryId, o: Obligation, st: Stor
           after: `${who} may already hold the funds. Replacement blocked and assigned to you.`,
           done: (s) => s.attempts[0]?.state === "DEAD" },
         { id: "retry", actor: "you", title: "Send a replacement", action: "retry",
-          after: "Declined by policy and logged. A second payment needs a named approver, in writing.", done: retryDone("fail") },
+          after: "Declined by policy and logged. A second payment requires an authorized individual, in writing.", done: retryDone("fail") },
         { id: "yours", actor: "you", title: `Confirm with ${who} whether the first payment arrived before releasing another.`, yours: true },
       ];
     case "reminder":

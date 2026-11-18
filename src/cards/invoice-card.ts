@@ -78,7 +78,7 @@ export async function payInvoiceByCard(
     if (card.state === "REFUSED") throw new CardPaymentRefused(obligationId, [`the card policy refused the card: ${card.lastError ?? "no reason given"}`]);
     return {
       outcome: "REQUESTED", card, checkout: null,
-      next: `A single-use Visa card for exactly ${formatMinor(card.amountMinor, card.currency)}, payable only to ${card.merchant}, waits for a named person to sign it. Once it is ACTIVE, call this again to pay.`,
+      next: `A single-use Visa card for exactly ${formatMinor(card.amountMinor, card.currency)}, payable only to ${card.merchant}, waits for an authorized individual to sign it. Once it is ACTIVE, call this again to pay.`,
     };
   }
 

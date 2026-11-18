@@ -357,7 +357,7 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
           <Fold title="Pay again, in writing" sub={releasable ? "Release a replacement policy would not make alone" : "Opens once the last attempt has ended"}>
             <div className="space-y-3">
               <p className="text-[12px] leading-relaxed text-fg/60">
-                Some replacements policy will never make on its own. A named person may release one, in writing. You review first, and your approval is bound to the exact facts you
+                Some replacements policy will never make on its own. An authorized individual may release one, in writing. You review first, and your approval is bound to the exact facts you
                 reviewed: if anything shifts in between, it is refused.
               </p>
               <Field label="Why is it safe to pay again?" htmlFor={noteId} hint={noteHint(note)}>

@@ -63,7 +63,7 @@ const SECTIONS: LegalSection[] = [
       <>
         <p>
           Tessera lets an AI agent read supplier messages, assess failed or delayed payouts, draft replies and propose payments,
-          while policy written in code decides what is allowed, a named person signs anything risky, and every step is recorded
+          while policy written in code decides what is allowed, an authorized individual signs anything risky, and every step is recorded
           in a tamper-evident, hash-chained ledger.
         </p>
         <LegalCallout title="Sandbox only">
@@ -110,7 +110,7 @@ const SECTIONS: LegalSection[] = [
         <p>
           The agent can act only through a fixed set of typed tools, and only where the policy allows. It cannot create a
           transfer on its own, sign an approval, change an amount or a beneficiary, sign a Visa card, or send mail. Actions above
-          the automatic limits, and every card, wait for a named person&rsquo;s written signature.
+          the automatic limits, and every card, wait for an authorized individual&rsquo;s written signature.
         </p>
         <ul>
           <li>
