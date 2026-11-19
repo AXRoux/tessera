@@ -1,0 +1,389 @@
+{
+ "dpr": 2,
+ "shots": {
+  "preload": {
+   "file": "film/preload.png",
+   "rects": {
+    "investigate": {
+     "x": 833.3125,
+     "y": 970,
+     "w": 193.359375,
+     "h": 36
+    },
+    "title": {
+     "x": 399,
+     "y": 264.34375,
+     "w": 205.890625,
+     "h": 37.5
+    },
+    "globe": {
+     "x": 399,
+     "y": 313.84375,
+     "w": 1062,
+     "h": 721.15625
+    }
+   },
+   "at": 6124
+  },
+  "loaded": {
+   "file": "film/loaded.png",
+   "rects": {
+    "title": {
+     "x": 399,
+     "y": 265.59375,
+     "w": 338.15625,
+     "h": 37.5
+    },
+    "globe": {
+     "x": 399,
+     "y": 367.59375,
+     "w": 1062,
+     "h": 667.40625
+    },
+    "sf": {
+     "x": 759.1932373046875,
+     "y": 652.853271484375,
+     "w": 38,
+     "h": 38
+    },
+    "modal": {
+     "x": 933.3314208984375,
+     "y": 637.70458984375,
+     "w": 38,
+     "h": 38
+    },
+    "framer": {
+     "x": 1023.3538818359375,
+     "y": 449.5480041503906,
+     "w": 38,
+     "h": 38
+    },
+    "run": {
+     "x": 1515,
+     "y": 423.5,
+     "w": 364,
+     "h": 36
+    },
+    "plan": {
+     "x": 1515,
+     "y": 471.5,
+     "w": 364,
+     "h": 145.578125
+    }
+   },
+   "at": 11827
+  },
+  "worked": {
+   "file": "film/worked.png",
+   "rects": {
+    "globe": {
+     "x": 399,
+     "y": 367.59375,
+     "w": 1062,
+     "h": 667.40625
+    },
+    "agent": {
+     "x": 1502,
+     "y": 220,
+     "w": 390,
+     "h": 524.359375
+    },
+    "live": {
+     "x": 1161,
+     "y": 782.5,
+     "w": 300,
+     "h": 252.5
+    }
+   },
+   "at": 15096
+  },
+  "framer-card": {
+   "file": "film/framer-card.png",
+   "rects": {
+    "card": {
+     "x": 1141,
+     "y": 367.59375,
+     "w": 320,
+     "h": 667.40625
+    }
+   },
+   "at": 18127
+  },
+  "framer-card-found": {
+   "file": "film/framer-card-found.png",
+   "rects": {
+    "card": {
+     "x": 1141,
+     "y": 367.59375,
+     "w": 320,
+     "h": 667.40625
+    }
+   },
+   "at": 19180
+  },
+  "framer-investigation": {
+   "file": "film/framer-investigation.png",
+   "rects": {
+    "report": {
+     "x": 779.09375,
+     "y": 628.25,
+     "w": 649.90625,
+     "h": 585.8125
+    }
+   },
+   "at": 21696
+  },
+  "framer-history": {
+   "file": "film/framer-history.png",
+   "rects": {},
+   "at": 22959
+  },
+  "pi-card": {
+   "file": "film/pi-card.png",
+   "rects": {
+    "card": {
+     "x": 1141,
+     "y": 367.59375,
+     "w": 320,
+     "h": 667.40625
+    }
+   },
+   "at": 28204
+  },
+  "guard-ready": {
+   "file": "film/guard-ready.png",
+   "rects": {
+    "test": {
+     "x": 1796.984375,
+     "y": 649.671875,
+     "w": 82.015625,
+     "h": 36
+    },
+    "select": {
+     "x": 1515,
+     "y": 647.671875,
+     "w": 273.984375,
+     "h": 40
+    }
+   },
+   "at": 30662
+  },
+  "guard-done": {
+   "file": "film/guard-done.png",
+   "rects": {
+    "agent": {
+     "x": 1502,
+     "y": 220,
+     "w": 390,
+     "h": 524.359375
+    }
+   },
+   "at": 32892
+  },
+  "replicate-trail": {
+   "file": "film/replicate-trail.png",
+   "rects": {
+    "card": {
+     "x": 1141,
+     "y": 367.59375,
+     "w": 320,
+     "h": 667.40625
+    }
+   },
+   "at": 35921
+  },
+  "queue-modal": {
+   "file": "film/queue-modal.png",
+   "rects": {
+    "note": {
+     "x": 1486,
+     "y": 842.46875,
+     "w": 372,
+     "h": 80
+    },
+    "card": {
+     "x": 1486,
+     "y": 293.84375,
+     "w": 372,
+     "h": 124.21875
+    },
+    "sign": {
+     "x": 1715.828125,
+     "y": 965.21875,
+     "w": 102.34375,
+     "h": 36
+    }
+   },
+   "at": 39341
+  },
+  "queue-modal-note": {
+   "file": "film/queue-modal-note.png",
+   "rects": {
+    "note": {
+     "x": 1486,
+     "y": 842.46875,
+     "w": 372,
+     "h": 80
+    },
+    "sign": {
+     "x": 1715.828125,
+     "y": 940.46875,
+     "w": 102.34375,
+     "h": 36
+    }
+   },
+   "at": 40082
+  },
+  "queue-modal-signed": {
+   "file": "film/queue-modal-signed.png",
+   "rects": {},
+   "at": 42828
+  },
+  "queue-modal-paid": {
+   "file": "film/queue-modal-paid.png",
+   "rects": {},
+   "at": 44553
+  },
+  "queue-lc": {
+   "file": "film/queue-lc.png",
+   "rects": {
+    "why": {
+     "x": 1486,
+     "y": 694.46875,
+     "w": 372,
+     "h": 80
+    }
+   },
+   "at": 47518
+  },
+  "queue-lc-review": {
+   "file": "film/queue-lc-review.png",
+   "rects": {
+    "sign": {
+     "x": 1707.328125,
+     "y": 1030.96875,
+     "w": 102.34375,
+     "h": 36
+    }
+   },
+   "at": 48464
+  },
+  "queue-lc-signed": {
+   "file": "film/queue-lc-signed.png",
+   "rects": {},
+   "at": 51702
+  },
+  "fal-card": {
+   "file": "film/fal-card.png",
+   "rects": {
+    "card": {
+     "x": 1141,
+     "y": 367.59375,
+     "w": 320,
+     "h": 667.40625
+    },
+    "received": {
+     "x": 1170,
+     "y": 891.03125,
+     "w": 154.015625,
+     "h": 36
+    }
+   },
+   "at": 56983
+  },
+  "fal-received": {
+   "file": "film/fal-received.png",
+   "rects": {
+    "card": {
+     "x": 1141,
+     "y": 367.59375,
+     "w": 320,
+     "h": 667.40625
+    }
+   },
+   "at": 62739
+  },
+  "pi-landed": {
+   "file": "film/pi-landed.png",
+   "rects": {
+    "card": {
+     "x": 1141,
+     "y": 367.59375,
+     "w": 320,
+     "h": 667.40625
+    },
+    "received": {
+     "x": 1170,
+     "y": 891.03125,
+     "w": 154.015625,
+     "h": 36
+    }
+   },
+   "at": 75925
+  },
+  "all-green": {
+   "file": "film/all-green.png",
+   "rects": {
+    "title": {
+     "x": 399,
+     "y": 264.34375,
+     "w": 426.359375,
+     "h": 37.5
+    },
+    "globe": {
+     "x": 399,
+     "y": 366.34375,
+     "w": 1062,
+     "h": 668.65625
+    }
+   },
+   "at": 92851
+  },
+  "modal-trail": {
+   "file": "film/modal-trail.png",
+   "rects": {
+    "card": {
+     "x": 1141,
+     "y": 366.34375,
+     "w": 320,
+     "h": 668.65625
+    }
+   },
+   "at": 95899
+  },
+  "history": {
+   "file": "film/history.png",
+   "rects": {
+    "dialog": {
+     "x": 650,
+     "y": 378.34375,
+     "w": 560,
+     "h": 644.65625
+    }
+   },
+   "at": 97420
+  },
+  "lanes": {
+   "file": "film/lanes.png",
+   "rects": {},
+   "at": 99197
+  },
+  "certificate": {
+   "file": "film/certificate.png",
+   "rects": {},
+   "at": 101647
+  }
+ },
+ "bursts": {
+  "run": [
+   "film/run-000.png"
+  ],
+  "guard": [
+   "film/guard-000.png"
+  ],
+  "settle": [
+   "film/settle-000.png",
+   "film/settle-001.png"
+  ]
+ }
+}

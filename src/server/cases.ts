@@ -169,8 +169,10 @@ export function caseSteps(after: LedgerEvent[], input: Pick<CaseInput, "who" | "
           push(e, { actor: "you", kind: "release", label: "Released", text: `${person(p.data.approver ?? "A person")} released a second payment in writing: ${quoted(p.data.note ?? "")}` });
           return;
         }
-        // An automatic replacement: the agent's, if its call follows; otherwise a person pressed Replace.
-        const byAgent = after.slice(i + 1, i + 4).some((x) => x.type === "AGENT_TOOL_CALL" && ToolCallSchema.safeParse(x.payload).data?.tool === "replace_payment");
+        // An automatic replacement: the agent's, if its replace call is the next audit line (Airwallex's own events may
+        // land in between); otherwise a person pressed Replace.
+        const nextCall = after.slice(i + 1).find((x) => x.type === "AGENT_TOOL_CALL" || x.type === "ATTEMPT_INTENT" || x.type === "PAYMENT_REFUSED");
+        const byAgent = nextCall?.type === "AGENT_TOOL_CALL" && ToolCallSchema.safeParse(nextCall.payload).data?.tool === "replace_payment";
         push(e, {
           actor: byAgent ? "agent" : "you", kind: "act", label: "Replaced",
           text: `Sent a replacement under a fresh request ID, within the automatic limit. The original stays cancelled.`,

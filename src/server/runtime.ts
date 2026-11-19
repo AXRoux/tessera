@@ -223,9 +223,13 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
   let model: StructuredModel | null = configured ? withKeywordFallback(configured.model) : null;
   let readerName: string | null = configured?.label ?? null;
   let agent: AgentDeps | null = configured ? { model: configured.model, actor: configured.actor, kind: "model", name: configured.label } : null;
-  if (!configured && offline) {
+  // The built-in agent on the Airwallex sandbox, by choice (TESSERA_BUILTIN_AGENT=1): the same toolbox and policy, no
+  // model key. Never against real money.
+  const builtIn = truthy(env.TESSERA_BUILTIN_AGENT);
+  if (builtIn && !sandboxHost) throw new Error("TESSERA_BUILTIN_AGENT=1 is only allowed on the Airwallex sandbox or offline");
+  if (!configured && (offline || builtIn)) {
     model = new OfflineReader();
-    readerName = "offline keyword reader";
+    readerName = offline ? "offline keyword reader" : "keyword reader";
     // Never named after a model, whatever TESSERA_AGENT_NAME says: the ledger must not credit a model that did not run.
     agent = { model: new ScriptedAgentModel(), actor: "agent:scripted", kind: "scripted", name: "Agent" };
   }
