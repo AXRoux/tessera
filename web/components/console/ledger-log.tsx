@@ -30,6 +30,7 @@ const field = (payload: unknown, key: string): string | null =>
 
 function actorOf(event: Event): Actor {
   const p = event.payload;
+  if (event.type === "CASE_OPENED") return { kind: "tessera", id: "tessera" };
   if (event.type === "STORY_STEP") return field(p, "actor") === "bank" ? { kind: "airwallex", id: "airwallex" } : { kind: "supplier", id: "supplier" };
   if (SUPPLIER.has(event.type)) return { kind: "supplier", id: "supplier" };
   if (VISA.has(event.type)) return { kind: "visa", id: "visa" };
@@ -51,6 +52,8 @@ function badgeOf(event: Event): { icon: IconName; tone: string } {
     case "PAYMENT_REFUSED":
     case "CARD_REFUSED":
       return { icon: "close", tone: "bg-bad" };
+    case "CASE_OPENED":
+      return { icon: "bolt", tone: "bg-bad" };
     case "AGENT_TOOL_CALL": {
       const outcome = field(p, "outcome");
       if (outcome && outcome !== "ok") return { icon: "close", tone: "bg-bad" };

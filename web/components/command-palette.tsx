@@ -83,7 +83,7 @@ export function CommandPalette({
       ...(canStage
         ? [
             {
-              id: "morning", group: "Actions" as const, label: "Investigate supplier issues", hint: "Case map", keywords: "demo walkthrough cases seed stuck delayed morning suppliers",
+              id: "morning", group: "Actions" as const, label: "Investigate supplier issues", hint: "Case map", keywords: "cases stuck delayed suppliers problems investigate map",
               icon: <Icon name="search" className="size-4" />,
               // On the control room it opens them at once; elsewhere it opens the case map, where one press does.
               run: go(() => (onDashboard ? window.dispatchEvent(new Event(LOAD_MORNING)) : router.push("/dashboard?view=cases"))),

@@ -14,7 +14,7 @@ const GLANCE: LegalGlance[] = [
   { title: "No tracking", text: "No analytics, no advertising, no tracking pixels and no third-party cookies. Two first-party cookies, both functional." },
   { title: "Never sold", text: "We do not sell or share personal data for advertising, and we do not use your data to train AI models." },
   { title: "Keys sealed", text: "Credentials are encrypted with AES-256-GCM under a key derived per workspace, and only their last four characters are ever shown." },
-  { title: "You choose what leaves", text: "Data goes to Airwallex and to a model provider only when you connect them. The offline rehearsal calls nothing." },
+  { title: "You choose what leaves", text: "Data goes to Airwallex and to a model provider only when you connect them. The offline sandbox calls nothing." },
   { title: "Your rights", text: "Access, correct, export or delete your data. Deleting a workspace removes the account, keys and ledger together." },
 ];
 
@@ -27,7 +27,7 @@ const SECTIONS: LegalSection[] = [
         <p>
           Tessera is operated by Vance Poitier and NULL* Team (<strong>we</strong>, <strong>us</strong>), who act as the
           controller of the personal data described here. This policy covers Tessera Live (the multi-tenant site where you sign
-          in), the public demo and these web pages (the <strong>Service</strong>).
+          in), the public sandbox and these web pages (the <strong>Service</strong>).
         </p>
         <p>
           It does not cover services you connect yourself, such as Airwallex or your model provider, which handle data under
@@ -117,7 +117,7 @@ const SECTIONS: LegalSection[] = [
           <li>The model never receives your passwords, your Airwallex or model credentials, approval secrets or database access.</li>
           <li>Supplier message text is quarantined: the agent itself sees only the structured facts the reader extracts.</li>
           <li>Your provider processes this data under its own terms and policies, which you accepted when you obtained its key.</li>
-          <li>The offline rehearsal and its built-in agent send nothing to any model provider.</li>
+          <li>The offline sandbox and its built-in agent send nothing to any model provider.</li>
         </ul>
       </>
     ),
@@ -169,8 +169,8 @@ const SECTIONS: LegalSection[] = [
             ["Rate-limit records", "In memory only, for minutes"],
             ["Server logs", "Rotated automatically; a few tens of megabytes per service at most"],
             ["Backups", "Daily encrypted disk snapshots, each kept for 7 days"],
-            ["Offline rehearsal", "In memory only; discarded after inactivity or a restart"],
-            ["Public demo", "In memory, shared by all visitors; reset after 15 minutes of inactivity"],
+            ["Offline sandbox", "In memory only; discarded after inactivity or a restart"],
+            ["Public sandbox", "In memory, shared by all visitors; reset after 15 minutes of inactivity"],
           ]}
         />
         <p>
@@ -195,7 +195,7 @@ const SECTIONS: LegalSection[] = [
         <li>The server&rsquo;s own secrets live in a managed secret store; its disk is encrypted and its data directory is restricted.</li>
         <li>The host accepts web traffic only (HTTP is redirected to HTTPS); there is no SSH access, and sign-in and sign-up are rate limited.</li>
         <li>
-          The public demo runs with no outbound network access and holds no secrets. Every ledger is hash-chained, so tampering
+          The public sandbox runs with no outbound network access and holds no secrets. Every ledger is hash-chained, so tampering
           with its history is detectable.
         </li>
       </ul>
@@ -248,11 +248,11 @@ const SECTIONS: LegalSection[] = [
     ),
   },
   {
-    heading: "The public demo",
-    summary: "Anything typed into the public demo is visible to other visitors. Use test data only.",
+    heading: "The public sandbox",
+    summary: "Anything typed into the public sandbox is visible to other visitors. Use test data only.",
     body: (
       <LegalCallout title="Shared by everyone" tone="warn">
-        The public demo has no accounts: every visitor works on the same in-memory ledger until it resets. Do not enter
+        The public sandbox has no accounts: every visitor works on the same in-memory ledger until it resets. Do not enter
         personal data, real supplier details or credentials there.
       </LegalCallout>
     ),
@@ -291,7 +291,7 @@ export default function PrivacyPage() {
       label="Privacy"
       title="Privacy Policy"
       standfirst="What Tessera collects, why each piece exists, where it goes, how long it stays and how it is protected. A short list, because the Service is built to need very little."
-      meta={{ effective: "16 November 2026", version: "2.0", appliesTo: "Tessera Live and the public demo" }}
+      meta={{ effective: "19 November 2026", version: "2.1", appliesTo: "Tessera Live and the public sandbox" }}
       glance={GLANCE}
       sections={SECTIONS}
       sibling={{ href: "/terms", label: "Terms" }}

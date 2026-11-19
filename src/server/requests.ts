@@ -11,7 +11,7 @@
  *   POST /api/requests/:id/decline {note}   a person turns it down
  *   POST /api/requests/:id/clear            off the Received list, once nothing is left to decide on it
  *   POST /api/obligations/:id/story/play {step}   the supplier's or the bank's next move (sandbox or offline only)
- *   POST /api/demo/morning                  this morning's stuck supplier payments (src/demo/morning.ts), sandbox or offline only
+ *   POST /api/supplier-issues               the supplier issues: payments already made and now stuck (src/demo/morning.ts), sandbox or offline only
  */
 import { z } from "zod";
 import type { BeneficiaryApi } from "../airwallex/types";
@@ -174,7 +174,7 @@ export function createRequests(deps: RequestDeps) {
    */
   async function morning(): Promise<MorningResult> {
     const simulator = deps.simulator;
-    if (!simulator) throw new Forbidden("this morning's cases can be set up only on the sandbox or offline");
+    if (!simulator) throw new Forbidden("supplier issues can be opened only in an offline sandbox or on the Airwallex sandbox");
     const note = "Scheduled payment run: checked against the vendor record and the invoice.";
     const setUp = async () => {
       const opened: Array<{ c: MorningCase; supplier: Supplier; obligation: Obligation; values: { ref: string; amount: string; due: string } }> = [];

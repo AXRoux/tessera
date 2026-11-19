@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 const ISSUES = "https://github.com/AXRoux/tessera/issues";
 
 const GLANCE: LegalGlance[] = [
-  { title: "Sandbox only", text: "No real money moves through Tessera. It accepts Airwallex sandbox keys only, and the public demo runs on a simulator." },
+  { title: "Sandbox only", text: "No real money moves through Tessera. It accepts Airwallex sandbox keys only, and the public sandbox runs on a simulator." },
   { title: "Not a bank", text: "Tessera holds no funds, issues no cards and gives no financial advice. Airwallex and your other providers act under their own terms." },
   { title: "You hold the keys", text: "You connect your own sandbox and model keys, you stay responsible for those accounts, and you can remove them at any time." },
   { title: "Agents propose, people sign", text: "The agent works through fourteen typed tools; policy in code decides, and risky actions wait for your written signature." },
@@ -28,7 +28,7 @@ const SECTIONS: LegalSection[] = [
           These Terms of Service (the <strong>Terms</strong>) govern your access to and use of Tessera, the hosted control layer
           for AI agents that work supplier payouts, operated by Vance Poitier and NULL* Team (<strong>we</strong>,{" "}
           <strong>us</strong>). They cover Tessera Live (the multi-tenant site where you sign in with your own keys), the public
-          demo, and any related pages (together, the <strong>Service</strong>).
+          sandbox, and any related pages (together, the <strong>Service</strong>).
         </p>
         <p>
           You accept these Terms when you tick the box on the sign-up card or otherwise use the Service. If you use the Service
@@ -67,7 +67,7 @@ const SECTIONS: LegalSection[] = [
           in a tamper-evident, hash-chained ledger.
         </p>
         <LegalCallout title="Sandbox only">
-          Tessera Live accepts Airwallex <strong>sandbox</strong> credentials only, and the public demo and the offline rehearsal
+          Tessera Live accepts Airwallex <strong>sandbox</strong> credentials only, and the public sandbox and the offline sandbox
           run on a simulator. Balances, transfers, conversions and Visa cards shown in the Service are test objects. No real
           funds are held, moved or settled.
         </LegalCallout>
@@ -218,8 +218,8 @@ const SECTIONS: LegalSection[] = [
           of changes that materially affect you.
         </p>
         <ul>
-          <li>The offline rehearsal keeps its data in memory and starts fresh after a period of inactivity or a restart.</li>
-          <li>The public demo is shared by everyone who visits it and resets itself after inactivity. Do not enter personal data there.</li>
+          <li>The offline sandbox keeps its data in memory and starts fresh after a period of inactivity or a restart.</li>
+          <li>The public sandbox is shared by everyone who visits it and resets itself after inactivity. Do not enter personal data there.</li>
           <li>Support is offered through the repository&rsquo;s issue tracker, without guaranteed response times.</li>
         </ul>
       </>
@@ -367,7 +367,7 @@ export default function TermsPage() {
       label="Terms"
       title="Terms of Service"
       standfirst="The agreement for using Tessera: what the Service is, what sandbox-only means, what you and we each owe, and how it ends. Written to be read, not skimmed past."
-      meta={{ effective: "16 November 2026", version: "2.0", appliesTo: "Tessera Live and the public demo" }}
+      meta={{ effective: "19 November 2026", version: "2.1", appliesTo: "Tessera Live and the public sandbox" }}
       glance={GLANCE}
       sections={SECTIONS}
       sibling={{ href: "/privacy", label: "Privacy" }}

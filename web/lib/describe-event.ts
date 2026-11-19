@@ -109,6 +109,7 @@ const TITLES: Record<string, string> = {
   REQUEST_APPROVED: "Approved",
   REQUEST_DECLINED: "Declined",
   STORY_STEP: "Sandbox",
+  CASE_OPENED: "Issue opened",
   PAYMENT_REFUSED: "Refused",
   WEBHOOK_RECEIVED: "Webhook",
   INCIDENT_REACTION: "Reassessed",
@@ -214,7 +215,12 @@ export function describeEvent(type: string, payload: unknown): string {
       return `Approved by ${object(text(p.by), "a person")}: “${bare(text(p.note)) ?? "no note"}”.`;
     case "REQUEST_DECLINED":
       return `Declined by ${object(text(p.by), "a person")}: “${bare(text(p.note)) ?? "no note"}”.`;
+    case "CASE_OPENED": {
+      const problem = record(p.problem);
+      return `Supplier issue opened: ${bare(text(problem.headline)) ?? "a payment needs attention"}. ${text(problem.detail) ?? ""}`.trimEnd();
+    }
     case "STORY_STEP":
+      if (text(p.step) === "lands") return "The delayed transfer landed at Airwallex. Tessera read it back before anything else moved.";
       return text(p.actor) === "bank"
         ? `Airwallex sandbox update${text(p.failureType) ? `: ${titleCase(text(p.failureType)!)}` : ""}, run by ${text(p.by) ?? "the operator"}. Tessera read the result back from Airwallex.`
         : `Supplier email received on the sandbox, run by ${text(p.by) ?? "the operator"}.`;
@@ -229,9 +235,11 @@ export function describeEvent(type: string, payload: unknown): string {
     }
     case "INCIDENT_REACTION": {
       const trigger = record(p.trigger);
-      const cause = text(trigger.source) === "webhook" ? `Airwallex's ${text(trigger.eventName) ?? "webhook"}` : text(trigger.source) === "sweep" ? "The background sweep" : "Setting up the demo";
       const before = record(p.before);
       const after = record(p.after);
+      // Assessed as it was opened: history, not news, so nothing is woken for it.
+      if (text(trigger.source) === "setup") return `Assessed as it was opened: the decision is "${action(after.recommended)}".`;
+      const cause = text(trigger.source) === "webhook" ? `Airwallex's ${text(trigger.eventName) ?? "webhook"}` : "The background sweep";
       const change = before.recommended !== after.recommended
         ? `changed the decision from "${action(before.recommended)}" to "${action(after.recommended)}"`
         : `${p.decisionChanged === true ? "changed what may be done; the decision stays" : "left the decision"} at "${action(after.recommended)}"`;

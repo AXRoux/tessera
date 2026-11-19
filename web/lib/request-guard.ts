@@ -45,7 +45,7 @@ export function checkRequest(
   allowedHosts: readonly string[] = [],
 ): GuardResult {
   if (!input.host || !hostAllowed(input.host, allowedHosts)) {
-    return { ok: false, message: allowedHosts.length > 0 ? "this host is not on the demo's allowlist" : "this app only answers on localhost" };
+    return { ok: false, message: allowedHosts.length > 0 ? "this host is not on the allowlist" : "this app only answers on localhost" };
   }
   const isRead = input.method === "GET" || input.method === "HEAD";
   const appleReturn = input.method === "POST" && input.path === APPLE_CALLBACK.path && input.origin === APPLE_CALLBACK.origin;

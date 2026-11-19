@@ -29,7 +29,7 @@ export interface GuideInput {
 export function guideCopy({ health, takeover, onRun, running, compact = false }: GuideInput): Record<TourStepId, { text: string; action: ReactNode }> {
   const idle = !health?.agent || running;
   const size = compact ? "md" : "lg";
-  const where = health?.offline ? "the offline rehearsal" : "the Airwallex sandbox";
+  const where = health?.offline ? "the offline sandbox" : "the Airwallex sandbox";
   const run = (label: string, mode: "commander" | "adversary") => (
     <Button onClick={() => onRun(mode)} disabled={idle} busy={running} variant="light" size={size} arrow>
       {label}

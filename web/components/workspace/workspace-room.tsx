@@ -110,7 +110,7 @@ export function WorkspaceRoom({ initial, welcome }: { initial: WorkspaceResponse
         <div className="min-w-0">
           <Kicker>Workspace</Kicker>
           <h1 className="mt-2 text-[clamp(22px,1.9vw,30px)] font-semibold leading-[1.1] tracking-[-0.04em]">
-            {welcome ? `Welcome, ${user.name.split(" ")[0]}. Your workspace is ready.` : live ? "Live on your Airwallex sandbox." : "Rehearsing, offline."}
+            {welcome ? `Welcome, ${user.name.split(" ")[0]}. Your workspace is ready.` : live ? "Live on your Airwallex sandbox." : "Offline sandbox: a simulated Airwallex, no network."}
           </h1>
           <p className="mt-1.5 max-w-[680px] text-[13px] leading-snug text-fg/55">
             {live
@@ -120,7 +120,7 @@ export function WorkspaceRoom({ initial, welcome }: { initial: WorkspaceResponse
         </div>
         <div className="flex items-center gap-2">
           <Chip tone={live ? "accent" : "neutral"} pulse={live}>
-            {live ? "Live sandbox" : "Offline rehearsal"}
+            {live ? "Live sandbox" : "Offline sandbox"}
           </Chip>
           <LinkBtn href="/dashboard" icon={<Icon name="dashboard" className="size-4" />}>
             Open the control room
@@ -247,7 +247,7 @@ function AirwallexCard({ workspace, save }: { workspace: WorkspaceResponse["work
 
   return (
     <Tray label="Airwallex sandbox" className="min-h-[520px] gap-3 p-3 xl:min-h-0">
-      <TrayHead n={2} className="px-2 pt-1" title="Airwallex sandbox" note="Turns rehearsal into real sandbox payouts" right={<Chip tone={connected ? "accent" : "neutral"}>{connected ? "Connected" : "Not connected"}</Chip>} />
+      <TrayHead n={2} className="px-2 pt-1" title="Airwallex sandbox" note="Connect it to make real sandbox payouts" right={<Chip tone={connected ? "accent" : "neutral"}>{connected ? "Connected" : "Not connected"}</Chip>} />
 
       <Tile className="flex items-center gap-4 rounded-[24px]! p-4">
         <RingSquare value={connected ? 1 : 0} tone="accent" size={72}>

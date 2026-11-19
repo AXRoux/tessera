@@ -102,7 +102,7 @@ export function useBoard(initial: { items: IncidentSummary[]; metrics: Metrics |
       setSeeded(`${result.seeded.length} invoices are on the board, each broken in its own way: ${result.seeded.map((s) => s.reference).join(", ")}.`);
       await refresh();
     } catch (e) {
-      setError(message(e, "The demo incidents could not be created."));
+      setError(message(e, "The incidents could not be created."));
     } finally {
       setSeeding(false);
     }
@@ -114,7 +114,7 @@ export function useBoard(initial: { items: IncidentSummary[]; metrics: Metrics |
     setSeeded(null);
     try {
       // The case map shows what arrived; no toast on top of it.
-      await api("demo/morning", MorningResultSchema, { method: "POST" });
+      await api("supplier-issues", MorningResultSchema, { method: "POST" });
       await refresh();
     } catch (e) {
       setError(message(e, "The supplier issues could not be opened just now."));
@@ -134,7 +134,7 @@ export function useBoard(initial: { items: IncidentSummary[]; metrics: Metrics |
       setConfirmingReset(false);
       await refresh();
     } catch (e) {
-      setError(message(e, "The demo could not be reset."));
+      setError(message(e, "The workspace could not be started over."));
     } finally {
       setResetting(false);
     }

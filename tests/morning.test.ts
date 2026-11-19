@@ -27,7 +27,7 @@ function world() {
   };
   let now = Date.now();
   const clock = new BankClock({ ledger: rt.ledger, gateway: rt.gateway, simulator: rt.simulator!, afterMs: 15_000, landsAfterMs: 30_000, now: () => now });
-  const morning = async () => MorningResultSchema.parse((await call("POST", "/api/demo/morning")).data).cases;
+  const morning = async () => MorningResultSchema.parse((await call("POST", "/api/supplier-issues")).data).cases;
   const board = async () => IncidentListSchema.parse((await call("GET", "/api/obligations")).data).items;
   const lane = async (id: string): Promise<IncidentSummary> => (await board()).find((i) => i.id === id)!;
   /** The built-in agent over these invoices only, through the same toolbox and policy as the console's runs. */
@@ -94,7 +94,7 @@ describe("this morning: supplier payments already in motion and stuck", () => {
       ledger: w.rt.ledger, gateway: w.rt.gateway, commander: w.rt.commander, closer: w.rt.closer, model: null, simulator: null,
       token: TOKEN, operator: OPERATOR, beneficiaryId: "x", paidHoldMs: 0,
     });
-    const response = await handle(new Request("http://api.test/api/demo/morning", { method: "POST", headers: { "x-tessera-token": TOKEN } }));
+    const response = await handle(new Request("http://api.test/api/supplier-issues", { method: "POST", headers: { "x-tessera-token": TOKEN } }));
     expect(response.status).toBe(403);
   });
 });

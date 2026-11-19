@@ -11,7 +11,7 @@ export async function loadFromApi<S extends z.ZodType>(path: string, schema: S):
   const base = process.env.TESSERA_API_URL;
   const token = process.env.TESSERA_API_TOKEN;
   if (!base || !token) {
-    return { ok: false, status: null, message: "The web server has no API token. Set TESSERA_API_TOKEN in the repo root .env (bun run setup writes one), or start both with: bun run demo" };
+    return { ok: false, status: null, message: "The web server has no API token. Set TESSERA_API_TOKEN in the repo root .env (bun run setup writes one), or start both with: bun run dev" };
   }
   const cookie = (await headers()).get("cookie");
   try {
@@ -26,6 +26,6 @@ export async function loadFromApi<S extends z.ZodType>(path: string, schema: S):
     if (!parsed.success) return { ok: false, status: null, message: "The API answered with a shape the web app does not recognize." };
     return { ok: true, data: parsed.data };
   } catch {
-    return { ok: false, status: null, message: `Cannot reach the Tessera API at ${base}. Start it with: bun run demo (offline) or bun run dev` };
+    return { ok: false, status: null, message: `Cannot reach the Tessera API at ${base}. Start it with: bun run dev` };
   }
 }

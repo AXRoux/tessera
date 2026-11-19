@@ -243,7 +243,7 @@ function Wall({ accounts, rail, user }: Omit<LandingProps, "account"> & { user: 
     };
   }, []);
 
-  const railLabel = rail === "offline" ? "Offline rehearsal" : rail === "byok" ? "Airwallex sandbox · your keys" : "Airwallex sandbox · live";
+  const railLabel = rail === "offline" ? "Offline sandbox" : rail === "byok" ? "Airwallex sandbox · your keys" : "Airwallex sandbox · live";
 
   return (
     <div ref={wall} className="relative flex min-h-dvh flex-col overflow-hidden xl:h-dvh xl:min-h-[680px]">

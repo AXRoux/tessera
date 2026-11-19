@@ -187,7 +187,7 @@ export function ControlRoom({
       <CardSheet card={cards?.items.find((c) => c.id === openCardId) ?? null} canCharge={cards?.canCharge ?? false} operator={health?.operator ?? "operator"} onClose={closeCard} />
       {!health ? (
         <Toast tone="bad" onClose={() => undefined}>
-          The Tessera API could not be reached, so the room is empty. Start it with <span className="readout text-[12px]">bun run demo</span>.
+          The Tessera API could not be reached, so the room is empty. Try again in a moment.
         </Toast>
       ) : null}
       {board.error && dismissed !== board.error ? (

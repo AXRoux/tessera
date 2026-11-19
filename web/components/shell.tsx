@@ -198,7 +198,7 @@ function AccountMenu({ account }: { account: Account }) {
         </span>
         <span className="hidden min-w-0 leading-tight lg:block">
           <span className="block max-w-[160px] truncate text-[12.5px] font-medium">{account.name || account.email}</span>
-          <span className="block text-[11px] text-fg/50">{account.mode === "live" ? "Live sandbox" : "Offline rehearsal"}</span>
+          <span className="block text-[11px] text-fg/50">{account.mode === "live" ? "Live sandbox" : "Offline sandbox"}</span>
         </span>
       </button>
       {open ? (
@@ -207,7 +207,7 @@ function AccountMenu({ account }: { account: Account }) {
             <p className="truncate text-[13.5px] font-semibold">{account.name}</p>
             <p className="readout truncate text-[11.5px] text-fg/55">{account.email}</p>
             <span className="mt-2 inline-flex">
-              <Chip tone={account.mode === "live" ? "accent" : "neutral"}>{account.mode === "live" ? "Live: your Airwallex sandbox" : "Offline rehearsal"}</Chip>
+              <Chip tone={account.mode === "live" ? "accent" : "neutral"}>{account.mode === "live" ? "Live: your Airwallex sandbox" : "Offline sandbox"}</Chip>
             </span>
           </div>
           <Link role="menuitem" href="/workspace" onClick={() => setOpen(false)} className="mt-1 flex items-center gap-3 rounded-[16px] px-4 py-2.5 text-[13px] hover:bg-fg/[0.05]">

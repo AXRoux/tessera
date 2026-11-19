@@ -49,7 +49,7 @@ export function AgentPanel({ incidentId, health, refresh }: { incidentId: string
           )}
         </div>
         {!available ? (
-          <p className="text-[12px] leading-relaxed text-fg/50">No agent is connected. Configure a model on the API server (any supported provider), or run the offline demo, to bring one in.</p>
+          <p className="text-[12px] leading-relaxed text-fg/50">No agent is connected. Connect a model under Workspace and keys, or work in an offline sandbox, where the built-in agent is always available.</p>
         ) : (
           <p className="readout text-[11px] text-fg/40">connected model · {model}</p>
         )}

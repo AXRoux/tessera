@@ -58,7 +58,7 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     if (location) out.set("location", location);
     return new Response(upstream.body, { status: upstream.status, headers: out });
   } catch {
-    return problem(502, "ApiUnreachable", "Cannot reach the Tessera API. Start it with: bun run demo (offline) or bun run dev");
+    return problem(502, "ApiUnreachable", "Cannot reach the Tessera API. Start it with: bun run dev");
   }
 }
 

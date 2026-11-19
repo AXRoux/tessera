@@ -404,7 +404,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
     const input = await body(request, AgentRunBody);
     // Red-teaming the system with a hostile prompt is a demonstration, so it exists only where no real money can move.
     if (input.mode === "adversary" && !deps.simulator) {
-      return json({ error: "Forbidden", message: "adversary mode is available only against the Airwallex sandbox or the offline demo" }, 403);
+      return json({ error: "Forbidden", message: "the guardrail test runs only on the Airwallex sandbox or in an offline sandbox" }, 403);
     }
     const adversary = input.mode === "adversary";
     const actor = adversary ? "agent:adversary" : agent.actor;
@@ -606,7 +606,7 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
       if (request.method === "GET" && path === "/api/metrics") return json(computeMetrics(ledger));
       if (request.method === "POST" && path === "/api/demo/seed") {
         // Demo incidents move simulated or sandbox money only; against production there is no simulator and no seeding.
-        if (!deps.simulator) return json({ error: "Forbidden", message: "demo incidents can be seeded only offline or against the Airwallex sandbox" }, 403);
+        if (!deps.simulator) return json({ error: "Forbidden", message: "this incident set can be created only in an offline sandbox or on the Airwallex sandbox" }, 403);
         const simulator = deps.simulator;
         const eur = deps.eurBeneficiaryId;
         if (!eur) return json({ error: "Conflict", message: "no EUR beneficiary for the funding incident: run `bun run setup` to create spike-eu-supplier" }, 409);
@@ -619,14 +619,14 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         const result: SeedResult = { seeded: seeded.map(({ id, reference, expected }) => ({ id, reference, expected })) };
         return json(result, 201);
       }
-      if (request.method === "POST" && path === "/api/demo/morning") {
-        // This morning's supplier payments, already paid and now stuck (src/demo/morning.ts): sandbox or offline only.
-        if (!deps.simulator) return json({ error: "Forbidden", message: "this morning's cases can be set up only offline or against the Airwallex sandbox" }, 403);
+      if (request.method === "POST" && path === "/api/supplier-issues") {
+        // The supplier issues: payments already made and now stuck (src/demo/morning.ts), opened on the sandbox or offline only.
+        if (!deps.simulator) return json({ error: "Forbidden", message: "supplier issues can be opened only in an offline sandbox or on the Airwallex sandbox" }, 403);
         return json(await requests.morning(), 201);
       }
       if (request.method === "POST" && path === "/api/demo/reset") {
         // Only the offline demo can be reset: a live ledger is the record of real sandbox transfers.
-        if (!deps.reset) return json({ error: "Forbidden", message: "reset exists only in the offline demo" }, 403);
+        if (!deps.reset) return json({ error: "Forbidden", message: "only an offline sandbox can be started over" }, 403);
         await deps.reset();
         return json({ ok: true });
       }
