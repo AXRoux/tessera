@@ -52,6 +52,9 @@ export const PlayBody = z.object({ step: z.string().min(1).max(40) });
 
 export const badgeOf = (s: Supplier): SupplierBadge => ({ id: s.id, name: s.name, legalName: s.legalName, tile: s.tile });
 
+/** Polls of a failed transfer (about a second each) before the setup cancels it at the sandbox itself. */
+const CANCEL_AFTER_POLLS = 4;
+
 /** True when this invoice was opened from a request with a story: the story plays the bank, not the bank clock. */
 export function isStoryInvoice(ledger: Ledger, obligationId: string): boolean {
   const request = ledger.requestForObligation(obligationId);
@@ -204,11 +207,23 @@ export function createRequests(deps: RequestDeps) {
         if (bank.status === "PAID") await patiently(() => simulator.advance(transferId, "PAID"));
         await gateway.sync(obligation.id);
       }
-      // A failed transfer is cancelled by Airwallex a moment later; only then is the money back in the wallet.
+      // A failed transfer is cancelled by Airwallex a moment later; only then is the money back in the wallet. The
+      // sandbox does not always do it (a 91301 return has sat at FAILED for minutes), so a transfer still FAILED after a
+      // few polls is moved on through the simulator: the step the bank would have taken, and nothing a case relies on.
       const failing = opened.filter(({ c }) => c.bank.status === "FAILED").map(({ obligation }) => obligation);
+      const nudged = new Set<string>();
       for (let i = 0; i < 45 && failing.some((o) => ledger.latestAttempt(o.id)?.state !== "DEAD"); i++) {
         if (i > 0) await Bun.sleep(pollMs);
-        for (const o of failing) if (ledger.latestAttempt(o.id)?.state !== "DEAD") await gateway.sync(o.id);
+        for (const o of failing) {
+          const attempt = ledger.latestAttempt(o.id);
+          if (attempt?.state === "DEAD") continue;
+          if (i >= CANCEL_AFTER_POLLS && attempt?.awxStatus === "FAILED" && attempt.transferId && !nudged.has(o.id)) {
+            nudged.add(o.id);
+            // Refused if Airwallex cancelled it in between: the sync below sees that either way.
+            await simulator.advance(attempt.transferId, "CANCELLED").catch(() => undefined);
+          }
+          await gateway.sync(o.id);
+        }
       }
       const stuck = failing.filter((o) => ledger.latestAttempt(o.id)?.state !== "DEAD");
       if (stuck.length > 0) throw new StateConflict(`Airwallex has not cancelled ${stuck.map((o) => o.reference).join(", ")} yet; try again in a moment`);

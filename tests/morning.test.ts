@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { COMMANDER_SYSTEM, runAgent } from "../src/agent/loop";
 import { createToolbox } from "../src/agent/toolbox";
 import { DEFAULT_POLICY, decide, type IncidentFacts } from "../src/commander/policy";
+import { FakePayoutApi } from "../src/airwallex/fake";
 import { MORNING } from "../src/demo/morning";
 import { ScriptedAgentModel } from "../src/demo/scripted-agent";
 import { createApi } from "../src/server/api";
@@ -86,6 +87,34 @@ describe("this morning: supplier payments already in motion and stuck", () => {
     const first = (await w.morning()).map((c) => c.reference);
     const second = (await w.morning()).map((c) => c.reference);
     expect(new Set([...first, ...second]).size).toBe(12);
+  });
+
+  it("cancels a failed transfer at the sandbox itself when Airwallex leaves it at FAILED", async () => {
+    // The Airwallex sandbox has left a 91301 return at FAILED for minutes; the setup used to give up and open no case.
+    const w = world();
+    const fake = w.rt.api as FakePayoutApi;
+    const cancelled: string[] = [];
+    const lazyBank = {
+      async advance(transferId: string, status: string, failureType?: string) {
+        if (status === "CANCELLED") cancelled.push(transferId);
+        fake.advance(transferId, status, failureType);
+      },
+    };
+    const handle = createApi({
+      ledger: w.rt.ledger, gateway: w.rt.gateway, commander: w.rt.commander, closer: w.rt.closer, cards: w.rt.cards, model: w.rt.model, simulator: lazyBank,
+      token: TOKEN, operator: OPERATOR, beneficiaryId: "offline-us-supplier", paidHoldMs: 0, offline: true, beneficiaries: w.rt.api, storyPollMs: 1,
+    });
+    const response = await handle(new Request("http://api.test/api/supplier-issues", { method: "POST", headers: { "x-tessera-token": TOKEN } }));
+    expect(response.status).toBe(201);
+    const cases = MorningResultSchema.parse(await response.json()).cases;
+    const byName = Object.fromEntries(cases.map((c) => [c.supplier, c.id]));
+    for (const name of ["Modal", "Replicate", "LangChain"]) {
+      const attempt = w.rt.ledger.latestAttempt(byName[name]!)!;
+      expect([name, attempt.state, attempt.awxStatus]).toEqual([name, "DEAD", "CANCELLED"]);
+    }
+    expect(w.rt.ledger.latestAttempt(byName.LangChain!)!.failureCode).toBe("91301");
+    expect(cancelled).toHaveLength(3);
+    for (const c of cases) expect(w.types(c.id)).toContain("CASE_OPENED");
   });
 
   it("is refused where there is no simulator: production money is never staged", async () => {
