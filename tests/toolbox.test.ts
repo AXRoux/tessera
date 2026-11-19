@@ -26,8 +26,8 @@ describe("toolbox", () => {
   it("offers exactly the tools that can only read, record, draft, defer, escalate, ask for a safe replacement or its funding, or certify", () => {
     const { specs } = toolboxFor(world());
     expect(specs.map((s) => s.name).sort()).toEqual([
-      "assess_incident", "defer_incident", "draft_supplier_reply", "escalate_to_human", "fund_replacement", "list_incidents",
-      "read_supplier_message", "reconcile_and_close", "replace_payment", "verify_ledger",
+      "assess_incident", "defer_incident", "draft_supplier_reply", "escalate_to_human", "fund_replacement", "investigate_supplier_message",
+      "list_incidents", "read_supplier_message", "reconcile_and_close", "replace_payment", "verify_ledger",
     ]);
     // Nothing that could move money by itself: no create, approve, pay, transfer, or terms editing.
     expect(specs.map((s) => s.name).join(" ")).not.toMatch(/approve|create|pay_|transfer|beneficiary|amount/);
@@ -337,7 +337,7 @@ describe("MCP server", () => {
 
     const listed = await handleMessage(toolbox(), { jsonrpc: "2.0", id: 2, method: "tools/list" });
     const tools = (listed as { result: { tools: Array<{ name: string; annotations: { readOnlyHint: boolean } }> } }).result.tools;
-    expect(tools).toHaveLength(10);
+    expect(tools).toHaveLength(11);
     expect(tools.find((t) => t.name === "list_incidents")!.annotations.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === "replace_payment")!.annotations.readOnlyHint).toBe(false);
   });

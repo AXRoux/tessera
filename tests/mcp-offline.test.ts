@@ -39,11 +39,11 @@ async function connect(env: Record<string, string>) {
 }
 
 describe("mcp server with no keys", () => {
-  test("offline serves fourteen tools over eight seeded incidents, and the code still refuses a forbidden replacement", async () => {
+  test("offline serves fifteen tools over eight seeded incidents, and the code still refuses a forbidden replacement", async () => {
     const server = await connect({ TESSERA_OFFLINE: "1" });
     try {
       const tools = (await server.request("tools/list")).result.tools as { name: string }[];
-      expect(tools).toHaveLength(14);
+      expect(tools).toHaveLength(15);
       expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["list_virtual_cards", "request_virtual_card", "pay_with_virtual_card", "pay_invoice_by_card"]));
       // An agent can ask for a Visa card, but it waits for a person; paying with it before then is refused.
       const asked = (await server.call("request_virtual_card", { purpose: "Figma, two editor seats", merchant: "Figma", category: "software", amount: 45, reason: "The design team needs two more seats" })).result as { cardId: string; state: string };

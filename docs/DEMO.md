@@ -26,7 +26,7 @@ happened. Click a lane to open its whole trail in sentences.
 | **Replicate** | Timed out at the bank (91402) | Replaces it alone: within the automatic limit, original provably cancelled | None | Paid once by the replacement; certified |
 | **LangChain** | Returned as a possible duplicate (91301) | Checks, refuses to pay again, hands it over with its reasons | Confirms with LangChain; releases a second payment **in writing** only if nothing arrived | Paid once, released in writing |
 | **fal** | Paid, but fal says it never arrived | Reads, checks: Airwallex shows it paid. Drafts proof of payment, never a second payment | Sends the proof | Proof sent, not paid twice |
-| **Framer** | "Overdue? Pay our new bank" from framer-invoices.com | Reads it through the quarantined reader (bank change, orders aimed at the agent, ignored) and hands it over | Calls Framer on the number on file | Fraud stopped: nothing moved to the new account |
+| **Framer** | "Overdue? Pay our new bank" from framer-invoices.com | Reads it through the quarantined reader, then **investigates** it in code: the sender against the vendor record (a look-alike of framer.com), the IBAN against the account on file, "overdue" against the ledger (already paid), orders aimed at an assistant, pressure. Hands it over with the verdict: likely impersonation, 5 red flags | Calls Framer on the number on file | Impersonation stopped: nothing moved to the new account |
 
 ## The Visa TAP rule, in one line
 

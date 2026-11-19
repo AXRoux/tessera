@@ -110,6 +110,7 @@ const TITLES: Record<string, string> = {
   REQUEST_DECLINED: "Declined",
   STORY_STEP: "Sandbox",
   CASE_OPENED: "Issue opened",
+  INVESTIGATED: "Investigated",
   PAYMENT_REFUSED: "Refused",
   WEBHOOK_RECEIVED: "Webhook",
   INCIDENT_REACTION: "Reassessed",
@@ -215,6 +216,11 @@ export function describeEvent(type: string, payload: unknown): string {
       return `Approved by ${object(text(p.by), "a person")}: “${bare(text(p.note)) ?? "no note"}”.`;
     case "REQUEST_DECLINED":
       return `Declined by ${object(text(p.by), "a person")}: “${bare(text(p.note)) ?? "no note"}”.`;
+    case "INVESTIGATED": {
+      const checks = Array.isArray(p.checks) ? p.checks.map(record) : [];
+      const flags = checks.filter((c) => c.ok === false).map((c) => text(c.label)).filter((l): l is string => l !== null);
+      return `${text(p.label) ?? "Investigated"}, checked against the vendor record and the ledger${flags.length > 0 ? `: ${flags.join("; ")}` : ""}.`;
+    }
     case "CASE_OPENED": {
       const problem = record(p.problem);
       return `Supplier issue opened: ${bare(text(problem.headline)) ?? "a payment needs attention"}. ${text(problem.detail) ?? ""}`.trimEnd();

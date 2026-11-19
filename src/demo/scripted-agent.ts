@@ -36,6 +36,7 @@ type ListedIncident = z.infer<typeof ListResultSchema>["incidents"][number];
 const AssessResultSchema = z.object({
   incident: z.object({ incidentId: z.string(), reference: z.string(), status: z.string() }),
   supplierEvidence: z.record(z.string(), z.unknown()).nullable(),
+  investigation: z.object({ verdict: z.string(), coversLatestMessage: z.boolean() }).nullable().optional(),
   decision: z.object({
     recommended: z.string(),
     allowed: z.array(z.string()),
@@ -53,6 +54,7 @@ const ToolOutcomeSchema = z.union([
   z.object({ ok: z.literal(false), kind: z.enum(["invalid", "failed"]), message: z.string() }),
 ]);
 const RefusalDetailsSchema = z.object({ reasons: z.array(z.string()).optional(), blockers: z.array(z.string()).optional() });
+const InvestigationResultSchema = z.object({ verdict: z.string(), summary: z.string() });
 
 interface Call {
   tool: string;
@@ -68,6 +70,8 @@ interface Session {
   references: Map<string, string>;
   /** Per incident: what was done, in plain words, and the reason the assessment gave. */
   report: Map<string, { did: string[]; why: string | null }>;
+  /** Incidents whose hand-off waits for an investigation: escalated with its verdict once it is back. */
+  escalateAfterInvestigation: Map<string, string>;
   /** Adversary bookkeeping: every forbidden move tried, and the ones the code let through. */
   attempts: Array<{ incidentId: string | null; tool: string; outcome: ToolOutcome }>;
   nextId: number;
@@ -122,7 +126,7 @@ export class ScriptedAgentModel implements AgentModel {
     if (!session) {
       session = {
         adversary: request.system === ADVERSARY_SYSTEM, phase: "list", calls: new Map(), seen: new Set(),
-        references: new Map(), report: new Map(), attempts: [], nextId: 0,
+        references: new Map(), report: new Map(), escalateAfterInvestigation: new Map(), attempts: [], nextId: 0,
       };
       this.sessions.set(first, session);
       return this.turn(session, "Starting: listing open incidents.", [{ tool: "list_incidents", incidentId: null, input: {} }]);
@@ -198,15 +202,25 @@ export class ScriptedAgentModel implements AgentModel {
               : DONE[call.tool];
         line.did.push(outcome.ok ? what ?? call.tool : `asked to ${ASKED[call.tool] ?? call.tool} but policy refused (${refusalWhy(outcome)})`);
       }
+      // An investigation is back: hand the incident over with its verdict and red flags as the reason.
+      const handOffs = answered.flatMap(({ call, outcome }) => {
+        if (call.tool !== "investigate_supplier_message" || !call.incidentId || !s.escalateAfterInvestigation.has(call.incidentId)) return [];
+        const fallback = s.escalateAfterInvestigation.get(call.incidentId)!;
+        s.escalateAfterInvestigation.delete(call.incidentId);
+        const found = outcome.ok ? InvestigationResultSchema.safeParse(outcome.result).data : undefined;
+        const reason = sentence(found ? `Investigated: ${found.summary}` : fallback, 280);
+        return [{ tool: "escalate_to_human", incidentId: call.incidentId, input: { incidentId: call.incidentId, reason } }];
+      });
       // A conversion changes the wallet, so a funded incident is assessed again: policy decides whether to replace now.
       const funded = answered.flatMap(({ call, outcome }) => (call.tool === "fund_replacement" && outcome.ok && call.incidentId ? [call.incidentId] : []));
-      if (funded.length > 0) {
-        s.phase = "assess";
-        return this.turn(
-          s,
-          "The conversion settled; assessing again on the new balances before replacing.",
-          funded.map((id) => ({ tool: "assess_incident", incidentId: id, input: { incidentId: id } })),
-        );
+      if (funded.length > 0 || handOffs.length > 0) {
+        // Both follow-ups in one turn: the assessments lead to the act phase, where the hand-offs' results are recorded too.
+        if (funded.length > 0) s.phase = "assess";
+        const said = [
+          handOffs.length > 0 ? "Investigation done; handing it to a person with the findings." : null,
+          funded.length > 0 ? "The conversion settled; assessing again on the new balances before replacing." : null,
+        ].filter((x): x is string => x !== null);
+        return this.turn(s, said.join(" "), [...handOffs, ...funded.map((id) => ({ tool: "assess_incident", incidentId: id, input: { incidentId: id } }))]);
       }
       s.phase = "list";
       return this.turn(s, "Checking for anything new.", [{ tool: "list_incidents", incidentId: null, input: {} }]);
@@ -226,10 +240,17 @@ export class ScriptedAgentModel implements AgentModel {
     const calls: Call[] = [];
     const escalate = (reason: string) => {
       if (a.incident.status === "ESCALATED") line.did.push("left it with the person it is escalated to");
+      else if (investigate) s.escalateAfterInvestigation.set(id, reason);
       else calls.push({ tool: "escalate_to_human", incidentId: id, input: { incidentId: id, reason: sentence(reason, 280) } });
     };
     const draft = (kind: "STATUS" | "PROOF" | "CORRECTION", message: string) =>
       calls.push({ tool: "draft_supplier_reply", incidentId: id, input: { incidentId: id, kind, message } });
+    // A message that asks to change bank details or talks to an assistant is investigated before anything else, once
+    // per message; a hand-off then carries the verdict.
+    const ev = a.supplierEvidence;
+    const suspicious = ev?.requestsDetailChange === true || ev?.containsEmbeddedInstructions === true;
+    const investigate = suspicious && a.investigation?.coversLatestMessage !== true;
+    if (investigate) calls.push({ tool: "investigate_supplier_message", incidentId: id, input: { incidentId: id } });
 
     switch (d.recommended) {
       case "REPLACE":
@@ -395,6 +416,7 @@ export class ScriptedAgentModel implements AgentModel {
 }
 
 const DONE: Record<string, string> = {
+  investigate_supplier_message: "investigated the message against the vendor record and the ledger",
   replace_payment: "replaced the failed payment automatically (policy allowed it)",
   pay_invoice_by_card: "worked the invoice's Visa card",
   fund_replacement: "funded the replacement with one conversion policy planned",
@@ -418,6 +440,7 @@ const DRAFTED: Record<string, string> = {
 };
 
 const ASKED: Record<string, string> = {
+  investigate_supplier_message: "investigate the message",
   replace_payment: "replace the payment",
   pay_invoice_by_card: "pay the invoice by Visa card",
   fund_replacement: "fund the replacement",

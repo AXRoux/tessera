@@ -36,7 +36,7 @@ function Node({ step, lane, fresh }: { step: CaseStep; lane: Lane; fresh: boolea
 
 /** The text colour of a step's own tone, for the line under the rail. */
 const LINE_TONE: Partial<Record<CaseStep["kind"], string>> = {
-  refused: "text-bad", fail: "text-bad",
+  refused: "text-bad", fail: "text-bad", investigate: "text-bad",
   handoff: "text-warn", draft: "text-warn", sign: "text-warn", release: "text-warn", send: "text-warn", resolve: "text-warn",
   paid: "text-ok", cleared: "text-ok", certify: "text-ok",
   act: "text-accent",

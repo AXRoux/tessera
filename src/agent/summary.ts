@@ -36,6 +36,8 @@ export function summarize(tool: string, outcome: ToolOutcome): string {
       const why = Array.isArray(d.reasons) ? firstSentence(String(d.reasons[d.recommended === "PAY_BY_CARD" ? d.reasons.length - 1 : 0] ?? "")) : "";
       return `recommended ${String(d.recommended)}; allowed: ${allowed}${why ? `. Why: ${trim(why, 150)}` : ""}`;
     }
+    case "investigate_supplier_message":
+      return trim(String(r.summary ?? r.label ?? "investigated"), 220);
     case "pay_invoice_by_card": {
       const card = record(r.card);
       switch (r.outcome) {

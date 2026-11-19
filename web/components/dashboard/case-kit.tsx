@@ -27,6 +27,7 @@ export function pillTone(step: CaseStep): string {
   switch (step.kind) {
     case "refused":
     case "fail":
+    case "investigate":
       return "bg-bad/12 text-bad ring-bad/35";
     case "handoff":
     case "draft":

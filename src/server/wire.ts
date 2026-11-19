@@ -257,13 +257,26 @@ export const StorySchema = z.object({
 });
 export type Story = z.infer<typeof StorySchema>;
 
+/** A supplier message investigated in code (src/commander/investigate.ts), as recorded: never the message text. */
+export const InvestigationSchema = z.object({
+  messageId: z.string(),
+  from: z.string(),
+  verdict: z.enum(["impersonation", "suspicious", "clear"]),
+  label: z.string(),
+  summary: z.string(),
+  checks: z.array(z.object({ id: z.string(), ok: z.boolean(), strong: z.boolean(), label: z.string(), detail: z.string() })),
+  nextSteps: z.array(z.string()),
+  by: z.string(),
+});
+export type InvestigationRecord = z.infer<typeof InvestigationSchema>;
+
 /** One move on a case, as the board shows it: who made it, what kind of move, a word or two for a pill, and a sentence. */
 export const CaseStepSchema = z.object({
   seq: z.number().int(),
   at: z.string(),
   /** Who moved. `test` is the agent under a guardrail test, told to break the rules. */
   actor: z.enum(["agent", "test", "you", "airwallex", "visa", "supplier", "tessera"]),
-  kind: z.enum(["read", "check", "act", "hold", "handoff", "draft", "refused", "sign", "release", "send", "paid", "cleared", "certify", "fail", "message", "resolve"]),
+  kind: z.enum(["read", "check", "investigate", "act", "hold", "handoff", "draft", "refused", "sign", "release", "send", "paid", "cleared", "certify", "fail", "message", "resolve"]),
   label: z.string(),
   text: z.string(),
   /** How many moves in a row this one stands for: a guardrail test refused seven times reads as one step, x7. */
@@ -292,6 +305,8 @@ export const CaseSchema = z.object({
   problem: z.object({ headline: z.string(), detail: z.string() }),
   steps: z.array(CaseStepSchema),
   outcome: CaseOutcomeSchema,
+  /** The latest investigation of a supplier message on this invoice, with when it ran; null when none has. */
+  investigation: InvestigationSchema.extend({ at: z.string() }).nullable().optional(),
 });
 export type Case = z.infer<typeof CaseSchema>;
 

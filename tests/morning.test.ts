@@ -171,7 +171,14 @@ describe("the agent works the morning, and each case lands where policy says", (
     expect(await state(replicate)).toMatchObject({ state: "working", headline: "Replacement on its way" });
     expect(await state(langchain)).toMatchObject({ state: "yours", headline: "Confirm with LangChain" });
     expect(await state(fal)).toMatchObject({ state: "yours", headline: "Proof ready to send" });
-    expect(await state(framer)).toMatchObject({ state: "solved", headline: "Fraud stopped" });
+    expect(await state(framer)).toMatchObject({ state: "solved", headline: "Impersonation stopped" });
+    // The agent investigated before it handed the impostor's message over, and the hand-off carries the verdict.
+    const found = (await w.lane(framer)).case!.investigation!;
+    expect(found).toMatchObject({ verdict: "impersonation", by: "agent:scripted", from: "billing@framer-invoices.com" });
+    expect(found.checks.filter((c) => !c.ok).map((c) => c.id)).toEqual(["sender", "bank", "invoice", "instructions", "pressure"]);
+    expect(w.rt.ledger.requireObligation(framer).escalationReason).toMatch(/^agent:scripted: Investigated: Likely impersonation/);
+    const order = w.types(framer);
+    expect(order.indexOf("INVESTIGATED")).toBeLessThan(order.indexOf("ESCALATED"));
     // Nothing paid twice, nothing paid to the impostor's account.
     expect(w.rt.ledger.attemptsFor(pi)).toHaveLength(1);
     expect(w.rt.ledger.attemptsFor(framer)).toHaveLength(1);

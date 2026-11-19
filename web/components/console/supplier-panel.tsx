@@ -9,6 +9,7 @@ import { Check, Field, Fold, TextArea, TextInput } from "./fields";
 import type { RunAction } from "./actions-panel";
 import { Btn } from "../kit/metal";
 import { Chip, Toggle } from "../kit/widgets";
+import { InvestigationReport, latestInvestigation } from "./investigation";
 
 type Recorded = NonNullable<IncidentView["evidence"]>;
 
@@ -146,6 +147,20 @@ export function SupplierPanel({ view, reader, busy, run }: { view: IncidentView;
       return { tone: "ok", title: `Read by ${reader}`, lines: ["Code checked every claim against the text before it counted, and the recommendation was weighed again."] };
     });
 
+  // The latest investigation, and whether it covers the newest message.
+  const found = latestInvestigation(view);
+  const fresh = found !== null && view.inbox.at(-1)?.id === found.messageId;
+  const investigate = () =>
+    run("investigate", async () => {
+      const result = await api(`obligations/${id}/investigate`, Acknowledged, { method: "POST", body: {} });
+      const flags = Array.isArray(result.checks) ? result.checks.filter((c: { ok?: boolean }) => !c.ok).length : 0;
+      return {
+        tone: result.verdict === "clear" ? "ok" : "refused",
+        title: String(result.label ?? "Investigated"),
+        lines: [flags > 0 ? `${flags} red ${flags === 1 ? "flag" : "flags"} against the vendor record and the ledger. Nothing was paid.` : "The sender, the bank details and the invoice all agree with what is on file."],
+      };
+    });
+
   return (
     <div className="space-y-5">
       <Section title="What the supplier says">
@@ -159,6 +174,27 @@ export function SupplierPanel({ view, reader, busy, run }: { view: IncidentView;
           </p>
         )}
       </Section>
+
+      {view.inbox.length > 0 ? (
+        <Section
+          title="What the investigation found"
+          aside={
+            <Btn tone="secondary" busy={busy === "investigate"} disabled={busy !== null} onClick={investigate}>
+              {found && fresh ? "Investigate again" : "Investigate"}
+            </Btn>
+          }
+        >
+          {found && fresh ? (
+            <InvestigationReport found={found} />
+          ) : (
+            <p className="well rounded-[18px]! px-4 py-3.5 text-[13.5px] leading-relaxed text-fg/60">
+              {found
+                ? "The supplier has written since the last investigation. Investigate the newest message."
+                : "Check the latest message against what Tessera already knows: the sender against the vendor record, any bank details against the account on file, and what it says about the invoice against the ledger."}
+            </p>
+          )}
+        </Section>
+      ) : null}
 
       {view.inbox.length > 0 ? (
         <Section title="Their messages" aside={<span className="tnum text-[12.5px] text-fg/45">{view.inbox.length}</span>}>

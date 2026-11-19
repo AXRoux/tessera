@@ -11,6 +11,7 @@ import { Toggle } from "../kit/widgets";
 import { Icon } from "../landing/icons";
 import { SupplierMark } from "../suppliers/supplier-mark";
 import { ACTOR, bankWords, pillTone, STATE_WORDS, Who, type Lane } from "./case-kit";
+import { InvestigationReport } from "../console/investigation";
 
 /** A supplier's mark as a round avatar, with a small badge for what just happened and a dot for where its case stands. */
 function Avatar({ lane, step, size = 34 }: { lane: Lane; step?: CaseStep; size?: number }) {
@@ -100,6 +101,12 @@ export function SupplierCard({ lane, onClose, className = "" }: { lane: Lane; on
                 </div>
               ))}
             </dl>
+            {c.investigation ? (
+              <div className="border-b border-fg/[0.08] pb-3">
+                <p className="mb-2 text-[11.5px] text-fg/45">What the investigation found</p>
+                <InvestigationReport found={c.investigation} compact />
+              </div>
+            ) : null}
             <div>
               <p className="text-[11.5px] text-fg/45">Where it landed</p>
               <p className={`mt-0.5 text-[13.5px] font-semibold leading-snug ${state.text}`}>{c.outcome.headline}</p>

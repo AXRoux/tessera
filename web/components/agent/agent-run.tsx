@@ -178,6 +178,7 @@ const ACTION: Record<string, string> = {
   assess_incident: "Check Airwallex, ask the policy",
   read_supplier_message: "Read the supplier's email",
   pay_invoice_by_card: "Pay by single-use Visa card",
+  investigate_supplier_message: "Investigate the message",
   replace_payment: "Ask to replace the payment",
   fund_replacement: "Ask to fund the replacement",
   draft_supplier_reply: "Draft a reply for a person",
@@ -279,6 +280,13 @@ function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n:
               {result.summary}
             </p>
           </div>
+        ) : result.ok && step.tool === "investigate_supplier_message" && /^(Likely impersonation|Suspicious)/.test(result.summary) ? (
+          <div className={`rounded-xl border border-bad/40 bg-bad/10 ${dense ? "mt-1.5 px-3 py-2" : "mt-3 px-4 py-3"}`}>
+            <Label className={`font-medium text-bad ${dense ? "text-[11px]" : ""}`}>{result.summary.split(":")[0]}</Label>
+            <p className={`leading-relaxed ${dense ? "mt-0.5 line-clamp-3 text-[12px] text-fg/75" : "mt-1.5 text-sm"}`} title={result.summary}>
+              {result.summary.slice(result.summary.indexOf(":") + 1).trim()}
+            </p>
+          </div>
         ) : result.ok && call ? (
           <div className={`border-l-2 border-accent/40 pl-3 leading-relaxed ${dense ? "mt-2 text-[12.5px]" : "mt-3 text-sm"}`}>
             <p className="font-medium text-accent">Policy: {call.call}</p>
@@ -342,7 +350,7 @@ export function AgentTimeline({
   const visible = state.steps.flatMap((step, i) => {
     // Everything policy refused, every handoff to a person, and the agent's closing report survive the fold.
     const matters =
-      step.kind === "tool" && (step.result?.ok === false || (step.result?.ok === true && (step.tool in HANDOFF || step.tool === "pay_invoice_by_card")));
+      step.kind === "tool" && (step.result?.ok === false || (step.result?.ok === true && (step.tool in HANDOFF || step.tool === "pay_invoice_by_card" || step.tool === "investigate_supplier_message")));
     const keep = !finished || showAll || i === lastText || matters;
     return keep ? [{ step, i }] : [];
   });

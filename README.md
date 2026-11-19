@@ -13,7 +13,7 @@
 ──────────────────────────────────────────────────────────────────────────────
   57/57  attacks held by policy         100/100  safeguards, each proven
     639  automated tests passing             32  failure codes, all mapped
-     14  typed tools, and no more             1  live payment per invoice, max
+     15  typed tools, and no more             1  live payment per invoice, max
 ──────────────────────────────────────────────────────────────────────────────
 ```
 
@@ -336,7 +336,7 @@ Verified on the sandbox on 2026-11-06 UTC: a real $12 transfer was moved to `SEN
 
 ## 05 The agent surface
 
-The whole reach of an agent is **fourteen typed tools** (`src/agent/toolbox.ts`). What is missing is the point.
+The whole reach of an agent is **fifteen typed tools** (`src/agent/toolbox.ts`). What is missing is the point.
 
 | Tool | Does | Moves money? |
 |---|---|:-:|
@@ -459,7 +459,7 @@ LangChain describes shipping agents as a loop: **Build → Test → Deploy → M
 
 | Stage | In the ADLC | In Tessera |
 |---|---|---|
-| **Build** | Frameworks, runtimes and harnesses: prompts, tools, MCP, middleware | Any model or MCP client works through **fourteen typed tools** (`src/agent/toolbox.ts`); the Commander's policy is code the model never sees, and supplier mail reaches the agent only as booleans |
+| **Build** | Frameworks, runtimes and harnesses: prompts, tools, MCP, middleware | Any model or MCP client works through **fifteen typed tools** (`src/agent/toolbox.ts`); the Commander's policy is code the model never sees, and supplier mail reaches the agent only as booleans |
 | **Test** | Datasets, metrics, experiments, multi-turn simulation | **639 tests**, a red team of **57 attacks** that each try to pay twice (`bun run redteam`), **100 mutations** that remove one guard at a time (`bun run mutate`), and a simulated Airwallex the agent works end to end (`bun run smoke:offline`, `bun run scale`) |
 | **Deploy** | Durable execution, human in the loop, sandboxes, a context hub | The intent is sealed before every network call and resumed by request ID after a crash (`kill -9` tested); risky money and every card wait for a person's signature; the offline simulator and the Airwallex sandbox are the sandboxes; Tessera Live seals each workspace's keys |
 | **Monitor** | Traces, signals, feedback, dashboards | The trace is a **hash-chained ledger** of every tool call, refusal, bank event and card charge (`verifyChain`); refusals and reassessments are the signals; the queue is where people answer the agent; outcomes end in a certificate checked against Airwallex |

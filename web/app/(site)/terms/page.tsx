@@ -13,7 +13,7 @@ const GLANCE: LegalGlance[] = [
   { title: "Sandbox only", text: "No real money moves through Tessera. It accepts Airwallex sandbox keys only, and the public sandbox runs on a simulator." },
   { title: "Not a bank", text: "Tessera holds no funds, issues no cards and gives no financial advice. Airwallex and your other providers act under their own terms." },
   { title: "You hold the keys", text: "You connect your own sandbox and model keys, you stay responsible for those accounts, and you can remove them at any time." },
-  { title: "Agents propose, people sign", text: "The agent works through fourteen typed tools; policy in code decides, and risky actions wait for your written signature." },
+  { title: "Agents propose, people sign", text: "The agent works through fifteen typed tools; policy in code decides, and risky actions wait for your written signature." },
   { title: "Use it fairly", text: "No production credentials, no keys you do not own, no attacks on the shared service. Guardrail tests inside your own workspace are welcome." },
   { title: "Provided as is", text: "A hackathon build: it may change, pause or reset. Liability is limited to the extent the law allows." },
 ];

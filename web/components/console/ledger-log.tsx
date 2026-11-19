@@ -54,6 +54,8 @@ function badgeOf(event: Event): { icon: IconName; tone: string } {
       return { icon: "close", tone: "bg-bad" };
     case "CASE_OPENED":
       return { icon: "bolt", tone: "bg-bad" };
+    case "INVESTIGATED":
+      return { icon: "search", tone: field(p, "verdict") === "clear" ? "bg-accent" : "bg-bad" };
     case "AGENT_TOOL_CALL": {
       const outcome = field(p, "outcome");
       if (outcome && outcome !== "ok") return { icon: "close", tone: "bg-bad" };

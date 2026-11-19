@@ -15,7 +15,7 @@ import { TransferStatusPayloadSchema } from "../ledger/events";
 import { CardDecidedSchema, CardIssuedSchema, CardRequestedSchema } from "../ledger/cards";
 import type { Attempt, LedgerEvent, Obligation } from "../ledger/ledger";
 import { formatMinor } from "../money";
-import type { Case, CaseOutcome, CaseStep } from "./wire";
+import { InvestigationSchema, type Case, type CaseOutcome, type CaseStep } from "./wire";
 
 export const CaseOpenedSchema = z.looseObject({
   kind: z.string(),
@@ -119,6 +119,16 @@ export function caseSteps(after: LedgerEvent[], input: Pick<CaseInput, "who" | "
 
   after.forEach((e, i) => {
     switch (e.type) {
+      case "INVESTIGATED": {
+        const p = InvestigationSchema.safeParse(e.payload);
+        if (!p.success) return;
+        const flags = p.data.checks.filter((c) => !c.ok).length;
+        push(e, {
+          actor: agentActor(p.data.by), kind: p.data.verdict === "clear" ? "check" : "investigate", label: p.data.verdict === "clear" ? "Investigated: clear" : "Investigated",
+          text: `Investigated the message from ${p.data.from} against the vendor record and the ledger. ${p.data.label}${flags > 0 ? `: ${p.data.checks.filter((c) => !c.ok).map((c) => c.label).join("; ")}` : ""}.`,
+        });
+        return;
+      }
       case "EVIDENCE_RECORDED": {
         const p = EvidenceRecordedSchema.safeParse(e.payload);
         if (!p.success) return;
@@ -317,10 +327,11 @@ export function caseOutcome(input: CaseInput, openedSeq: number): CaseOutcome {
 
   if (fraud) {
     const paid = latest?.state === "PAID";
+    const found = latestInvestigation(events);
     return escalated
       ? {
-          state: "solved", headline: "Fraud stopped",
-          detail: `Nothing went to the new account.${paid ? ` ${who} was paid once, at the account on file.` : ""}`,
+          state: "solved", headline: found?.verdict === "impersonation" ? "Impersonation stopped" : "Fraud stopped",
+          detail: `${found && found.verdict !== "clear" ? `${found.label}: ${found.checks.filter((c) => !c.ok).length} red flags. ` : ""}Nothing went to the new account.${paid ? ` ${who} was paid once, at the account on file.` : ""}`,
           yours: `Call ${who} on the number you already hold, then take it back.`,
         }
       : { state: "working", headline: "Holding it for a person", detail: "An email asks to pay a different bank account. Nothing moves to it.", yours: null };
@@ -414,5 +425,16 @@ export function caseOf(input: CaseInput): Case | null {
     problem: brief.data.problem,
     steps: caseSteps(after, input),
     outcome: caseOutcome(input, opened.seq),
+    investigation: latestInvestigation(input.events),
   };
+}
+
+/** The latest investigation recorded on an invoice, with when it ran. */
+export function latestInvestigation(events: LedgerEvent[]): (z.infer<typeof InvestigationSchema> & { at: string }) | null {
+  for (const e of events.toReversed()) {
+    if (e.type !== "INVESTIGATED") continue;
+    const p = InvestigationSchema.safeParse(e.payload);
+    if (p.success) return { ...p.data, at: e.ts };
+  }
+  return null;
 }

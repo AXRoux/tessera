@@ -33,6 +33,7 @@ import {
   StateConflict,
 } from "../errors";
 import { seedAcme } from "../demo/scenario";
+import { investigateIncident } from "../commander/investigate";
 import type { PayoutGateway } from "../gateway/gateway";
 import type { Attempt, Ledger, LedgerEvent, Obligation } from "../ledger/ledger";
 import { toMinor } from "../money";
@@ -154,6 +155,7 @@ const ManualEvidenceBody = z.object({
   statementCreditMinor: z.number().int().positive().nullable(),
   summary: z.string().max(400),
 });
+const InvestigateBody = z.object({ messageId: z.string().min(1).max(64).optional() });
 const ResolveDraftBody = z.object({ draftSeq: z.number().int().positive(), resolution: z.enum(["SENT", "DISCARDED"]) });
 const CardRequestBody = z.object({
   purpose: z.string().trim().min(3).max(120),
@@ -779,6 +781,11 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
             actor, reason: input.reason ?? "The supplier needs paying now and the original transfer was returned.", evidence,
           });
           return json({ outcome: result.outcome, cardId: result.card.id, state: result.card.state, checkout: result.checkout, next: result.next }, 201);
+        }
+        case "investigate": {
+          // Code checks the message against the vendor record and the ledger, and records what it found. Moves no money.
+          const input = await body(request, InvestigateBody);
+          return json(investigateIncident(ledger, id, deps.operator, input.messageId), 201);
         }
         case "escalation/resolve": {
           const input = await body(request, NoteBody);
