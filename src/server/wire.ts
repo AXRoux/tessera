@@ -257,6 +257,44 @@ export const StorySchema = z.object({
 });
 export type Story = z.infer<typeof StorySchema>;
 
+/** One move on a case, as the board shows it: who made it, what kind of move, a word or two for a pill, and a sentence. */
+export const CaseStepSchema = z.object({
+  seq: z.number().int(),
+  at: z.string(),
+  /** Who moved. `test` is the agent under a guardrail test, told to break the rules. */
+  actor: z.enum(["agent", "test", "you", "airwallex", "visa", "supplier", "tessera"]),
+  kind: z.enum(["read", "check", "act", "hold", "handoff", "draft", "refused", "sign", "release", "send", "paid", "cleared", "certify", "fail", "message", "resolve"]),
+  label: z.string(),
+  text: z.string(),
+  /** How many moves in a row this one stands for: a guardrail test refused seven times reads as one step, x7. */
+  count: z.number().int(),
+});
+export type CaseStep = z.infer<typeof CaseStepSchema>;
+
+/**
+ * Where a case stands: still the problem (open), being worked by the agent or the bank (working), waiting on a person
+ * (yours), the supplier's problem answered (solved), or answered and certified (certified).
+ */
+export const CaseOutcomeSchema = z.object({
+  state: z.enum(["open", "working", "yours", "solved", "certified"]),
+  headline: z.string(),
+  detail: z.string().nullable(),
+  /** What is left for a person, even once the supplier's problem is answered (confirm an impostor by phone). */
+  yours: z.string().nullable(),
+});
+export type CaseOutcome = z.infer<typeof CaseOutcomeSchema>;
+
+/** A supplier's problem, the moves made on it since it opened, and where it stands (src/server/cases.ts). */
+export const CaseSchema = z.object({
+  kind: z.string(),
+  openedAt: z.string(),
+  openedSeq: z.number().int(),
+  problem: z.object({ headline: z.string(), detail: z.string() }),
+  steps: z.array(CaseStepSchema),
+  outcome: CaseOutcomeSchema,
+});
+export type Case = z.infer<typeof CaseSchema>;
+
 export const IncidentSummarySchema = z.object({
   id: z.string(),
   reference: z.string(),
@@ -310,6 +348,8 @@ export const IncidentSummarySchema = z.object({
   unread: z.number().int().optional(),
   /** The supplier whose request a person approved into this invoice, if it came from one. */
   supplier: SupplierBadgeSchema.nullable().optional(),
+  /** The supplier's problem, every move on it since, and where it stands; null for an invoice that never had one. */
+  case: CaseSchema.nullable().optional(),
 });
 export type IncidentSummary = z.infer<typeof IncidentSummarySchema>;
 
@@ -395,6 +435,12 @@ export const SeedResultSchema = z.object({
   seeded: z.array(z.object({ id: z.string(), reference: z.string(), expected: z.string() })),
 });
 export type SeedResult = z.infer<typeof SeedResultSchema>;
+
+/** This morning's stuck supplier payments, as set up (src/demo/morning.ts). */
+export const MorningResultSchema = z.object({
+  cases: z.array(z.object({ id: z.string(), reference: z.string(), supplier: z.string() })),
+});
+export type MorningResult = z.infer<typeof MorningResultSchema>;
 
 export const InboxCreatedSchema = z.object({ id: z.string() });
 export const EscalationResolvedSchema = z.object({ status: ObligationSchema.shape.status });

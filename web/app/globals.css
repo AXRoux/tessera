@@ -322,6 +322,7 @@
   --color-accent: var(--accent);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
+  --color-ok: var(--ok);
   --color-tile: var(--tile-top);
   --color-well: var(--well);
   --font-ui: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
@@ -335,6 +336,7 @@
   --accent: #2b74ff;
   --warn: #ffa629;
   --bad: #ff4f5e;
+  --ok: #33d68a;
   --tray-bg: rgb(36 38 44 / 0.55);
   --tray-border: rgb(255 255 255 / 0.07);
   --tray-shadow: 0 40px 70px -40px rgb(0 0 0 / 0.95), inset 0 1px 0 rgb(255 255 255 / 0.06);
@@ -356,6 +358,7 @@
   --accent: #1d68ff;
   --warn: #f59a12;
   --bad: #e5303f;
+  --ok: #0e9f5c;
   --tray-bg: rgb(255 255 255 / 0.42);
   --tray-border: rgb(255 255 255 / 0.9);
   --tray-shadow: 0 40px 70px -40px rgb(30 40 70 / 0.35), 0 2px 8px rgb(30 40 70 / 0.06), inset 0 1px 0 rgb(255 255 255 / 0.95);
@@ -377,6 +380,7 @@
   --accent: #2b74ff;
   --warn: #ffa629;
   --bad: #ff4f5e;
+  --ok: #33d68a;
   --tray-bg: rgb(36 38 44 / 0.55);
   --tray-border: rgb(255 255 255 / 0.07);
   --tray-shadow: 0 40px 70px -40px rgb(0 0 0 / 0.95), inset 0 1px 0 rgb(255 255 255 / 0.06);

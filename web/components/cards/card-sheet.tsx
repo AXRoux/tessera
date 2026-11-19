@@ -8,6 +8,7 @@ import { money } from "@/lib/format";
 import { mccName } from "@/lib/mcc";
 import { Field, TextArea, TextInput } from "../console/fields";
 import { Icon } from "../landing/icons";
+import { handOffLine, useCardHandOff } from "../agent/hand-off";
 import { Btn } from "../kit/metal";
 import { Select } from "../kit/select";
 import { Chip, Kicker, Tile, Tray, TrayHead } from "../kit/widgets";
@@ -133,6 +134,7 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
   const [note, setNote] = useState("");
   const [amount, setAmount] = useState("");
   const [mcc, setMcc] = useState("");
+  const handOff = useCardHandOff();
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
 
@@ -233,7 +235,17 @@ export function CardSheet({ card, canCharge, operator, onClose }: { card: CardVi
                   <Btn tone="secondary" disabled={note.trim().length < NOTE_MIN} busy={busy === "decline"} onClick={() => void act("decline", "decline", { note }, () => "Declined. The card was never issued.")}>
                     Decline
                   </Btn>
-                  <Btn disabled={note.trim().length < NOTE_MIN} busy={busy === "approve"} onClick={() => void act("approve", "approve", { note }, (a) => (a.state === "ACTIVE" ? "Signed and issued at Airwallex. The card is live." : a.state === "FAILED" ? "Signed, but Airwallex refused to issue it. See why below." : "Signed. Airwallex is issuing it."))}>
+                  <Btn disabled={note.trim().length < NOTE_MIN} busy={busy === "approve"} onClick={() =>
+                      void act("approve", "approve", { note }, (a) =>
+                        a.state === "ACTIVE"
+                          ? card.obligationId
+                            ? `Authorized and issued. ${handOffLine(handOff(card.obligationId, "ACTIVE"), money(card.amountMinor, card.currency))}`
+                            : "Signed and issued at Airwallex. The card is live."
+                          : a.state === "FAILED"
+                            ? "Signed, but Airwallex refused to issue it. See why below."
+                            : "Signed. Airwallex is issuing it.",
+                      )
+                    }>
                     Sign and issue as {name}
                   </Btn>
                 </div>

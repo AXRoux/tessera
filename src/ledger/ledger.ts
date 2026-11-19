@@ -1115,8 +1115,10 @@ export class Ledger {
   /**
    * A person approved the request: the invoice is opened from it in one transaction, with the email filed in its
    * inbox and the approval chained to it. Only a RECEIVED (payable) request can be opened, and only once.
+   * `fileEmail: false` keeps the invoice email out of the inbox (it stays on the request): an invoice paid on an earlier
+   * run whose email was already dealt with at the door.
    */
-  openFromRequest(requestId: string, obligation: NewObligation, by: string, note: string): Obligation {
+  openFromRequest(requestId: string, obligation: NewObligation, by: string, note: string, options: { fileEmail?: boolean } = {}): Obligation {
     return this.tx(() => {
       const request = this.requireSupplierRequest(requestId);
       if (request.status !== "RECEIVED") throw new StateConflict(`request ${requestId} is ${request.status.toLowerCase()}, so it cannot be opened`);
@@ -1124,7 +1126,7 @@ export class Ledger {
       const ts = this.now().toISOString();
       this.db.query("UPDATE supplier_requests SET status = 'OPENED', obligationId = ?, decidedBy = ?, decidedAt = ?, note = ? WHERE id = ?").run(opened.id, by, ts, note, requestId);
       this.append(opened.id, "REQUEST_APPROVED", { requestId, supplierId: request.supplierId, story: request.story, by, note });
-      this.addInboxMessage({ incidentId: opened.id, from: request.sender, email: `Subject: ${request.subject}\n\n${request.body}` });
+      if (options.fileEmail !== false) this.addInboxMessage({ incidentId: opened.id, from: request.sender, email: `Subject: ${request.subject}\n\n${request.body}` });
       return this.requireObligation(opened.id);
     });
   }

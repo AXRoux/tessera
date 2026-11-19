@@ -9,6 +9,7 @@ import { useWallets } from "@/lib/use-wallets";
 import { OPEN_CARD, OPEN_CARD_COMPOSER, useCards } from "@/lib/use-cards";
 import { CardComposer } from "../cards/card-composer";
 import { CardSheet } from "../cards/card-sheet";
+import { CasesPanel } from "./cases-panel";
 import { Composer } from "./composer";
 import { Masthead } from "./masthead";
 import { Workspace } from "../shell";
@@ -93,6 +94,12 @@ export function ControlRoom({
     };
   }, []);
   const cardsToSign = cards?.items.filter((c) => c.state === "PENDING").length ?? 0;
+  // The middle of the room: this morning's cases, lane by lane, whenever there are any (or nothing at all yet, and a
+  // morning can be loaded); otherwise the board as it was. Either can be chosen; the choice holds until the next visit.
+  const hasCases = board.items.some((item) => item.case);
+  const [focus, setFocus] = useState<"cases" | "board" | null>(null);
+  const showCases = focus === "cases" || (focus === null && (hasCases || (board.items.length === 0 && board.canSeed)));
+  const toCases = hasCases || board.canSeed ? () => setFocus("cases") : undefined;
 
   const extras = (
     <>
@@ -128,12 +135,20 @@ export function ControlRoom({
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-4">
-          <div className="flex min-h-[420px] flex-col xl:min-h-0 xl:flex-[1.75] short:flex-[2] [&>section]:flex-1">
-            <ControlPanel items={board.items} metrics={board.metrics} views={views} onCompose={openComposer} />
-          </div>
-          <div className="flex min-h-[320px] flex-col xl:min-h-0 xl:flex-1 [&>section]:flex-1">
-            <IncidentsPanel items={board.items} onCompose={openComposer} />
-          </div>
+          {showCases ? (
+            <div className="flex min-h-[560px] flex-col xl:min-h-0 xl:flex-1 [&>section]:flex-1">
+              <CasesPanel items={board.items} health={health} onBoard={() => setFocus("board")} onMorning={() => void board.morning()} loadingMorning={board.loadingMorning} />
+            </div>
+          ) : (
+            <>
+              <div className="flex min-h-[420px] flex-col xl:min-h-0 xl:flex-[1.75] short:flex-[2] [&>section]:flex-1">
+                <ControlPanel items={board.items} metrics={board.metrics} views={views} onCompose={openComposer} onCases={toCases} />
+              </div>
+              <div className="flex min-h-[320px] flex-col xl:min-h-0 xl:flex-1 [&>section]:flex-1">
+                <IncidentsPanel items={board.items} onCompose={openComposer} />
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-4">

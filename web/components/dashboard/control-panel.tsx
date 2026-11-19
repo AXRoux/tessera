@@ -22,6 +22,7 @@ function Meter({ label, value, of, tone, sub }: { label: string; value: number; 
 }
 
 type View = "invoice" | "time";
+type Choice = View | "cases";
 
 /**
  * Step two, and the one black tile on a white board (the one white tile on a black board): what Tessera is holding,
@@ -32,13 +33,17 @@ export function ControlPanel({
   metrics,
   views,
   onCompose,
+  onCases,
 }: {
   items: IncidentSummary[];
   metrics: Metrics | null;
   views: IncidentView[];
   onCompose: () => void;
+  /** Switch the room to the cases, lane by lane; absent when there are none to show. */
+  onCases?: () => void;
 }) {
   const [view, setView] = useState<View>("invoice");
+  const choose = (next: Choice) => (next === "cases" ? onCases?.() : setView(next));
   const now = useNow(4000);
   const board = useMemo(() => exposure(items), [items]);
   const window = useMemo(() => windowFor(views, now), [views, now]);
@@ -65,11 +70,12 @@ export function ControlPanel({
         </div>
         <Toggle
           label="Chart"
-          value={view}
-          onChange={setView}
+          value={view as Choice}
+          onChange={choose}
           options={[
-            { id: "invoice", label: "By invoice" },
-            { id: "time", label: "Over time" },
+            ...(onCases ? [{ id: "cases" as const, label: "Cases" }] : []),
+            { id: "invoice" as const, label: "By invoice" },
+            { id: "time" as const, label: "Over time" },
           ]}
         />
       </header>

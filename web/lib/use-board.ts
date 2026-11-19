@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { Health, IncidentSummary, Metrics } from "../../src/server/wire";
-import { IncidentListSchema, MetricsSchema, SeedResultSchema } from "../../src/server/wire";
+import { IncidentListSchema, MetricsSchema, MorningResultSchema, SeedResultSchema } from "../../src/server/wire";
 import { useAgentRun } from "@/components/agent/agent-run";
 import { resetTour } from "@/components/tour";
 import { Acknowledged, api, ApiProblem } from "./client-api";
@@ -26,6 +26,9 @@ export interface Board {
   run: (mode: "commander" | "adversary") => void;
   refresh: () => Promise<void>;
   seed: () => Promise<void>;
+  /** This morning's stuck supplier payments (src/demo/morning.ts), set up on the sandbox or offline. */
+  morning: () => Promise<void>;
+  loadingMorning: boolean;
   reset: () => Promise<void>;
   /** Sends a real payout through Airwallex, signed with the operator's own note. Resolves to an error sentence, or null on success. */
   create: (payout: { amount: number; reference?: string; note: string }) => Promise<string | null>;
@@ -44,6 +47,7 @@ export function useBoard(initial: { items: IncidentSummary[]; metrics: Metrics |
   const [items, setItems] = useState(initial.items);
   const [metrics, setMetrics] = useState(initial.metrics);
   const [seeding, setSeeding] = useState(false);
+  const [loadingMorning, setLoadingMorning] = useState(false);
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
@@ -101,6 +105,21 @@ export function useBoard(initial: { items: IncidentSummary[]; metrics: Metrics |
     }
   }, [refresh]);
 
+  const morning = useCallback(async () => {
+    setLoadingMorning(true);
+    setError(null);
+    setSeeded(null);
+    try {
+      const result = await api("demo/morning", MorningResultSchema, { method: "POST" });
+      setSeeded(`${result.cases.length} supplier payments are stuck this morning: ${result.cases.map((c) => `${c.supplier} ${c.reference}`).join(", ")}.`);
+      await refresh();
+    } catch (e) {
+      setError(message(e, "This morning's cases could not be set up."));
+    } finally {
+      setLoadingMorning(false);
+    }
+  }, [refresh]);
+
   const reset = useCallback(async () => {
     setResetting(true);
     setError(null);
@@ -133,6 +152,8 @@ export function useBoard(initial: { items: IncidentSummary[]; metrics: Metrics |
     run: (mode) => agent.start(null, mode),
     refresh,
     seed,
+    morning,
+    loadingMorning,
     reset,
     create,
     setConfirmingReset,

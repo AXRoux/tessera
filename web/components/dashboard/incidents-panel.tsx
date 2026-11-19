@@ -17,6 +17,15 @@ import { Chip, STATUS_CHIP, Toggle, Tray, TrayHead } from "../kit/widgets";
 
 type Filter = "all" | "live" | "you" | "certify" | "done";
 
+/** A case's state as the row's edge: red unsolved, blue in progress, amber yours, green solved. */
+const CASE_BAR: Record<NonNullable<IncidentSummary["case"]>["outcome"]["state"], string> = {
+  open: "bg-bad",
+  working: "bg-accent",
+  yours: "bg-warn",
+  solved: "bg-ok",
+  certified: "bg-ok",
+};
+
 const MATCH: Record<Filter, (item: IncidentSummary) => boolean> = {
   all: () => true,
   live: (item) => item.status === "PAYING" || item.status === "OPEN",
@@ -145,7 +154,13 @@ export function IncidentsPanel({ items, onCompose }: { items: IncidentSummary[];
                   onClick={() => router.push(`/incidents/${item.id}`)}
                   className={`group relative grid ${COLUMNS} cursor-pointer items-center gap-4 border-b border-fg/[0.05] px-5 py-2.5 transition-colors last:border-b-0 hover:bg-fg/[0.035] short:py-2`}
                 >
-                  {item.attention ? <span aria-hidden className="absolute inset-y-2.5 left-1.5 w-[3px] rounded-full bg-warn" /> : null}
+                  {item.case || item.attention ? (
+                    <span
+                      aria-hidden
+                      className={`absolute inset-y-2.5 left-1.5 w-[3px] rounded-full ${item.case ? CASE_BAR[item.case.outcome.state] : "bg-warn"}`}
+                      title={item.case ? `${item.case.problem.headline} → ${item.case.outcome.headline}` : undefined}
+                    />
+                  ) : null}
                   <span role="cell" className="flex min-w-0 items-center gap-2.5">
                     {item.supplier ? <SupplierMark supplier={item.supplier} size={26} /> : null}
                     <span className="min-w-0">

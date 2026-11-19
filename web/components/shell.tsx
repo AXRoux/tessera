@@ -34,6 +34,8 @@ interface ShellState {
   waiting: ReturnType<typeof needsYou<IncidentSummary>>;
   /** Opens the ⌘K command palette. */
   openPalette: () => void;
+  /** An agent (a model or the built-in script) is connected to this server, so a run can be started. */
+  agentConnected: boolean;
 }
 
 const ShellContext = createContext<ShellState | null>(null);
@@ -339,7 +341,8 @@ export function AppShell({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  const value = useMemo<ShellState>(() => ({ query, setQuery, waiting, openPalette }), [query, waiting, openPalette]);
+  const agentConnected = Boolean(health?.agent);
+  const value = useMemo<ShellState>(() => ({ query, setQuery, waiting, openPalette, agentConnected }), [query, waiting, openPalette, agentConnected]);
   return (
     <ShellContext.Provider value={value}>
       <AgentFaceProvider initialChoice={agentFace} modelName={health?.agent?.kind === "model" ? health.agent.name : null}>

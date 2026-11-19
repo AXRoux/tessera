@@ -123,7 +123,12 @@ export function boardMoves(items: IncidentSummary[], options: { reader?: boolean
  * the ones it leaves alone and why. Certified invoices are only counted.
  */
 export function agentPlan(items: IncidentSummary[], options: { reader?: boolean } = {}): { work: Move[]; leave: Move[]; certified: number } {
-  const moves = items.map((item) => moveOf(item, options));
+  // A failure policy will only let a person release (a possible duplicate) is still the agent's to look into: it checks
+  // it and hands it over with its reasons. The release itself stays yours.
+  const moves = items.map((item) => {
+    const move = moveOf(item, options);
+    return !move.agentCan && item.status === "NEEDS_ACTION" && item.next?.action === "ESCALATE" ? { ...move, agentCan: true, label: "Hand off" } : move;
+  });
   return {
     work: moves.filter((m) => m.agentCan).sort((a, b) => a.rank - b.rank),
     leave: moves.filter((m) => !m.agentCan && m.who !== "done").sort((a, b) => a.rank - b.rank),

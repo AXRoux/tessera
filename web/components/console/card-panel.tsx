@@ -6,6 +6,7 @@ import { ago, money } from "@/lib/format";
 import type { RunAction } from "@/lib/use-incident";
 import type { IncidentView } from "../../../src/server/wire";
 import { VisaCard } from "../cards/visa-card";
+import { handOffLine, useCardHandOff } from "../agent/hand-off";
 import { Btn } from "../kit/metal";
 import { Field, TextArea } from "./fields";
 
@@ -36,6 +37,7 @@ function Step({ n, label, state }: { n: number; label: string; state: "done" | "
 export function CardPanel({ view, operator, busy, run }: { view: IncidentView; operator: string; busy: string | null; run: RunAction }) {
   const noteId = useId();
   const [note, setNote] = useState("");
+  const handOff = useCardHandOff();
   const id = view.obligation.id;
   const decision = view.assessment?.decision;
   const card = view.invoiceCard ?? null;
@@ -55,11 +57,19 @@ export function CardPanel({ view, operator, busy, run }: { view: IncidentView; o
       await api(`obligations/${id}/card`, Acknowledged, { method: "POST", body: {} });
       return { tone: "ok", title: "Card asked for", lines: [`A single-use Visa card for exactly ${amount} now waits for a signature. No transfer can be made while it holds the invoice.`] };
     });
+  // A person authorizes; once Airwallex has issued the card, the agent takes it and pays through Visa TAP.
   const sign = (cardId: string) =>
     run("card-sign", async () => {
-      await api(`cards/${cardId}/approve`, Acknowledged, { method: "POST", body: { note: note.trim() } });
+      const signed = await api(`cards/${cardId}/approve`, Acknowledged, { method: "POST", body: { note: note.trim() } });
       setNote("");
-      return { tone: "ok", title: "Card signed and issued", lines: [`Signed by ${operator}. Airwallex cut the card with the invoice's terms as its controls.`] };
+      const state = String(signed.state);
+      if (state !== "ACTIVE") {
+        return { tone: "ok", title: "Card authorized", lines: [`Signed by ${operator}. Airwallex is ${state === "FAILED" ? "refusing to issue it; see why below" : "issuing it"}.`] };
+      }
+      return {
+        tone: "ok", title: "Authorized: the card is the agent's to pay with",
+        lines: [`Signed by ${operator}. Airwallex issued it with the invoice's terms as its controls.`, handOffLine(handOff(id, state), amount)],
+      };
     });
   const decline = (cardId: string) =>
     run("card-decline", async () => {
@@ -94,8 +104,8 @@ export function CardPanel({ view, operator, busy, run }: { view: IncidentView; o
 
       <ol className="space-y-1.5">
         <Step n={1} label="Ask for the card (terms from the invoice)" state={at(1)} />
-        <Step n={2} label="A person signs it" state={at(2)} />
-        <Step n={3} label="The agent pays through Visa TAP" state={at(3)} />
+        <Step n={2} label="A person authorizes it (the agent cannot)" state={at(2)} />
+        <Step n={3} label="The agent pays through Visa TAP, once authorized" state={at(3)} />
         <Step n={4} label="Charge cleared and proved" state={at(4)} />
       </ol>
 
@@ -118,7 +128,7 @@ export function CardPanel({ view, operator, busy, run }: { view: IncidentView; o
       {card && card.state === "PENDING" ? (
         <div className="space-y-3">
           <p className="text-[13px] leading-relaxed text-fg/60">
-            Asked for by {card.byAgent ? card.requestedBy.replace(/^agent:/, "the agent ") : card.requestedBy} {ago(card.createdAt)}: &ldquo;{card.reason}&rdquo;
+            Asked for by {card.byAgent ? "the agent" : card.requestedBy} {ago(card.createdAt)}: &ldquo;{card.reason}&rdquo;
           </p>
           <Field label="Why is it safe to pay this supplier by card?" htmlFor={noteId} hint={note.trim().length < NOTE_MIN ? "A sentence, in your own words." : undefined}>
             <TextArea id={noteId} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Called the supplier on the number we hold; they take card for this invoice." maxLength={500} />

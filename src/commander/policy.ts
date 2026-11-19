@@ -124,6 +124,11 @@ export interface IncidentFacts {
   cardsOffered?: boolean;
   /** The card that holds this invoice's lock, if one does. */
   card?: InvoiceCardFacts | null;
+  /**
+   * The kinds of reply a person has sent the supplier since the supplier last wrote. A reply already sent is not offered
+   * again until the supplier writes back. Absent: none.
+   */
+  repliesSent?: Partial<Record<"STATUS" | "PROOF" | "CORRECTION", boolean>>;
   now: Date;
 }
 
@@ -495,13 +500,14 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
       const ageMs = now.getTime() - Date.parse(latest.createdAt);
       if (ageMs <= slaMs) {
         fromState = "WAIT";
-        candidates.push("WAIT", "SEND_STATUS_TO_SUPPLIER");
+        candidates.push("WAIT", ...(facts.repliesSent?.STATUS ? [] : ["SEND_STATUS_TO_SUPPLIER" as const]));
         recheckAt = new Date(Date.parse(latest.createdAt) + slaMs).toISOString();
         reasons.push(`Processing for ${span(ageMs)} of an expected ${span(slaMs)} on ${latest.method}. Waiting is the right call.`);
         if (evidence?.claimsNonReceipt) {
           raise("ATTENTION");
           reasons.push("The supplier reports non-receipt, but the transfer is still inside its normal settlement window.");
         }
+        if (facts.repliesSent?.STATUS) reasons.push("A status reply has already gone to the supplier since they last wrote.");
       } else {
         fromState = "ESCALATE";
         candidates.push("ESCALATE", "WAIT");
@@ -514,9 +520,16 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
     case "PAID": {
       refuse("REPLACE", "The money has left your account and may be sitting at the supplier's bank.");
       if (evidence?.claimsNonReceipt && !creditConfirmsReceipt) {
+        raise("ATTENTION");
+        if (facts.repliesSent?.PROOF) {
+          // Proof has gone out since the supplier last wrote: their bank traces it now. Still never a second payment.
+          fromState = "WAIT";
+          candidates.push("WAIT", "ESCALATE");
+          reasons.push("Airwallex reports the payment as made, and proof of payment has gone to the supplier since they last wrote. Wait for their bank to trace it. Do not pay again.");
+          break;
+        }
         fromState = "SEND_PROOF_TO_SUPPLIER";
         candidates.push("SEND_PROOF_TO_SUPPLIER", "ESCALATE", "WAIT");
-        raise("ATTENTION");
         reasons.push("Airwallex reports the payment as made, yet the supplier says nothing arrived. Send proof of payment and ask their bank to trace it. Do not pay again.");
         break;
       }
@@ -561,9 +574,15 @@ export function decide(facts: IncidentFacts, policy: CommanderPolicy = DEFAULT_P
         break;
       }
       if (entry.replace === "AFTER_CHANGE") {
-        fromState = "REQUEST_CORRECTION";
-        candidates.push("REQUEST_CORRECTION", "ESCALATE");
         raise("ATTENTION");
+        if (facts.repliesSent?.CORRECTION) {
+          fromState = "WAIT";
+          candidates.push("WAIT", "ESCALATE");
+          reasons.push("A request for corrected details has gone to the supplier since they last wrote; waiting for their answer.");
+        } else {
+          fromState = "REQUEST_CORRECTION";
+          candidates.push("REQUEST_CORRECTION", "ESCALATE");
+        }
         refuse("REPLACE", `Needs a changed ${replacement.needsChange} first, or an approval from a person with a written reason.`);
         break;
       }

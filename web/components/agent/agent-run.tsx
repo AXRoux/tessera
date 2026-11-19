@@ -175,8 +175,9 @@ const plain = (text: string): string => text.replace(/\*\*/g, "").replace(/`/g, 
 /** What each tool is, in the words an operator watching would use. The name alone means little on a screen. */
 const ACTION: Record<string, string> = {
   list_incidents: "Read the board",
-  assess_incident: "Ask what the policy allows",
-  read_supplier_message: "Read the supplier's message",
+  assess_incident: "Check Airwallex, ask the policy",
+  read_supplier_message: "Read the supplier's email",
+  pay_invoice_by_card: "Pay by single-use Visa card",
   replace_payment: "Ask to replace the payment",
   fund_replacement: "Ask to fund the replacement",
   draft_supplier_reply: "Draft a reply for a person",
@@ -187,17 +188,43 @@ const ACTION: Record<string, string> = {
 };
 export const actionLabel = (tool: string): string => ACTION[tool] ?? tool.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
 
+/** The policy's calls, in words. */
+const CALL: Record<string, string> = {
+  REPLACE: "replace the payment",
+  PAY_BY_CARD: "pay by single-use Visa card",
+  FUND: "fund the replacement first",
+  WAIT: "wait: paying again could pay twice",
+  ESCALATE: "hand it to a person",
+  CLOSE: "certify it",
+  SEND_PROOF_TO_SUPPLIER: "send proof, never a second payment",
+  SEND_STATUS_TO_SUPPLIER: "tell the supplier where it is",
+  REQUEST_CORRECTION: "ask for corrected details",
+  RECOVER_INTENT: "settle the open request",
+  NONE: "nothing to do",
+};
+
+/** An assessment's summary ("recommended WAIT; allowed: …. Why: …") as the call and the reason behind it. */
+export function readCall(summary: string): { call: string; why: string | null } | null {
+  const m = /^recommended (\w+); allowed: [^.]*(?:\. Why: (.*))?$/.exec(summary);
+  if (!m) return null;
+  return { call: CALL[m[1]!] ?? m[1]!.toLowerCase().replaceAll("_", " "), why: m[2] ?? null };
+}
+
 /** The tools whose success means a person now has to do something. */
 const HANDOFF: Record<string, string> = {
   escalate_to_human: "This one is yours now. Nothing moves until you decide.",
   draft_supplier_reply: "A reply is drafted. Read it, then send it from your own mail.",
 };
 
+const CARD_HANDOFF = "Authorize the Visa card. The agent cannot; it pays through Visa TAP once you have.";
+
 /** The reference a result names, so a handoff can link to the incident it belongs to. */
 const referenceIn = (summary: string): string | null => /\b([A-Z]{2,}-\d{3,}(?:-[A-Z0-9]{2,})?)\b/.exec(summary)?.[1] ?? null;
 
 /** Dense rendering for narrow panels; set by the timeline and read by every row in it. */
 const DenseContext = createContext(false);
+/** Who an invoice reference pays ("Modal"), so a step names the supplier as well as the number. */
+const NameContext = createContext<(reference: string) => string | undefined>(() => undefined);
 
 /** A vertical spine, a numbered disc per step, and the step itself. The spine is what makes the order readable at a glance. */
 function StepRow({ n, tone, children }: { n: number; tone: "ok" | "bad" | "live"; result?: "ok" | "bad" | "live" | null; children: ReactNode }) {
@@ -226,12 +253,21 @@ function StepRow({ n, tone, children }: { n: number; tone: "ok" | "bad" | "live"
 function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n: number; href: string | null }) {
   const { result } = step;
   const dense = useContext(DenseContext);
-  const handoff = result?.ok ? HANDOFF[step.tool] : undefined;
+  const nameFor = useContext(NameContext);
+  const call = step.tool === "assess_incident" && result?.ok ? readCall(result.summary) : null;
+  // Asking for a Visa card is a hand-off too: nothing is paid until a person authorizes it.
+  const asksForCard = step.tool === "pay_invoice_by_card" && result?.ok === true && result.summary.startsWith("asked for");
+  const handoff = result?.ok ? (asksForCard ? CARD_HANDOFF : HANDOFF[step.tool]) : undefined;
   const reference = handoff ? (step.incident ?? referenceIn(result?.summary ?? "")) : null;
   return (
     <StepRow n={n} tone={result ? (result.ok ? "ok" : result.kind === "refused" ? "bad" : "bad") : "live"} result={result ? (result.ok ? "ok" : "bad") : "live"}>
       <p className={`font-medium tracking-[-0.01em] text-fg ${dense ? "pt-1 text-[13.5px]" : "pt-1.5 text-[15px]"}`}>{actionLabel(step.tool)}</p>
-      {step.incident ? <p className="mt-1 font-mono text-[12.5px] text-fg/55">{step.incident}</p> : null}
+      {step.incident ? (
+        <p className="mt-1 font-mono text-[12.5px] text-fg/55">
+          {step.incident}
+          {nameFor(step.incident) ? <span className="font-sans text-fg/45"> · {nameFor(step.incident)}</span> : null}
+        </p>
+      ) : null}
       {step.detail ? (
         <p className={`mt-2 border-l-2 border-fg/15 pl-3 italic leading-relaxed text-fg/55 ${dense ? "line-clamp-2 text-[12px]" : "text-[13px]"}`} title={step.detail}>&ldquo;{step.detail}&rdquo;</p>
       ) : null}
@@ -242,6 +278,11 @@ function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n:
             <p className={`leading-relaxed ${dense ? "mt-0.5 line-clamp-2 text-[12px] text-fg/75" : "mt-1.5 text-sm"}`} title={result.summary}>
               {result.summary}
             </p>
+          </div>
+        ) : result.ok && call ? (
+          <div className={`border-l-2 border-accent/40 pl-3 leading-relaxed ${dense ? "mt-2 text-[12.5px]" : "mt-3 text-sm"}`}>
+            <p className="font-medium text-accent">Policy: {call.call}</p>
+            {call.why ? <p className="mt-0.5 text-fg/70">{call.why}</p> : null}
           </div>
         ) : result.ok ? (
           <p className={`border-l-2 border-accent/40 pl-3 leading-relaxed text-fg/80 ${dense ? "mt-2 text-[12.5px]" : "mt-3 text-sm"}`}>{result.summary}</p>
@@ -276,11 +317,14 @@ function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n:
 export function AgentTimeline({
   state,
   idFor = () => undefined,
+  nameFor = () => undefined,
   dense = false,
   className = "max-h-[620px] px-5 py-5 sm:px-6",
 }: {
   state: AgentRunState;
   idFor?: (reference: string) => string | undefined;
+  /** The supplier an invoice reference pays, to name beside it. */
+  nameFor?: (reference: string) => string | undefined;
   /** Smaller discs and type, for a narrow column. */
   dense?: boolean;
   /** The scroll container's sizing; the dashboard lets it fill its panel instead of capping it. */
@@ -297,7 +341,8 @@ export function AgentTimeline({
   const lastText = state.steps.findLastIndex((s) => s.kind === "text");
   const visible = state.steps.flatMap((step, i) => {
     // Everything policy refused, every handoff to a person, and the agent's closing report survive the fold.
-    const matters = step.kind === "tool" && (step.result?.ok === false || (step.result?.ok === true && step.tool in HANDOFF));
+    const matters =
+      step.kind === "tool" && (step.result?.ok === false || (step.result?.ok === true && (step.tool in HANDOFF || step.tool === "pay_invoice_by_card")));
     const keep = !finished || showAll || i === lastText || matters;
     return keep ? [{ step, i }] : [];
   });
@@ -305,6 +350,7 @@ export function AgentTimeline({
 
   return (
     <DenseContext.Provider value={dense}>
+    <NameContext.Provider value={nameFor}>
     <div className={`thin-scroll overflow-x-hidden overflow-y-auto overscroll-contain [overflow-wrap:anywhere] ${className}`}>
       <ol>
         {visible.map(({ step, i }, position) =>
@@ -350,6 +396,7 @@ export function AgentTimeline({
         </p>
       ) : null}
     </div>
+    </NameContext.Provider>
     </DenseContext.Provider>
   );
 }

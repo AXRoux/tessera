@@ -10,6 +10,7 @@ import { Chip } from "../kit/widgets";
 import { TextArea } from "./fields";
 import { SupplierMark } from "../suppliers/supplier-mark";
 import type { RunAction } from "./actions-panel";
+import { handOffLine, useCardHandOff } from "../agent/hand-off";
 
 const ACTOR_NAME = { bank: "Airwallex", you: "You" } as const;
 
@@ -31,6 +32,7 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
   const story = view.story;
   const noteId = useId();
   const [note, setNote] = useState("");
+  const handOff = useCardHandOff();
   if (!story) return null;
   const id = view.obligation.id;
   const allowed = view.assessment?.decision.allowed ?? [];
@@ -77,9 +79,12 @@ export function StoryPanel({ view, busy, run }: { view: IncidentView; busy: stri
 
   const signCard = (cardId: string, text: string) =>
     run("story-card-sign", async () => {
-      await api(`cards/${cardId}/approve`, Acknowledged, { method: "POST", body: { note: text } });
+      const signed = await api(`cards/${cardId}/approve`, Acknowledged, { method: "POST", body: { note: text } });
       setNote("");
-      return { tone: "ok", title: "Card signed and issued", lines: ["Airwallex issued it with the invoice's terms as its controls."] };
+      const state = String(signed.state);
+      return state === "ACTIVE"
+        ? { tone: "ok", title: "Authorized: the card is the agent's to pay with", lines: ["Airwallex issued it with the invoice's terms as its controls.", handOffLine(handOff(id, state), amount)] }
+        : { tone: "ok", title: "Card authorized", lines: ["Airwallex is issuing it with the invoice's terms as its controls."] };
     });
 
   const payCard = () =>

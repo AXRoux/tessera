@@ -601,6 +601,8 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
         input: auditInput(parsed.data),
         outcome: outcome.ok ? "ok" : outcome.kind,
         detail: outcome.ok ? null : outcome.message.slice(0, 300),
+        // What the agent was told when it looked: the policy's call and its first reason, so its reasoning is on the record.
+        ...(name === "assess_incident" && outcome.ok ? { verdict: verdictOf(outcome.result) } : {}),
       });
     }
     // Scrub first, then truncate: a cut that split a withheld reason would leave a fragment the scrub cannot match.
@@ -609,6 +611,15 @@ export function createToolbox(deps: ToolboxDeps): Toolbox {
   }
 
   return { specs, call };
+}
+
+const VerdictSchema = z.object({ decision: z.object({ recommended: z.string(), reasons: z.array(z.string()) }) });
+
+/** The policy's call in an assessment, and the reasons it gave. Never the supplier's text: reasons quote only facts. */
+function verdictOf(result: unknown): { recommended: string; reasons: string[] } | null {
+  const parsed = VerdictSchema.safeParse(result);
+  if (!parsed.success) return null;
+  return { recommended: parsed.data.decision.recommended, reasons: parsed.data.decision.reasons.slice(0, 4).map((r) => r.slice(0, 400)) };
 }
 
 /** Deep copy of `value` with every occurrence of each `from` in every string replaced by its `to`. */

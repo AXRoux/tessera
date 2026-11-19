@@ -7,6 +7,9 @@ const trim = (text: string, max: number): string => {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 };
 
+/** The first sentence of a policy reason: enough to say why on one line. */
+const firstSentence = (text: string): string => text.split(/(?<=[.!?])\s/)[0]?.trim() ?? "";
+
 const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value)) : {};
 
@@ -30,7 +33,19 @@ export function summarize(tool: string, outcome: ToolOutcome): string {
     case "assess_incident": {
       const d = record(r.decision);
       const allowed = Array.isArray(d.allowed) ? d.allowed.join(", ") : "";
-      return `recommended ${String(d.recommended)}; allowed: ${allowed}`;
+      const why = Array.isArray(d.reasons) ? firstSentence(String(d.reasons[d.recommended === "PAY_BY_CARD" ? d.reasons.length - 1 : 0] ?? "")) : "";
+      return `recommended ${String(d.recommended)}; allowed: ${allowed}${why ? `. Why: ${trim(why, 150)}` : ""}`;
+    }
+    case "pay_invoice_by_card": {
+      const card = record(r.card);
+      switch (r.outcome) {
+        case "REQUESTED":
+          return `asked for a single-use Visa card for exactly ${String(card.cap)}, payable only to ${String(card.merchant)}; a person must sign it`;
+        case "PAID":
+          return `paid ${String(card.merchant)}'s checkout through Visa TAP for ${String(card.cap)}; the merchant verified the agent's signature`;
+        default:
+          return `the card checkout did not go through (${String(r.outcome).toLowerCase()})`;
+      }
     }
     case "read_supplier_message": {
       const e = record(r.supplierEvidence);

@@ -47,6 +47,28 @@ export function pendingDraft(events: LedgerEvent[]): PendingDraft | null {
   return null;
 }
 
+/**
+ * The kinds of reply a person has sent the supplier since the supplier last wrote: a draft resolved SENT, written after
+ * the newest message in the inbox. A message from the supplier opens the question again.
+ */
+export function repliesSentSince(events: LedgerEvent[]): Partial<Record<DraftKind, boolean>> {
+  const lastMessage = events.findLast((e) => e.type === "INBOX_RECEIVED")?.seq ?? 0;
+  const drafts = new Map<number, DraftKind>();
+  const sent: Partial<Record<DraftKind, boolean>> = {};
+  for (const event of events) {
+    if (event.seq <= lastMessage) continue;
+    if (event.type === "DRAFT_REPLY") {
+      const parsed = DraftRecordedSchema.safeParse(event.payload);
+      if (parsed.success) drafts.set(event.seq, parsed.data.kind);
+    } else if (event.type === "DRAFT_RESOLVED") {
+      const parsed = DraftResolvedSchema.safeParse(event.payload);
+      const kind = parsed.success && parsed.data.resolution === "SENT" ? drafts.get(parsed.data.draftSeq) : undefined;
+      if (kind) sent[kind] = true;
+    }
+  }
+  return sent;
+}
+
 const ISO_DATE = /\d{4}-\d{2}-\d{2}/g;
 /** Money as people write it ("1,250.00", "25.00"); removed so an amount is not mistaken for an account number. */
 const AMOUNT = /(?<![\d./_])(?:\d{1,3}(?:,\d{3}){1,2}(?:\.\d{2})?|\d+\.\d{2})(?![\d./_,])/g;

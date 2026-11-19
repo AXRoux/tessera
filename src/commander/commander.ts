@@ -12,6 +12,7 @@ import { formatMinor, fromMinor, toMinor } from "../money";
 import { z } from "zod";
 import type { SupplierEvidence } from "./evidence";
 import { heldFrom } from "../ledger/cards";
+import { repliesSentSince } from "./drafts";
 import { DEFAULT_POLICY, decide, type CommanderPolicy, type Decision, type FundingPlan, type IncidentFacts, type InvoiceCardFacts } from "./policy";
 
 export interface CommanderConfig {
@@ -271,6 +272,7 @@ export class Commander {
       evidence,
       cardsOffered: this.cardsOffered,
       card: this.invoiceCardFacts(obligation.id, events),
+      repliesSent: repliesSentSince(events),
       now: this.now(),
     };
   }

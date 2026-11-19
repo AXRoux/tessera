@@ -88,6 +88,7 @@ export function RunPanel({ items, health }: { items: IncidentSummary[]; health: 
   const live = agent.running;
   const elapsed = useRunClock(live);
   const idFor = (reference: string) => items.find((item) => item.reference === reference)?.id;
+  const nameFor = (reference: string) => items.find((item) => item.reference === reference)?.supplier?.name;
   const tools = agent.state.steps.filter((step) => step.kind === "tool");
   const refused = agent.state.done?.refused ?? tools.filter((step) => step.result?.kind === "refused").length;
   const handed = tools.filter((step) => step.result?.ok && (step.tool === "escalate_to_human" || step.tool === "draft_supplier_reply")).length;
@@ -172,7 +173,7 @@ export function RunPanel({ items, health }: { items: IncidentSummary[]; health: 
                 </span>
               ) : null}
             </div>
-            <AgentTimeline state={agent.state} idFor={idFor} dense className="min-h-0 flex-1 px-4 pb-3 pt-3" />
+            <AgentTimeline state={agent.state} idFor={idFor} nameFor={nameFor} dense className="min-h-0 flex-1 px-4 pb-3 pt-3" />
           </div>
         </>
       ) : (

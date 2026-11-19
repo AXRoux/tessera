@@ -11,21 +11,23 @@
  *   POST /api/requests/:id/decline {note}   a person turns it down
  *   POST /api/requests/:id/clear            off the Received list, once nothing is left to decide on it
  *   POST /api/obligations/:id/story/play {step}   the supplier's or the bank's next move (sandbox or offline only)
+ *   POST /api/demo/morning                  this morning's stuck supplier payments (src/demo/morning.ts), sandbox or offline only
  */
 import { z } from "zod";
 import type { BeneficiaryApi } from "../airwallex/types";
 import { WRITTEN_NOTE_MIN_CHARS } from "../approval/approval";
 import type { Commander } from "../commander/commander";
 import { checkIntake } from "../commander/intake";
+import { fillCase, MORNING, morningSupplier, type CaseOpened, type MorningCase } from "../demo/morning";
 import { effectFor, followUpFor, storySteps } from "../demo/story";
 import { dueDate, fill, invoiceTotal, STORIES, supplierById, SUPPLIERS, type StoryId, type Supplier } from "../demo/suppliers";
 import { StateConflict } from "../errors";
 import type { PayoutGateway } from "../gateway/gateway";
-import type { Ledger, SupplierRequest } from "../ledger/ledger";
+import type { Ledger, Obligation, SupplierRequest } from "../ledger/ledger";
 import { formatMinor } from "../money";
 import type { Simulator } from "./api";
 import type { Reactor } from "./reactions";
-import type { Story, SupplierBadge, SupplierCard, SupplierRequestView, Suppliers } from "./wire";
+import type { MorningResult, Story, SupplierBadge, SupplierCard, SupplierRequestView, Suppliers } from "./wire";
 
 export interface RequestDeps {
   ledger: Ledger;
@@ -96,7 +98,13 @@ export function createRequests(deps: RequestDeps) {
   };
 
   /** Files a request as it arrived and judges it at the door. A copy of an invoice on the ledger is filed with it. */
-  function receive(supplier: Supplier, message: { from: string; subject: string; body: string }, reference: string, amountMinor: number): SupplierRequest {
+  function receive(
+    supplier: Supplier,
+    message: { from: string; subject: string; body: string },
+    reference: string,
+    amountMinor: number,
+    story: StoryId | null = supplier.story,
+  ): SupplierRequest {
     const existing = ledger.listObligations().find((o) => o.reference === reference) ?? null;
     const judged = checkIntake(
       { sender: message.from, subject: message.subject, body: message.body, reference, amountMinor, currency: "USD" },
@@ -104,7 +112,7 @@ export function createRequests(deps: RequestDeps) {
     );
     return ledger.tx(() => {
       const filed = ledger.addSupplierRequest({
-        supplierId: supplier.id, story: supplier.story, reference, amountMinor, currency: "USD", sender: message.from, subject: message.subject,
+        supplierId: supplier.id, story, reference, amountMinor, currency: "USD", sender: message.from, subject: message.subject,
         body: message.body, verdict: judged.verdict, checks: judged.checks, summary: judged.summary, duplicateOf: existing?.id ?? null,
       });
       if (existing && judged.verdict === "DUPLICATE") ledger.addInboxMessage({ incidentId: existing.id, from: message.from, email: `Subject: ${message.subject}\n\n${message.body}` });
@@ -157,6 +165,76 @@ export function createRequests(deps: RequestDeps) {
       await deps.reactor?.react({ source: "setup" }).catch(() => undefined);
     }
     return obligation.id;
+  }
+
+  /**
+   * This morning (src/demo/morning.ts): each supplier's invoice arrived, passed the door, was approved by a person and
+   * paid, all through the ordinary path; then the bank moves each transfer to where it stands this morning, the
+   * supplier's messages arrive, and the case opens. History, not news: no agent is woken by any of it.
+   */
+  async function morning(): Promise<MorningResult> {
+    const simulator = deps.simulator;
+    if (!simulator) throw new Forbidden("this morning's cases can be set up only on the sandbox or offline");
+    const note = "Scheduled payment run: checked against the vendor record and the invoice.";
+    const setUp = async () => {
+      const opened: Array<{ c: MorningCase; supplier: Supplier; obligation: Obligation; values: { ref: string; amount: string; due: string } }> = [];
+      // The last payment run: the invoice arrives, the door checks it, a person approves it and Tessera pays it. The bank
+      // then moves the transfer to where it stands this morning, straight away, before the bank clock could take it for
+      // an untouched one and pay it.
+      for (const c of MORNING) {
+        const supplier = morningSupplier(c);
+        const reference = nextReference(supplier);
+        const amountMinor = invoiceTotal(supplier);
+        const values = { ref: reference, amount: formatMinor(amountMinor, "USD"), due: dueDate(new Date(), -1) };
+        const invoice = c.invoice ?? supplier.request;
+        const request = receive(supplier, { from: invoice.from, subject: fill(invoice.subject, values), body: fill(invoice.body, values) }, reference, amountMinor, null);
+        if (request.status !== "RECEIVED") throw new StateConflict(`${supplier.name}'s invoice did not pass the door: ${request.summary}`);
+        const beneficiaryId = await payeeFor(supplier);
+        const obligation = ledger.openFromRequest(request.id, {
+          reference, beneficiaryId, amountMinor, currency: "USD", method: "LOCAL", reason: "professional_business_services",
+        }, deps.operator, note, { fileEmail: false });
+        const { evidenceHash } = await commander.assess(obligation.id);
+        await gateway.submit(await commander.humanApproval({ obligationId: obligation.id, approver: deps.operator, note, evidenceHash }));
+        opened.push({ c, supplier, obligation, values });
+        const transferId = ledger.latestAttempt(obligation.id)?.transferId;
+        if (!transferId) throw new StateConflict(`${obligation.reference} has no transfer at Airwallex`);
+        const bank = c.bank;
+        await patiently(() => simulator.advance(transferId, "SENT"));
+        if (bank.status === "FAILED") await patiently(() => simulator.advance(transferId, "FAILED", bank.failureType));
+        if (bank.status === "PAID") await patiently(() => simulator.advance(transferId, "PAID"));
+        await gateway.sync(obligation.id);
+      }
+      // A failed transfer is cancelled by Airwallex a moment later; only then is the money back in the wallet.
+      const failing = opened.filter(({ c }) => c.bank.status === "FAILED").map(({ obligation }) => obligation);
+      for (let i = 0; i < 45 && failing.some((o) => ledger.latestAttempt(o.id)?.state !== "DEAD"); i++) {
+        if (i > 0) await Bun.sleep(pollMs);
+        for (const o of failing) if (ledger.latestAttempt(o.id)?.state !== "DEAD") await gateway.sync(o.id);
+      }
+      const stuck = failing.filter((o) => ledger.latestAttempt(o.id)?.state !== "DEAD");
+      if (stuck.length > 0) throw new StateConflict(`Airwallex has not cancelled ${stuck.map((o) => o.reference).join(", ")} yet; try again in a moment`);
+      // This morning: what the suppliers sent, and the case each one opens.
+      for (const { c, supplier, obligation, values } of opened) {
+        const named = { ref: values.ref, amount: values.amount, who: supplier.name };
+        ledger.tx(() => {
+          if (c.chase) {
+            ledger.addInboxMessage({
+              incidentId: obligation.id, from: c.chase.from, email: `Subject: ${fill(c.chase.subject, values)}\n\n${fill(c.chase.body, values)}`,
+              ...(c.chase.statementText ? { statementText: c.chase.statementText } : {}),
+            });
+          }
+          const brief: CaseOpened = {
+            kind: c.kind, supplierId: supplier.id, lands: c.lands === true, by: deps.operator,
+            problem: { headline: fillCase(c.problem.headline, named), detail: fillCase(c.problem.detail, named) },
+          };
+          ledger.append(obligation.id, "CASE_OPENED", brief);
+        });
+      }
+      return opened;
+    };
+    const opened = await (simulator.withoutEvents ? simulator.withoutEvents(setUp) : setUp());
+    // Their transfer changes are recorded as reacted to, so the sweep does not later mistake them for news.
+    await deps.reactor?.react({ source: "setup" }).catch(() => undefined);
+    return { cases: opened.map(({ supplier, obligation }) => ({ id: obligation.id, reference: obligation.reference, supplier: supplier.name })) };
   }
 
   /** The story of an invoice opened from a request, or null. */
@@ -270,7 +348,7 @@ export function createRequests(deps: RequestDeps) {
     return null;
   }
 
-  return { route, storyFor, play, badgeFor: (obligationId: string): SupplierBadge | null => {
+  return { route, storyFor, play, morning, badgeFor: (obligationId: string): SupplierBadge | null => {
     const r = ledger.requestForObligation(obligationId);
     const s = r ? supplierById(r.supplierId) : undefined;
     return s ? badgeOf(s) : null;

@@ -84,9 +84,9 @@ export function WalletPanel({
         onIssue={onIssueCard}
       />
       {main ? (
-        <p className="-mt-1 flex justify-between px-2 text-[11px] text-fg/45">
+        <p className="-mt-1 flex flex-wrap justify-between gap-x-3 gap-y-0.5 px-2 text-[11px] text-fg/45 [&>span]:whitespace-nowrap">
           <span title={money(main.floorMinor, main.currency)}>floor {compactMoney(main.floorMinor, main.currency)}</span>
-          {onCards > 0 ? <span title={`${money(onCards, main.currency)} spent on Visa cards, cleared or authorised`}>{money(onCards, main.currency)} on cards</span> : null}
+          {onCards > 0 ? <span title={`${money(onCards, main.currency)} spent on Visa cards, cleared or authorised`}>{compactMoney(onCards, main.currency)} on cards</span> : null}
           <span className="text-accent">{compactMoney(onBoard, main.currency)} in play</span>
         </p>
       ) : null}

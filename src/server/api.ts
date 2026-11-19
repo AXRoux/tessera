@@ -39,6 +39,7 @@ import { toMinor } from "../money";
 import { EmlNotPlainText, parseEml } from "./eml";
 import { computeMetrics } from "./metrics";
 import { attentionOf, lastAgentAction, lastReaction } from "./attention";
+import { caseOf } from "./cases";
 import { AgentGate, runLimits, scopedTask, scopedTasks } from "./agent-runs";
 import type { Reactor } from "./reactions";
 import type { AgentStreamEvent, CardView, Cards, FundingQuote, FundingResultWire, Health, IncidentSummary, IncidentView, Payee, SeedResult, Wallets } from "./wire";
@@ -305,16 +306,22 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
     const latest = attempts.at(-1);
     const events = ledger.events(o.id);
     const read = new Set(events.flatMap((e) => (e.type === "EVIDENCE_RECORDED" ? [MessageRefSchema.safeParse(e.payload).data?.messageId] : [])));
+    const card = ledger.invoiceCard(o.id);
+    const supplier = requests.badgeFor(o.id);
     return {
       id: o.id, reference: o.reference, amountMinor: o.amountMinor, currency: o.currency, method: o.method,
       status: o.status, attemptCount: attempts.length, updatedAt: o.updatedAt,
       latest: latest ? { seq: latest.seq, state: latest.state, awxStatus: latest.awxStatus, failureCode: latest.failureCode } : null,
       lastAgentAction: lastAgentAction(events),
-      attention: attentionOf(o, latest, events, ledger.invoiceCard(o.id)),
+      attention: attentionOf(o, latest, events, card),
       lastReaction: lastReaction(events),
       next: await nextFor(o, attempts, events, wallets),
       unread: ledger.inboxMessages(o.id).filter((m) => !read.has(m.id)).length,
-      supplier: requests.badgeFor(o.id),
+      supplier,
+      case: caseOf({
+        obligation: o, attempts, events, card, who: supplier?.name ?? "The supplier",
+        evidence: effectiveEvidence(events, o.amountMinor)?.evidence ?? null,
+      }),
     };
   };
 
@@ -611,6 +618,11 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
         await deps.reactor?.react({ source: "setup" });
         const result: SeedResult = { seeded: seeded.map(({ id, reference, expected }) => ({ id, reference, expected })) };
         return json(result, 201);
+      }
+      if (request.method === "POST" && path === "/api/demo/morning") {
+        // This morning's supplier payments, already paid and now stuck (src/demo/morning.ts): sandbox or offline only.
+        if (!deps.simulator) return json({ error: "Forbidden", message: "this morning's cases can be set up only offline or against the Airwallex sandbox" }, 403);
+        return json(await requests.morning(), 201);
       }
       if (request.method === "POST" && path === "/api/demo/reset") {
         // Only the offline demo can be reset: a live ledger is the record of real sandbox transfers.
