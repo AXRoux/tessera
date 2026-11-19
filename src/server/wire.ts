@@ -294,6 +294,8 @@ export const CaseOutcomeSchema = z.object({
   detail: z.string().nullable(),
   /** What is left for a person, even once the supplier's problem is answered (confirm an impostor by phone). */
   yours: z.string().nullable(),
+  /** The money reached the supplier and only their word is open: a person can settle it by confirming receipt. */
+  confirmable: z.boolean().optional(),
 });
 export type CaseOutcome = z.infer<typeof CaseOutcomeSchema>;
 

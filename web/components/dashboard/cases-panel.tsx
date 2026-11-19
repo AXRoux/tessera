@@ -229,12 +229,15 @@ export function CasesPanel({
   onBoard,
   onMorning,
   loadingMorning,
+  onChanged,
 }: {
   items: IncidentSummary[];
   health: Health | null;
   onBoard: () => void;
   onMorning: () => void;
   loadingMorning: boolean;
+  /** Something changed here (a person confirmed receipt): read the board again now. */
+  onChanged?: () => void;
 }) {
   const agent = useAgentRun();
   const [view, setView] = useState<View>("map");
@@ -359,7 +362,7 @@ export function CasesPanel({
             <>
               <p className="pointer-events-none absolute left-1 top-0 text-[11.5px] text-fg/40">{selected ? "Drag to spin" : "Click a supplier to open its case · drag to spin"}</p>
               {selected ? (
-                <SupplierCard key={selected.id} lane={selected} onClose={() => setPicked(null)} className="absolute bottom-0 right-0 top-0 z-20 w-[min(320px,52%)]" />
+                <SupplierCard key={selected.id} lane={selected} onClose={() => setPicked(null)} onChanged={onChanged} className="absolute bottom-0 right-0 top-0 z-20 w-[min(320px,52%)]" />
               ) : null}
               <LiveActivity
                 lanes={lanes}

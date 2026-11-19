@@ -144,6 +144,8 @@ export function caseSteps(after: LedgerEvent[], input: Pick<CaseInput, "who" | "
         const p = ToolCallSchema.safeParse(e.payload);
         if (!p.success) return;
         const actor = agentActor(p.data.actor);
+        // A call that failed for a technical reason decided nothing; only a refusal by policy is a step.
+        if (p.data.outcome === "invalid" || p.data.outcome === "failed") return;
         if (p.data.outcome !== "ok") {
           const tried = TRIED[p.data.tool] ?? p.data.tool.replaceAll("_", " ");
           const why = p.data.detail ? refusal(p.data.detail) : "";
@@ -296,8 +298,22 @@ export function caseSteps(after: LedgerEvent[], input: Pick<CaseInput, "who" | "
   return folded.map(({ tried: _tried, ...step }) => (step.actor === "test" && step.kind === "refused" ? { ...step, text: `Guardrail test. ${step.text}` } : step));
 }
 
-/** Where a case stands, from the state of the ledger. */
+/** Where a case stands, from the state of the ledger, and whether a person can settle it by confirming receipt. */
 export function caseOutcome(input: CaseInput, openedSeq: number): CaseOutcome {
+  const base = baseOutcome(input, openedSeq);
+  const { obligation, attempts, card, evidence, who } = input;
+  const latest = attempts.at(-1) ?? null;
+  const delivered = latest?.state === "PAID" || (card !== null && (card.spentMinor > 0 || card.state === "SPENT"));
+  const open = evidence?.claimsNonReceipt === true || evidence?.requestsDetailChange === true || obligation.status === "ESCALATED";
+  const confirmable = delivered && obligation.status !== "CLOSED" && open;
+  if (!confirmable) return { ...base, confirmable: false };
+  const ask = evidence?.requestsDetailChange
+    ? `Call ${who} on the number you already hold. Once they confirm, mark it received.`
+    : `Confirm with ${who} that it arrived, then mark it received.`;
+  return { ...base, yours: ask, confirmable: true };
+}
+
+function baseOutcome(input: CaseInput, openedSeq: number): CaseOutcome {
   const { obligation, attempts, events, card, evidence, who } = input;
   const amount = formatMinor(obligation.amountMinor, obligation.currency);
   const after = events.filter((e) => e.seq > openedSeq);
@@ -320,9 +336,15 @@ export function caseOutcome(input: CaseInput, openedSeq: number): CaseOutcome {
       ? released ? "Paid once, released in writing" : "Paid once, by the replacement"
       : "Paid once";
 
+  const confirmed = after.find((e) => e.type === "EVIDENCE_RECORDED" && EvidenceRecordedSchema.safeParse(e.payload).data?.source === "manual");
   if (obligation.status === "CLOSED") {
-    const head = fraud ? "Fraud stopped. Paid once, to the account on file" : sent.PROOF ? "Proof sent. Paid once" : paidHow;
+    const head = confirmed ? `${paidHow}; ${who} confirmed it arrived` : fraud ? "Fraud stopped. Paid once, to the account on file" : sent.PROOF ? "Proof sent. Paid once" : paidHow;
     return { state: "certified", headline: head, detail: "Reconciled against Airwallex and certified.", yours: null };
+  }
+  // A person confirmed with the supplier that it arrived: settled, and certified once the hold window has passed.
+  if (confirmed && (latest?.state === "PAID" || byCard)) {
+    const by = person(EvidenceRecordedSchema.safeParse(confirmed.payload).data?.enteredBy ?? "A person");
+    return { state: "solved", headline: "Confirmed received", detail: `${by} confirmed with ${who} that it arrived. Tessera certifies it once the hold window has passed.`, yours: null };
   }
 
   if (fraud) {

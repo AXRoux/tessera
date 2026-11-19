@@ -140,6 +140,10 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
   const issuingOff = card?.state === "FAILED" && /issuance/i.test(card.lastError ?? "");
   const cardOpen = canCard && !issuingOff;
   const firstReason = clean(decision?.reasons[0]);
+  // The money reached the supplier, and only their word (or an escalation over it) is open: a person can settle it.
+  const delivered = latest?.state === "PAID" || (card !== null && card.spentMinor > 0);
+  const disputed = Boolean(view.evidence?.evidence.claimsNonReceipt || view.evidence?.evidence.requestsDetailChange) || escalated;
+  const confirmable = delivered && !closed && disputed;
 
   const replace = () =>
     run("replace", async () => {
@@ -296,6 +300,26 @@ export function ActionsPanel({ view, operator, busy, run }: Props) {
       <div>
         <span className="kicker block">Moves that need your signature</span>
         <div className="mt-2.5 space-y-2">
+          {confirmable ? (
+            <Fold title="Confirm it arrived" sub="The supplier says they have it. Settles their claim; moves no money." open tone="accent">
+              <NotedAction
+                label="How did you confirm it?"
+                hint="Your word, under your name, is what settles a supplier's claim: a message cannot. If the invoice was handed over, this takes it back too. Tessera certifies it once the hold window has passed."
+                placeholder="Called the supplier on the number we hold: the payment is on their statement."
+                button={`Sign as ${name}: it arrived`}
+                busy={busy === "received"}
+                onSubmit={async (text) => {
+                  let ok = false;
+                  await run("received", async () => {
+                    await api(`obligations/${id}/received`, Acknowledged, { method: "POST", body: { note: text } });
+                    ok = true;
+                    return { tone: "ok", title: "Confirmed received", lines: [`Signed by ${operator}. Tessera certifies it once the hold window has passed.`] };
+                  });
+                  return ok;
+                }}
+              />
+            </Fold>
+          ) : null}
           {escalated ? (
             <Fold title="Take it back from escalation" sub="Return it to the playbook. Moves no money." open tone="accent">
               <NotedAction

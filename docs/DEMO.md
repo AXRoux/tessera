@@ -54,6 +54,12 @@ TESSERA_DB=.data/demo.db bun run dev     # live: Airwallex sandbox + the configu
 
 - If `verify-card-sandbox` fails on issuing, Visa TAP is off on that account and Modal will be replaced by bank transfer
   instead. Fix that before presenting, or present offline (`bun run demo`), where the card rail always works.
+- To start again from the top at any time: your avatar (top right) > **Reset control room**. A live workspace moves on
+  to a fresh ledger (the old one stays on disk); an offline one starts empty. The six issues are back at the start.
+- Each issue settles on its own once the money has landed and nothing is disputed: supplier issues are certified
+  automatically after the hold window. Where only the supplier's word is open (fal, Prime Intellect once it lands,
+  Framer after your call), open its pin and press **Mark it received**, or **Confirm it arrived** in the queue. All six
+  certify within about a minute of your moves.
 - Press **Investigate supplier issues** before you start talking, or as your opening move (offline it is instant; on
   the sandbox it takes about half a minute while Airwallex cancels the failed transfers). It is also in the Next bar
   and in ⌘K.

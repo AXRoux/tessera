@@ -249,8 +249,19 @@ function Row({ event, supplier, operator, last }: { event: Event; supplier: Supp
  * Visa, or Tessera), what they did, and when, grouped by the hour. Every entry is sealed to the one before it; open an
  * entry for its full text, its place in the chain and its fingerprint.
  */
+/**
+ * Whether an entry belongs in the history a person reads. A tool call that failed for a technical reason (a model's
+ * malformed output, a call it worded wrong) decided nothing about money, so it is left out; it stays in the ledger and
+ * its hash chain. A refusal by policy is a decision, and always shows.
+ */
+export function worthShowing(event: Pick<Event, "type" | "payload">): boolean {
+  if (event.type !== "AGENT_TOOL_CALL") return true;
+  const outcome = field(event.payload, "outcome");
+  return outcome === null || outcome === "ok" || outcome === "refused";
+}
+
 export function LedgerLog({ events, chain, supplier = null, operator = null }: { events: IncidentView["events"]; chain: IncidentView["chain"]; supplier?: SupplierBadge | null; operator?: string | null }) {
-  const newest = events.toReversed();
+  const newest = events.filter(worthShowing).toReversed();
   const groups: { label: string; items: Event[] }[] = [];
   for (const event of newest) {
     const label = hourOf(event.ts);

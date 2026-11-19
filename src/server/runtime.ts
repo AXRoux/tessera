@@ -25,7 +25,7 @@ import { Commander } from "../commander/commander";
 import type { StructuredModel } from "../commander/evidence";
 import { DEFAULT_POLICY, LIVE_PACE } from "../commander/policy";
 import { SUPPLIERS } from "../demo/suppliers";
-import { OfflineReader } from "../demo/offline-reader";
+import { OfflineReader, withKeywordFallback } from "../demo/offline-reader";
 import { ScriptedAgentModel } from "../demo/scripted-agent";
 import { stageWalletOnSandbox } from "../demo/stage-wallet";
 import { FundingExecutor } from "../funding/executor";
@@ -219,7 +219,8 @@ export function buildRuntime(env: Env = process.env, options: RuntimeOptions = {
       warnings.push(`${error instanceof Error ? error.message : String(error)}; the model stays off`);
     }
   }
-  let model: StructuredModel | null = configured?.model ?? null;
+  // The reader never jams an incident: a model reading that cannot be used falls back to the keyword reader.
+  let model: StructuredModel | null = configured ? withKeywordFallback(configured.model) : null;
   let readerName: string | null = configured?.label ?? null;
   let agent: AgentDeps | null = configured ? { model: configured.model, actor: configured.actor, kind: "model", name: configured.label } : null;
   if (!configured && offline) {

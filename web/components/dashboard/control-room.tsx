@@ -158,7 +158,7 @@ export function ControlRoom({
         <div className="flex min-h-0 min-w-0 flex-col gap-4">
           {showCases ? (
             <div className="flex min-h-[560px] flex-col xl:min-h-0 xl:flex-1 [&>section]:flex-1">
-              <CasesPanel items={board.items} health={health} onBoard={() => setFocus("board")} onMorning={loadMorning} loadingMorning={board.loadingMorning} />
+              <CasesPanel items={board.items} health={health} onBoard={() => setFocus("board")} onMorning={loadMorning} loadingMorning={board.loadingMorning} onChanged={() => void board.refresh()} />
             </div>
           ) : (
             <>

@@ -295,12 +295,8 @@ function ToolStep({ step, n, href }: { step: Extract<Step, { kind: "tool" }>; n:
         ) : result.ok ? (
           <p className={`border-l-2 border-accent/40 pl-3 leading-relaxed text-fg/80 ${dense ? "mt-2 text-[12.5px]" : "mt-3 text-sm"}`}>{result.summary}</p>
         ) : (
-          <div className={`rounded-xl border border-fg/20 ${dense ? "mt-1.5 px-3 py-2" : "mt-3 px-4 py-3"}`}>
-            <Label className={`font-medium text-fg ${dense ? "text-[11px]" : ""}`}>Turned away</Label>
-            <p className={`leading-relaxed ${dense ? "mt-0.5 line-clamp-2 text-[12px] text-fg/75" : "mt-1.5 text-sm"}`} title={result.summary}>
-              {result.summary}
-            </p>
-          </div>
+          // A technical hiccup, not a decision: said quietly, and the agent carries on.
+          <p className={`text-fg/45 ${dense ? "mt-1 text-[12px]" : "mt-2 text-[13px]"}`}>That call did not go through; the agent carried on.</p>
         )
       ) : (
         <p className="mt-3 text-[13px] text-fg/55">Awaiting the verdict…</p>
@@ -350,7 +346,7 @@ export function AgentTimeline({
   const visible = state.steps.flatMap((step, i) => {
     // Everything policy refused, every handoff to a person, and the agent's closing report survive the fold.
     const matters =
-      step.kind === "tool" && (step.result?.ok === false || (step.result?.ok === true && (step.tool in HANDOFF || step.tool === "pay_invoice_by_card" || step.tool === "investigate_supplier_message")));
+      step.kind === "tool" && (step.result?.kind === "refused" || (step.result?.ok === true && (step.tool in HANDOFF || step.tool === "pay_invoice_by_card" || step.tool === "investigate_supplier_message")));
     const keep = !finished || showAll || i === lastText || matters;
     return keep ? [{ step, i }] : [];
   });

@@ -6,7 +6,8 @@ import type { CaseStep } from "../../../src/server/wire";
 import { ago, money } from "@/lib/format";
 import { SUPPLIER_PLACES } from "@/lib/supplier-places";
 import { useNow } from "@/lib/use-now";
-import { LinkBtn } from "../kit/metal";
+import { Btn, LinkBtn } from "../kit/metal";
+import { Acknowledged, api, ApiProblem } from "@/lib/client-api";
 import { Toggle } from "../kit/widgets";
 import { Icon } from "../landing/icons";
 import { SupplierMark } from "../suppliers/supplier-mark";
@@ -36,8 +37,23 @@ function Avatar({ lane, step, size = 34 }: { lane: Lane; step?: CaseStep; size?:
  * One supplier's issue, opened from its pin: who and where, the problem, and either the case (invoice, amount, the bank,
  * where it landed, what is left for you) or the trail (every move, newest first).
  */
-export function SupplierCard({ lane, onClose, className = "" }: { lane: Lane; onClose: () => void; className?: string }) {
+export function SupplierCard({ lane, onClose, onChanged, className = "" }: { lane: Lane; onClose: () => void; onChanged?: () => void; className?: string }) {
   const [tab, setTab] = useState<"case" | "trail">("case");
+  const [confirming, setConfirming] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  // The supplier confirmed it arrived: the person's own word settles the claim, and Tessera certifies after the hold.
+  const markReceived = async () => {
+    setConfirming(true);
+    setFailed(null);
+    try {
+      await api(`obligations/${lane.id}/received`, Acknowledged, { method: "POST", body: { note: `Confirmed with ${lane.supplier?.name ?? "the supplier"} that the payment arrived.` } });
+      onChanged?.();
+    } catch (error) {
+      setFailed(error instanceof ApiProblem ? error.problem.message : "That did not go through. Try again.");
+    } finally {
+      setConfirming(false);
+    }
+  };
   useNow(5000);
   const c = lane.case;
   const state = STATE_WORDS[c.outcome.state];
@@ -118,9 +134,17 @@ export function SupplierCard({ lane, onClose, className = "" }: { lane: Lane; on
                   <Icon name="hand" className="mt-px size-3.5 shrink-0" />
                   {c.outcome.yours}
                 </p>
-                <LinkBtn href={`/queue?id=${lane.id}`} size="sm">
-                  Take it over
-                </LinkBtn>
+                <div className="flex flex-wrap gap-2">
+                  {c.outcome.confirmable ? (
+                    <Btn size="sm" busy={confirming} onClick={() => void markReceived()} icon={<Icon name="check" className="size-4" />}>
+                      Mark it received
+                    </Btn>
+                  ) : null}
+                  <LinkBtn href={`/queue?id=${lane.id}`} size="sm" tone={c.outcome.confirmable ? "secondary" : "primary"}>
+                    Take it over
+                  </LinkBtn>
+                </div>
+                {failed ? <p className="text-[12px] text-bad">{failed}</p> : null}
               </div>
             ) : null}
           </div>

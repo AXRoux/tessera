@@ -18,7 +18,7 @@ import { AttemptsRail } from "./attempts-rail";
 import { CertificatePanel } from "./certificate-panel";
 import { DecisionPanel } from "./decision-panel";
 import { NoticeBox } from "./fields";
-import { LedgerLog } from "./ledger-log";
+import { LedgerLog, worthShowing } from "./ledger-log";
 import { SandboxPanel } from "./sandbox-panel";
 import { SupplierPanel, supplierCount } from "./supplier-panel";
 import { StoryPanel } from "./story-panel";
@@ -117,7 +117,7 @@ export function IncidentConsole({ initial, health }: { initial: IncidentView; he
               onChange={setEvidence}
               className="w-fit"
               options={[
-                { id: "history", label: "History", count: view.events.length },
+                { id: "history", label: "History", count: view.events.filter(worthShowing).length },
                 { id: "attempts", label: "Attempts", count: view.attempts.length },
                 { id: "supplier", label: "Supplier", count: supplierCount(view) },
                 { id: "certificate", label: "Certificate" },

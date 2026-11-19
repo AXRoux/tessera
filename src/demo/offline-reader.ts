@@ -6,7 +6,7 @@
 import { ExtractedEvidenceSchema, type ExtractedEvidence, type ExtractRequest, type StructuredModel } from "../commander/evidence";
 import { toMinor } from "../money";
 
-export const OFFLINE_READER_LABEL = "offline reader, not a model";
+export const OFFLINE_READER_LABEL = "keyword reader, not a model";
 
 const NON_RECEIPT = [
   /\b(?:hasn'?t|has not|haven'?t|have not|not|never|cannot|can'?t|couldn'?t|didn'?t|did not)\b[^.\n]{0,60}\b(?:arriv\w*|receiv\w*|shown? up|turned up|land\w*|find|found|see|seen|reach\w*)\b/i,
@@ -67,4 +67,26 @@ export class OfflineReader implements StructuredModel {
   async extract<T>(request: ExtractRequest<T>): Promise<T> {
     return request.schema.parse(ExtractedEvidenceSchema.parse(extractOffline(request.user)));
   }
+}
+
+/**
+ * A model reader that never jams an incident: if the model's reading cannot be used (no tool call, output that fails the
+ * schema, a provider error), it is asked once more, and then Tessera's keyword reader reads the message instead. Its
+ * summary says so. The code cross-check (readSupplierMessage) applies to either reading, and the keyword reader only
+ * ever adds caution: a bank-detail change or an instruction aimed at an assistant is still caught.
+ */
+export function withKeywordFallback(model: StructuredModel): StructuredModel {
+  return {
+    async extract<T>(request: ExtractRequest<T>): Promise<T> {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          return await model.extract(request);
+        } catch {
+          /* tried again below, then read by keyword */
+        }
+      }
+      const read = extractOffline(request.user);
+      return request.schema.parse({ ...read, summary: read.summary.replace(OFFLINE_READER_LABEL, "keyword reader (the model's reading could not be used)") });
+    },
+  };
 }

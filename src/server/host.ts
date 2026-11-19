@@ -153,6 +153,12 @@ export class TenantHost {
         await this.rebuild(user);
         return json(this.workspace(user));
       }
+      case "reset":
+        // A fresh control room: a live workspace moves on to a new ledger (the old one stays on disk), an offline one is
+        // rebuilt empty. Either way the supplier issues are back to where they start.
+        if (this.deps.store.secrets(user.id).airwallex) this.deps.store.startOver(user.id, user.email);
+        await this.rebuild(user);
+        return json(this.workspace(user));
       case "airwallex/remove":
         this.deps.store.clearAirwallex(user.id);
         await this.rebuild(user);

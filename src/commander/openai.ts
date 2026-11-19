@@ -159,7 +159,16 @@ export class OpenAICompatibleModel implements StructuredModel {
     const turn = await this.turn(`${request.system}\n${instruction}`, [{ role: "user", content: request.user }], [tool], 1024, signal);
     const call = turn.calls.find((c) => c.name === request.toolName);
     if (!call) throw new ModelError("model returned no tool call", null);
-    const result = request.schema.safeParse(call.input);
+    // Some models encode their arguments twice (a JSON string holding the JSON object): unwrap that, and only that.
+    let input = call.input;
+    for (let i = 0; i < 2 && typeof input === "string"; i++) {
+      try {
+        input = JSON.parse(input);
+      } catch {
+        break;
+      }
+    }
+    const result = request.schema.safeParse(input);
     if (!result.success) throw new ModelError(`model output failed validation: ${result.error.message}`, null);
     return result.data;
   }

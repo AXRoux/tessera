@@ -4,6 +4,7 @@
  * one of these; the multi-tenant host (host.ts) builds one per signed-in workspace from that workspace's own keys.
  */
 import { AgentGate } from "./agent-runs";
+import { certifySettledIssues } from "./auto-certify";
 import { BankClock } from "./bank-clock";
 import { createApi } from "./api";
 import { Reactor } from "./reactions";
@@ -78,6 +79,7 @@ export async function assemble(runtime: Runtime, options: AssembleOptions): Prom
         () => bankClock?.tick(),
         () => reactor.react({ source: "sweep" }),
         () => cards.sync(),
+        () => certifySettledIssues({ ledger, commander, closer }),
       ]) {
         try {
           await step();

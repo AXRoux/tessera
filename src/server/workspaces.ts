@@ -68,6 +68,9 @@ export class WorkspaceStore {
       awx_client_id TEXT, awx_api_key TEXT, awx_client_hint TEXT, awx_key_hint TEXT, awx_beneficiary_id TEXT, awx_connected_at TEXT,
       model_provider TEXT, model_id TEXT, model_base_url TEXT, model_api_key TEXT, model_key_hint TEXT, model_connected_at TEXT
     )`);
+    // Added later: how many times this workspace's control room was reset. Each reset opens a fresh ledger file.
+    const columns = this.db.query<{ name: string }, []>("PRAGMA table_info(workspace)").all().map((c) => c.name);
+    if (!columns.includes("ledger_epoch")) this.db.exec("ALTER TABLE workspace ADD COLUMN ledger_epoch INTEGER NOT NULL DEFAULT 0");
   }
 
   view(userId: string): WorkspaceView {
@@ -92,7 +95,8 @@ export class WorkspaceStore {
             apiKey: this.open(userId, "awx_api_key", row.awx_api_key),
             beneficiaryId: row.awx_beneficiary_id!,
             // One ledger per Airwallex account: reconnecting other keys must not reconcile against this account's history.
-            ledgerKey: createHash("sha256").update(`${userId}:${clientId}`).digest("hex").slice(0, 16),
+            // A reset moves on to a new ledger (epoch); the earlier ones stay on disk, untouched.
+            ledgerKey: createHash("sha256").update(row.ledger_epoch > 0 ? `${userId}:${clientId}:${row.ledger_epoch}` : `${userId}:${clientId}`).digest("hex").slice(0, 16),
           }
         : null;
     const model = row.model_api_key
@@ -135,6 +139,15 @@ export class WorkspaceStore {
     this.db.query(`UPDATE workspace SET model_provider = NULL, model_id = NULL, model_base_url = NULL, model_api_key = NULL, model_key_hint = NULL, model_connected_at = NULL WHERE user_id = ?`).run(userId);
   }
 
+  /**
+   * Resets the control room: the next ledger this workspace opens is a fresh one. Nothing is deleted; the earlier ledger
+   * keeps its file (and its hash chain) on disk.
+   */
+  startOver(userId: string, operator: string): void {
+    this.ensure(userId, operator);
+    this.db.query(`UPDATE workspace SET ledger_epoch = ledger_epoch + 1 WHERE user_id = ?`).run(userId);
+  }
+
   /** Workspaces that are live (Airwallex connected), with who they belong to: the sweep keeps them current after a restart. */
   liveWorkspaces(): { userId: string; operator: string }[] {
     return this.db
@@ -153,7 +166,7 @@ export class WorkspaceStore {
         {
           awx_client_id: string | null; awx_api_key: string | null; awx_client_hint: string | null; awx_key_hint: string | null; awx_beneficiary_id: string | null;
           awx_connected_at: string | null; model_provider: string | null; model_id: string | null; model_base_url: string | null; model_api_key: string | null;
-          model_key_hint: string | null; model_connected_at: string | null;
+          model_key_hint: string | null; model_connected_at: string | null; ledger_epoch: number;
         },
         [string]
       >(`SELECT * FROM workspace WHERE user_id = ?`)

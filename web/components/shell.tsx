@@ -7,7 +7,7 @@ import type { AgentFaceChoice } from "@/lib/agent-face";
 import { initialsOf } from "@/lib/initials";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IncidentListSchema, RequestListSchema, type Health, type IncidentSummary } from "../../src/server/wire";
-import { api } from "@/lib/client-api";
+import { Acknowledged, api, ApiProblem } from "@/lib/client-api";
 import { needsYou } from "@/lib/tour-steps";
 import { agentName, useAgentRun } from "./agent/agent-run";
 import { AgentFaceProvider } from "./kit/agent-mark";
@@ -164,8 +164,119 @@ export interface Account {
 }
 
 /**
+ * Resets the control room to where the supplier issues start: every invoice and issue in this workspace cleared, the six
+ * suppliers waiting on the case map again. A live workspace moves on to a fresh ledger and keeps the old one on disk; an
+ * offline one starts empty. Two presses, the second one red, so it is never done by accident.
+ */
+function ResetControlRoom({ hosted, live }: { hosted: boolean; live: boolean }) {
+  const [step, setStep] = useState<"idle" | "confirm" | "busy">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const reset = async () => {
+    setStep("busy");
+    setError(null);
+    try {
+      await api(hosted ? "workspace/reset" : "demo/reset", Acknowledged, { method: "POST" });
+      window.location.assign("/dashboard");
+    } catch (e) {
+      setError(e instanceof ApiProblem ? e.problem.message : "The control room could not be reset just now. Try again.");
+      setStep("confirm");
+    }
+  };
+  return (
+    <div className="mt-1.5 rounded-[20px] bg-bad/[0.07] p-2 ring-1 ring-inset ring-bad/25">
+      {step === "idle" ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => setStep("confirm")}
+          className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-gradient-to-b from-[#ff5a68] to-[#e5303f] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.3),0_8px_18px_-8px_rgb(229_48_63/0.8)] transition hover:brightness-110"
+        >
+          <Icon name="history" className="size-4" />
+          Reset control room
+        </button>
+      ) : (
+        <div className="space-y-2.5 px-2 pb-1 pt-1.5">
+          <p className="text-[13px] font-semibold text-bad">Reset the control room?</p>
+          <p className="text-[12px] leading-snug text-fg/65">
+            Every invoice and supplier issue here is cleared, and the six supplier issues are back where they start.{" "}
+            {live ? "Your ledger so far is archived on disk, not deleted. Your keys stay connected." : "This workspace starts fresh."}
+          </p>
+          {error ? <p className="text-[12px] text-bad">{error}</p> : null}
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" disabled={step === "busy"} onClick={() => setStep("idle")} className="cursor-pointer rounded-full px-3 py-2 text-[12.5px] font-medium text-fg/70 ring-1 ring-inset ring-fg/15 hover:text-fg disabled:opacity-50">
+              Keep it
+            </button>
+            <button
+              type="button"
+              disabled={step === "busy"}
+              onClick={() => void reset()}
+              className="cursor-pointer rounded-full bg-gradient-to-b from-[#ff5a68] to-[#e5303f] px-3 py-2 text-[12.5px] font-semibold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.3)] hover:brightness-110 disabled:opacity-60"
+            >
+              {step === "busy" ? "Resetting…" : "Reset now"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The menu's open and close, shared by both avatars: outside a click or Escape closes it. */
+function useMenu() {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !box.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", close);
+    };
+  }, [open]);
+  return { open, setOpen, box };
+}
+
+/** One operator, no accounts: the avatar opens a small menu with the reset, where the workspace can be reset. */
+function OperatorMenu({ health }: { health: Health | null }) {
+  const { open, setOpen, box } = useMenu();
+  const operator = health?.operator ?? "operator";
+  return (
+    <div ref={box} className="relative">
+      <button type="button" onClick={() => setOpen((was) => !was)} aria-expanded={open} aria-haspopup="menu" className="flex cursor-pointer items-center gap-2.5 rounded-full text-left">
+        <span aria-hidden className="tile inverse flex size-11 items-center justify-center rounded-full! text-[12px] font-semibold text-fg">
+          {initials(operator)}
+        </span>
+        <span className="hidden min-w-0 leading-tight lg:block">
+          <span className="block max-w-[160px] truncate text-[12.5px] font-medium">{operator}</span>
+          <span className="block text-[11px] text-fg/50">Operator</span>
+        </span>
+      </button>
+      {open ? (
+        <div role="menu" className="tray absolute right-0 top-[calc(100%+10px)] z-50 w-[300px] p-2">
+          <div className="tile rounded-[20px]! px-4 py-3">
+            <p className="readout truncate text-[12.5px] font-medium">{operator}</p>
+            <span className="mt-2 inline-flex">
+              <Chip tone={health?.offline ? "neutral" : "accent"}>{health?.offline ? "Offline sandbox" : "Airwallex sandbox"}</Chip>
+            </span>
+          </div>
+          {health?.canReset ? (
+            <ResetControlRoom hosted={false} live={false} />
+          ) : (
+            <p className="px-4 py-3 text-[12px] leading-snug text-fg/55">This control room runs on one ledger file. To start over, point TESSERA_DB at a new file and restart.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The person signed in, as a raised avatar that opens their menu: who they are, which mode their workspace is in, the
- * page for their keys, and sign out. Only in multi-tenant mode; one operator has no menu to open.
+ * page for their keys, resetting the control room, and sign out.
  */
 function AccountMenu({ account }: { account: Account }) {
   const router = useRouter();
@@ -229,6 +340,7 @@ function AccountMenu({ account }: { account: Account }) {
             <Icon name="back" className="size-4 text-fg/60" />
             {leaving ? "Signing out…" : "Sign out"}
           </button>
+          <ResetControlRoom hosted live={account.mode === "live"} />
         </div>
       ) : null}
     </div>
@@ -285,19 +397,7 @@ function Menubar({ health, account }: { health: Health | null; account: Account 
               </span>
             ) : null}
           </span>
-          {account ? (
-            <AccountMenu account={account} />
-          ) : (
-            <span className="flex items-center gap-2.5">
-              <span aria-hidden className="tile inverse flex size-11 items-center justify-center rounded-full! text-[12px] font-semibold text-fg">
-                {initials(health?.operator ?? "operator")}
-              </span>
-              <span className="hidden min-w-0 leading-tight lg:block">
-                <span className="block max-w-[160px] truncate text-[12.5px] font-medium">{health?.operator ?? "operator"}</span>
-                <span className="block text-[11px] text-fg/50">Operator</span>
-              </span>
-            </span>
-          )}
+          {account ? <AccountMenu account={account} /> : <OperatorMenu health={health} />}
         </div>
       </div>
       <div className="mt-3 sm:hidden">

@@ -155,6 +155,7 @@ const ManualEvidenceBody = z.object({
   statementCreditMinor: z.number().int().positive().nullable(),
   summary: z.string().max(400),
 });
+const ReceivedBody = z.object({ note: z.string().trim().max(400).optional() });
 const InvestigateBody = z.object({ messageId: z.string().min(1).max(64).optional() });
 const ResolveDraftBody = z.object({ draftSeq: z.number().int().positive(), resolution: z.enum(["SENT", "DISCARDED"]) });
 const CardRequestBody = z.object({
@@ -781,6 +782,25 @@ export function createApi(deps: ApiDeps): (request: Request) => Promise<Response
             actor, reason: input.reason ?? "The supplier needs paying now and the original transfer was returned.", evidence,
           });
           return json({ outcome: result.outcome, cardId: result.card.id, state: result.card.state, checkout: result.checkout, next: result.next }, 201);
+        }
+        case "received": {
+          // A person confirmed with the supplier that the payment arrived: recorded as their own evidence (the one kind
+          // that may settle a claim of non-receipt), and an escalation they have now checked is lifted. Moves no money.
+          const input = await body(request, ReceivedBody);
+          const o = ledger.requireObligation(id);
+          const latest = ledger.latestAttempt(id);
+          const card = ledger.invoiceCard(id);
+          const delivered = latest?.state === "PAID" || (card !== null && card.spentMinor > 0);
+          if (o.status === "CLOSED") return json({ error: "Conflict", message: "this invoice is already certified" }, 409);
+          if (!delivered) return json({ error: "Conflict", message: "nothing has been paid to this supplier yet, so there is no payment to confirm" }, 409);
+          const note = input.note && input.note.length >= WRITTEN_NOTE_MIN_CHARS ? input.note : "Confirmed with the supplier that the payment arrived.";
+          record(id, {
+            claimsNonReceipt: false, requestsDetailChange: false, referencesObligation: true, containsEmbeddedInstructions: false,
+            statementCredit: { amountMinor: o.amountMinor, currency: o.currency },
+            summary: `Confirmed received by ${deps.operator}: ${note}`.slice(0, 400), adjustments: [`entered by ${deps.operator}`],
+          }, "manual", null);
+          if (o.status === "ESCALATED") ledger.resolveEscalation(id, deps.operator, note);
+          return json({ status: ledger.requireObligation(id).status }, 201);
         }
         case "investigate": {
           // Code checks the message against the vendor record and the ledger, and records what it found. Moves no money.
