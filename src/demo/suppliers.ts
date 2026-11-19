@@ -60,7 +60,7 @@ export const STORIES: Record<StoryId, StoryInfo> = {
   inflight: { id: "inflight", label: "Delayed; they ask you to resend", ending: "Tessera refuses a second payment while the first is still moving. It lands: paid once." },
   returned: { id: "returned", label: "Delayed, then returned", ending: "They may already hold the money, so only an authorized individual can release a second payment." },
   reminder: { id: "reminder", label: "Delayed; they invoice again", ending: "The second notice is filed with the first invoice and never paid as a new one." },
-  missing: { id: "missing", label: "Paid; they say it never came", ending: "Airwallex shows it paid, so Tessera sends proof instead of paying again." },
+  missing: { id: "missing", label: "Paid; they say it never arrived", ending: "Airwallex shows it paid, so Tessera sends proof instead of paying again." },
   impostor: { id: "impostor", label: "“Overdue? Pay our new bank”", ending: "A delay is the fraudster's pretext. Held at the door: an email cannot change who gets paid." },
 };
 

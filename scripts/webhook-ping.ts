@@ -68,7 +68,7 @@ const body = pingBody();
 const now = String(Date.now());
 const first = await post("delivery", body, signed(now, body));
 // Cloudflare's answers when the tunnel itself is the problem: 502, nothing listens behind it; 530, cloudflared has no
-// connection to Cloudflare's edge yet (seen 2026-11-06 on a network that blocked the edge: it never came).
+// connection to Cloudflare's edge yet (seen 2026-11-06 on a network that blocked the edge: it never arrived).
 if (first.status === 502) {
   console.error(`${red("✗")} the tunnel answered 502: nothing is listening behind it. Start the API live with AWX_WEBHOOK_SECRET set.`);
   process.exit(1);

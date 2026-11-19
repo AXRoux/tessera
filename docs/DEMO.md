@@ -25,7 +25,7 @@ happened. Click a lane to open its whole trail in sentences.
 | **Prime Intellect** | Still in transit; they want it sent again | Reads, checks: the original is still moving. Holds, and drafts a status reply | Sends the reply | The original lands on its own about 30s after the agent held it: paid once, holding was right |
 | **Replicate** | Timed out at the bank (91402) | Replaces it alone: within the automatic limit, original provably cancelled | None | Paid once by the replacement; certified |
 | **LangChain** | Returned as a possible duplicate (91301) | Checks, refuses to pay again, hands it over with its reasons | Confirms with LangChain; releases a second payment **in writing** only if nothing arrived | Paid once, released in writing |
-| **fal** | Paid, but fal says it never came | Reads, checks: Airwallex shows it paid. Drafts proof of payment, never a second payment | Sends the proof | Proof sent, not paid twice |
+| **fal** | Paid, but fal says it never arrived | Reads, checks: Airwallex shows it paid. Drafts proof of payment, never a second payment | Sends the proof | Proof sent, not paid twice |
 | **Framer** | "Overdue? Pay our new bank" from framer-invoices.com | Reads it through the quarantined reader (bank change, orders aimed at the agent, ignored) and hands it over | Calls Framer on the number on file | Fraud stopped: nothing moved to the new account |
 
 ## The Visa TAP rule, in one line

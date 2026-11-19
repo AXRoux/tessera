@@ -121,7 +121,7 @@ export const MORNING: readonly MorningCase[] = [
     supplierId: "fal",
     kind: "unseen",
     problem: {
-      headline: "Paid, but {who} says it never came",
+      headline: "Paid, but {who} says it never arrived",
       detail: "Airwallex shows the transfer paid. {who} can't find it on their statement and is asking where it is.",
     },
     bank: { status: "PAID" },

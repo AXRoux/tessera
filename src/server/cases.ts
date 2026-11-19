@@ -343,7 +343,7 @@ export function caseOutcome(input: CaseInput, openedSeq: number): CaseOutcome {
     return { state: "solved", headline: paidHow, detail, yours: leftForYou };
   }
 
-  // Paid before the case opened, and the supplier says it never came: proof answers it, never a second payment.
+  // Paid before the case opened, and the supplier says it never arrived: proof answers it, never a second payment.
   if (latest?.state === "PAID" && evidence?.claimsNonReceipt) {
     if (sent.PROOF) return { state: "solved", headline: "Proof of payment sent", detail: `Airwallex shows it paid. ${who}'s bank traces it now. Not paid twice.`, yours: null };
     if (draft?.kind === "PROOF") return { state: "yours", headline: "Proof ready to send", detail: "Airwallex shows it paid. The reply promises no second payment.", yours: "Send the drafted proof of payment." };
