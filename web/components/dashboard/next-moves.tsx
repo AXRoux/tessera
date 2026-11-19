@@ -58,10 +58,15 @@ export function NextMoves({
   onCompose,
   onChanged,
   extras,
+  onMorning,
+  loadingMorning = false,
 }: {
   items: IncidentSummary[];
   health: Health | null;
   onCompose: () => void;
+  /** Load this morning's stuck payments (sandbox or offline only); offered whenever nothing is waiting for a move. */
+  onMorning?: () => void;
+  loadingMorning?: boolean;
   /** After a move made here (a certificate), so the board reads the change at once. */
   onChanged: () => void;
   extras?: ReactNode;
@@ -110,6 +115,19 @@ export function NextMoves({
   }
 
   const action = (() => {
+    // Nothing waiting for a move: on the sandbox or offline, the walkthrough starts here.
+    if ((items.length === 0 || !current) && onMorning) {
+      return (
+        <div className="flex items-center gap-2">
+          <Btn tone="secondary" onClick={onCompose}>
+            Send a payout
+          </Btn>
+          <Btn busy={loadingMorning} onClick={onMorning} icon={<Icon name="bolt" className="size-4" />}>
+            {loadingMorning ? "Setting up…" : "Load this morning"}
+          </Btn>
+        </div>
+      );
+    }
     if (items.length === 0) return <Btn onClick={onCompose}>Send a payout</Btn>;
     if (!current) {
       return (
@@ -178,7 +196,7 @@ export function NextMoves({
       ? "No payouts yet. Send one: Tessera seals it in the ledger before a cent moves."
       : current
         ? current.line
-        : `Nothing to move. ${resting}.`;
+        : `Nothing to move. ${resting}.${onMorning ? " Load this morning to see six stuck supplier payments worked live." : ""}`;
 
   return (
     <Tray label="Next on your payouts" className="justify-center gap-2.5 px-3 py-3">

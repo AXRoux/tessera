@@ -351,7 +351,7 @@ export function AppShell({
           <div data-theme={current} className="desk flex min-h-dvh flex-col font-ui antialiased xl:h-dvh xl:min-h-[640px]">
             <Menubar health={health} account={account} />
             <main className="flex min-h-0 min-w-0 flex-1 flex-col xl:overflow-hidden">{children}</main>
-            <CommandPalette open={palette} onClose={closePalette} query={query} setQuery={setQuery} accounts={account !== null} />
+            <CommandPalette open={palette} onClose={closePalette} query={query} setQuery={setQuery} accounts={account !== null} canStage={Boolean(health && (health.offline || health.sandbox))} />
           </div>
         )}
       </ThemeProvider>

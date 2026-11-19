@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CardView, Health, IncidentSummary, IncidentView, Metrics, Wallets } from "../../../src/server/wire";
-import { useBoard } from "@/lib/use-board";
+import { LOAD_MORNING, useBoard } from "@/lib/use-board";
 import { useAgentRun } from "../agent/agent-run";
 import { revisionOf, useViews } from "@/lib/use-views";
 import { useWallets } from "@/lib/use-wallets";
@@ -55,11 +55,14 @@ export function ControlRoom({
   initialViews,
   compose = false,
   issueCard: issueCardOnArrival = false,
+  cases: casesOnArrival = false,
 }: {
   /** Open the payout composer on arrival (links from the landing page and the loop). */
   compose?: boolean;
   /** Open the Visa card composer on arrival (the command palette, from another page). */
   issueCard?: boolean;
+  /** Open on this morning's cases (the command palette, from another page). */
+  cases?: boolean;
   health: Health | null;
   initial: IncidentSummary[];
   initialMetrics: Metrics | null;
@@ -94,12 +97,22 @@ export function ControlRoom({
     };
   }, []);
   const cardsToSign = cards?.items.filter((c) => c.state === "PENDING").length ?? 0;
-  // The middle of the room: this morning's cases, lane by lane, whenever there are any (or nothing at all yet, and a
-  // morning can be loaded); otherwise the board as it was. Either can be chosen; the choice holds until the next visit.
+  // The middle of the room: this morning's cases, lane by lane, whenever there are any, or whenever nothing is in motion
+  // and a morning can be loaded (the sandbox, or offline); otherwise the board as it was. Either can be chosen.
   const hasCases = board.items.some((item) => item.case);
-  const [focus, setFocus] = useState<"cases" | "board" | null>(null);
-  const showCases = focus === "cases" || (focus === null && (hasCases || (board.items.length === 0 && board.canSeed)));
+  const quiet = board.items.every((item) => item.status === "CLOSED");
+  const [focus, setFocus] = useState<"cases" | "board" | null>(casesOnArrival ? "cases" : null);
+  const showCases = focus === "cases" || (focus === null && (hasCases || (quiet && board.canSeed)));
   const toCases = hasCases || board.canSeed ? () => setFocus("cases") : undefined;
+  const { morning } = board;
+  const loadMorning = useCallback(() => {
+    setFocus("cases");
+    void morning();
+  }, [morning]);
+  useEffect(() => {
+    window.addEventListener(LOAD_MORNING, loadMorning);
+    return () => window.removeEventListener(LOAD_MORNING, loadMorning);
+  }, [loadMorning]);
 
   const extras = (
     <>
@@ -126,7 +139,15 @@ export function ControlRoom({
     <Workspace>
       <div className="grid shrink-0 gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1.6fr)] lg:items-stretch 2xl:grid-cols-[minmax(0,1.12fr)_minmax(0,1.75fr)]">
         <Masthead items={board.items} metrics={board.metrics} running={board.running} cardsToSign={cardsToSign} />
-        <NextMoves items={board.items} health={health} onCompose={openComposer} onChanged={() => void board.refresh()} extras={extras} />
+        <NextMoves
+          items={board.items}
+          health={health}
+          onCompose={openComposer}
+          onChanged={() => void board.refresh()}
+          extras={extras}
+          onMorning={board.canSeed ? loadMorning : undefined}
+          loadingMorning={board.loadingMorning}
+        />
       </div>
 
       <div className="grid min-h-0 gap-4 xl:flex-1 xl:grid-cols-[minmax(270px,300px)_minmax(0,1fr)_minmax(320px,360px)] 2xl:grid-cols-[330px_minmax(0,1fr)_390px]">
@@ -137,7 +158,7 @@ export function ControlRoom({
         <div className="flex min-h-0 min-w-0 flex-col gap-4">
           {showCases ? (
             <div className="flex min-h-[560px] flex-col xl:min-h-0 xl:flex-1 [&>section]:flex-1">
-              <CasesPanel items={board.items} health={health} onBoard={() => setFocus("board")} onMorning={() => void board.morning()} loadingMorning={board.loadingMorning} />
+              <CasesPanel items={board.items} health={health} onBoard={() => setFocus("board")} onMorning={loadMorning} loadingMorning={board.loadingMorning} />
             </div>
           ) : (
             <>

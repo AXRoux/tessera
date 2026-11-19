@@ -10,6 +10,9 @@ import { Acknowledged, api, ApiProblem } from "./client-api";
 
 const POLL_MS = 4000;
 
+/** Fired (by the command palette) to load this morning's stuck payments into the control room that is open. */
+export const LOAD_MORNING = "tessera:load-morning";
+
 export interface Board {
   items: IncidentSummary[];
   metrics: Metrics | null;

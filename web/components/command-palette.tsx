@@ -6,6 +6,7 @@ import { CardsSchema, IncidentListSchema, type CardView, type IncidentSummary } 
 import { api } from "@/lib/client-api";
 import { money } from "@/lib/format";
 import { OPEN_CARD, OPEN_CARD_COMPOSER } from "@/lib/use-cards";
+import { LOAD_MORNING } from "@/lib/use-board";
 import { useTheme } from "./kit/theme";
 import { Icon } from "./landing/icons";
 
@@ -33,7 +34,22 @@ export function useShortcutLabel(): string {
  * ⌘K (Ctrl K elsewhere, or /) from anywhere: jump to an incident or a card, run an action, or filter the board. The
  * menubar's search well opens it too. Arrow keys move, Enter runs, Escape closes.
  */
-export function CommandPalette({ open, onClose, query, setQuery, accounts }: { open: boolean; onClose: () => void; query: string; setQuery: (q: string) => void; accounts: boolean }) {
+export function CommandPalette({
+  open,
+  onClose,
+  query,
+  setQuery,
+  accounts,
+  canStage = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  query: string;
+  setQuery: (q: string) => void;
+  accounts: boolean;
+  /** This morning's stuck payments can be loaded here (the sandbox, or offline). */
+  canStage?: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
@@ -64,6 +80,16 @@ export function CommandPalette({ open, onClose, query, setQuery, accounts }: { o
 
   const commands = useMemo<Command[]>(() => {
     const out: Command[] = [
+      ...(canStage
+        ? [
+            {
+              id: "morning", group: "Actions" as const, label: "Load this morning", hint: "6 stuck supplier payments", keywords: "demo walkthrough cases seed stuck delayed",
+              icon: <Icon name="bolt" className="size-4" />,
+              // On the control room it loads at once; elsewhere it opens the cases, where one press loads them.
+              run: go(() => (onDashboard ? window.dispatchEvent(new Event(LOAD_MORNING)) : router.push("/dashboard?view=cases"))),
+            },
+          ]
+        : []),
       {
         id: "card", group: "Actions", label: "Issue a Visa card", hint: "Airwallex · single use", keywords: "visa virtual card new request spend",
         icon: <Icon name="wallet" className="size-4" />,
@@ -103,7 +129,7 @@ export function CommandPalette({ open, onClose, query, setQuery, accounts }: { o
       });
     }
     return out;
-  }, [cards, incidents, theme, setTheme, accounts, go, router, onDashboard]);
+  }, [cards, incidents, theme, setTheme, accounts, canStage, go, router, onDashboard]);
 
   const needle = text.trim().toLowerCase();
   const shown = useMemo(() => {
