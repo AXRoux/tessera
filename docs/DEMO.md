@@ -1,8 +1,13 @@
-# The five-minute demo: this morning's stuck payments
+# The five-minute demo: supplier issues
 
 The demo starts with the problem already in motion. Six supplier payments went out on the last run, each approved by
-a person and paid through Airwallex. This morning, every one of them is stuck in a different way. The control room
-shows each one as a **lane**, read left to right:
+a person and paid through Airwallex, and every one of them is now stuck in a different way.
+
+The control room opens on **Supplier issues**: a case map, a dotted globe with each supplier pinned at its headquarters
+(`web/lib/supplier-places.ts` says where each location comes from), coloured by where its issue stands. Press
+**Investigate supplier issues** and they open. Click a pin for that supplier's case (the problem, the invoice, the bank,
+where it landed, and the whole trail); **Live activity** streams every move as it lands, and **See all activity** opens
+the full history. The **Lanes** view shows the same issues as rows, read left to right:
 
 | The problem (red) | The agent, step by step | Where it landed (green) |
 |---|---|---|
@@ -49,22 +54,23 @@ TESSERA_DB=.data/demo.db bun run dev     # live: Airwallex sandbox + the configu
 
 - If `verify-card-sandbox` fails on issuing, Visa TAP is off on that account and Modal will be replaced by bank transfer
   instead. Fix that before presenting, or present offline (`bun run demo`), where the card rail always works.
-- Press **Load this morning** in the control room before you start talking (offline it is instant; on the sandbox it
-  takes about half a minute while Airwallex cancels the failed transfers).
+- Press **Investigate supplier issues** before you start talking, or as your opening move (offline it is instant; on
+  the sandbox it takes about half a minute while Airwallex cancels the failed transfers). It is also in the Next bar
+  and in ⌘K.
 - Browser at 1440×900 or larger. Light or dark both work.
 
 ## The script (4:45)
 
 | Time | Do | Say |
 |---|---|---|
-| **0:00** | The control room, six red lanes. Point at the headline *6 stuck → 0 solved*. | "Six supplier payments went out yesterday. This morning every one is stuck, and each wrong answer costs money: pay twice, pay a fraudster, or leave a supplier waiting." |
-| **0:30** | Agent panel: **Let the agent work 6 invoices**. Watch the right column stream, the lanes fill. | "The agent reads each supplier's email through a quarantined reader, checks Airwallex, asks the policy, and acts only on what the code allows. Replicate: it replaces the payment itself. Prime Intellect wants it sent again: the original is still moving, so it holds. Framer's 'new bank' email: stopped." |
+| **0:00** | The case map, six red pins. **Investigate supplier issues**. | "Six supplier payments went out yesterday. Every one is stuck, and each wrong answer costs money: pay twice, pay a fraudster, or leave a supplier waiting." |
+| **0:30** | Agent panel: **Let the agent work 6 invoices**. Watch the agent's reasoning stream on the right, the pins change colour and Live activity fill. | "The agent reads each supplier's email through a quarantined reader, checks Airwallex, asks the policy, and acts only on what the code allows. Replicate: it replaces the payment itself. Prime Intellect wants it sent again: the original is still moving, so it holds. Framer's 'new bank' email: stopped." |
 | **1:30** | Point at the amber lanes. Next on your payouts → **MDL-2611 · Sign card** (or Queue). | "Some things the agent may not do alone. Modal is past due, so it asked for a single-use Visa card for exactly this invoice. It cannot sign that card. I can." |
 | **2:00** | In the queue, write a reason and **Sign as ops**. Back to the control room. | "Once I authorize it, the card is the agent's to pay with. It pays Modal's checkout through Visa's Trusted Agent Protocol, signed with its own key; the merchant verifies the signature before it charges." |
-| **2:45** | Modal's lane turns green. Click it: the full trail. Prime Intellect has landed by itself. | "Problem, every step, and where it landed, all read from the ledger. And Prime Intellect: holding was right. The original arrived. Paid once." |
-| **3:15** | **Test the guardrails on PI-419**. Red refusals stream; the lane shows *Refused ×8*. | "Now the same agent, told to cheat: pay twice, pay by card as well, certify early. Every one refused by code." |
+| **2:45** | Modal's pin turns green. Click it: its case, then **Trail**. Prime Intellect has landed by itself. | "Problem, every step, and where it landed, all read from the ledger. And Prime Intellect: holding was right. The original arrived. Paid once." |
+| **3:15** | **Test the guardrails** on Prime Intellect's invoice. Red refusals stream; its trail shows *Refused ×8*. | "Now the same agent, told to cheat: pay twice, pay by card as well, certify early. Every one refused by code." |
 | **3:50** | **Let the agent work** again: Replicate and Modal certify. Open one incident: Evidence, Certificate. | "Reconciled line by line against Airwallex and sealed." |
-| **4:20** | The headline, *6 stuck → 5 solved*, and the amber that is left. | "What is left is a person's call, with the agent's reasoning attached. Agents act, policy decides, people sign, and every cent is proved." |
+| **4:20** | The headline, *We have 1 supplier issue that needs resolving · 5 resolved*, and the amber that is left. | "What is left is a person's call, with the agent's reasoning attached. Agents act, policy decides, people sign, and every cent is proved." |
 
 ## What runs where
 
@@ -75,5 +81,7 @@ TESSERA_DB=.data/demo.db bun run dev     # live: Airwallex sandbox + the configu
 | Problem, steps and outcome, derived from the ledger | `src/server/cases.ts`, on every board summary as `case` |
 | The delayed transfer landing once it has been held | `src/server/bank-clock.ts` (sandbox and offline only) |
 | A reply already sent is not offered again | `repliesSent` in `src/commander/policy.ts` |
-| The lanes | `web/components/dashboard/cases-panel.tsx` |
+| The case map and the lanes | `web/components/dashboard/cases-panel.tsx`, `case-globe.tsx`, `case-map.tsx` |
+| The globe's land | `web/lib/globe-dots.ts` (Natural Earth 1:50m, public domain, generated once) |
+| Each supplier's headquarters, and where it comes from | `web/lib/supplier-places.ts` |
 | The card hand-off to the agent after a person authorizes | `web/components/agent/hand-off.ts` |

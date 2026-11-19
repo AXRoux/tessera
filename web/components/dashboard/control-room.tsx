@@ -61,7 +61,7 @@ export function ControlRoom({
   compose?: boolean;
   /** Open the Visa card composer on arrival (the command palette, from another page). */
   issueCard?: boolean;
-  /** Open on this morning's cases (the command palette, from another page). */
+  /** Open on the supplier issues' case map (the command palette, from another page). */
   cases?: boolean;
   health: Health | null;
   initial: IncidentSummary[];
@@ -97,8 +97,8 @@ export function ControlRoom({
     };
   }, []);
   const cardsToSign = cards?.items.filter((c) => c.state === "PENDING").length ?? 0;
-  // The middle of the room: this morning's cases, lane by lane, whenever there are any, or whenever nothing is in motion
-  // and a morning can be loaded (the sandbox, or offline); otherwise the board as it was. Either can be chosen.
+  // The middle of the room: the supplier issues on their case map, whenever there are any, or whenever nothing is in
+  // motion and they can be opened (the sandbox, or offline); otherwise the board as it was. Either can be chosen.
   const hasCases = board.items.some((item) => item.case);
   const quiet = board.items.every((item) => item.status === "CLOSED");
   const [focus, setFocus] = useState<"cases" | "board" | null>(casesOnArrival ? "cases" : null);

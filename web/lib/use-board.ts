@@ -10,7 +10,7 @@ import { Acknowledged, api, ApiProblem } from "./client-api";
 
 const POLL_MS = 4000;
 
-/** Fired (by the command palette) to load this morning's stuck payments into the control room that is open. */
+/** Fired (by the command palette) to open the supplier issues in the control room that is open. */
 export const LOAD_MORNING = "tessera:load-morning";
 
 export interface Board {
@@ -29,7 +29,7 @@ export interface Board {
   run: (mode: "commander" | "adversary") => void;
   refresh: () => Promise<void>;
   seed: () => Promise<void>;
-  /** This morning's stuck supplier payments (src/demo/morning.ts), set up on the sandbox or offline. */
+  /** Opens the supplier issues (src/demo/morning.ts): set up on the sandbox or offline, then shown on the case map. */
   morning: () => Promise<void>;
   loadingMorning: boolean;
   reset: () => Promise<void>;
@@ -113,11 +113,11 @@ export function useBoard(initial: { items: IncidentSummary[]; metrics: Metrics |
     setError(null);
     setSeeded(null);
     try {
-      const result = await api("demo/morning", MorningResultSchema, { method: "POST" });
-      setSeeded(`${result.cases.length} supplier payments are stuck this morning: ${result.cases.map((c) => `${c.supplier} ${c.reference}`).join(", ")}.`);
+      // The case map shows what arrived; no toast on top of it.
+      await api("demo/morning", MorningResultSchema, { method: "POST" });
       await refresh();
     } catch (e) {
-      setError(message(e, "This morning's cases could not be set up."));
+      setError(message(e, "The supplier issues could not be opened just now."));
     } finally {
       setLoadingMorning(false);
     }

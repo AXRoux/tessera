@@ -47,7 +47,7 @@ export function CommandPalette({
   query: string;
   setQuery: (q: string) => void;
   accounts: boolean;
-  /** This morning's stuck payments can be loaded here (the sandbox, or offline). */
+  /** The supplier issues can be opened here (the sandbox, or offline). */
   canStage?: boolean;
 }) {
   const router = useRouter();
@@ -83,9 +83,9 @@ export function CommandPalette({
       ...(canStage
         ? [
             {
-              id: "morning", group: "Actions" as const, label: "Load this morning", hint: "6 stuck supplier payments", keywords: "demo walkthrough cases seed stuck delayed",
-              icon: <Icon name="bolt" className="size-4" />,
-              // On the control room it loads at once; elsewhere it opens the cases, where one press loads them.
+              id: "morning", group: "Actions" as const, label: "Investigate supplier issues", hint: "Case map", keywords: "demo walkthrough cases seed stuck delayed morning suppliers",
+              icon: <Icon name="search" className="size-4" />,
+              // On the control room it opens them at once; elsewhere it opens the case map, where one press does.
               run: go(() => (onDashboard ? window.dispatchEvent(new Event(LOAD_MORNING)) : router.push("/dashboard?view=cases"))),
             },
           ]

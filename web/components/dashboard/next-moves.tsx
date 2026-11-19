@@ -64,7 +64,7 @@ export function NextMoves({
   items: IncidentSummary[];
   health: Health | null;
   onCompose: () => void;
-  /** Load this morning's stuck payments (sandbox or offline only); offered whenever nothing is waiting for a move. */
+  /** Open the supplier issues (sandbox or offline only); offered whenever nothing is waiting for a move. */
   onMorning?: () => void;
   loadingMorning?: boolean;
   /** After a move made here (a certificate), so the board reads the change at once. */
@@ -122,8 +122,8 @@ export function NextMoves({
           <Btn tone="secondary" onClick={onCompose}>
             Send a payout
           </Btn>
-          <Btn busy={loadingMorning} onClick={onMorning} icon={<Icon name="bolt" className="size-4" />}>
-            {loadingMorning ? "Setting up…" : "Load this morning"}
+          <Btn busy={loadingMorning} onClick={onMorning}>
+            {loadingMorning ? "Investigating…" : "Investigate supplier issues"}
           </Btn>
         </div>
       );
@@ -196,7 +196,7 @@ export function NextMoves({
       ? "No payouts yet. Send one: Tessera seals it in the ledger before a cent moves."
       : current
         ? current.line
-        : `Nothing to move. ${resting}.${onMorning ? " Load this morning to see six stuck supplier payments worked live." : ""}`;
+        : `Nothing to move. ${resting}.`;
 
   return (
     <Tray label="Next on your payouts" className="justify-center gap-2.5 px-3 py-3">

@@ -5,72 +5,19 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import type { CaseOutcome, CaseStep, Health, IncidentSummary } from "../../../src/server/wire";
 import { money } from "@/lib/format";
 import { useAgentRun } from "../agent/agent-run";
-import { AgentMark } from "../kit/agent-mark";
 import { Btn } from "../kit/metal";
 import { Kicker, Tile, Toggle } from "../kit/widgets";
 import { Icon } from "../landing/icons";
 import { SupplierMark } from "../suppliers/supplier-mark";
-
-type Lane = IncidentSummary & { case: NonNullable<IncidentSummary["case"]> };
-type State = CaseOutcome["state"];
+import { MORNING } from "../../../src/demo/morning";
+import { supplierById } from "../../../src/demo/suppliers";
+import { SUPPLIER_PLACES } from "@/lib/supplier-places";
+import { ACTOR, pillTone, tally, Who, type Lane, type State } from "./case-kit";
+import { CaseGlobe, type GlobePin } from "./case-globe";
+import { ActivityHistory, LiveActivity, SupplierCard } from "./case-map";
 
 /** The nodes a lane's rail shows at most; earlier steps are counted, and the whole trail opens on a click. */
 const MAX_NODES = 6;
-
-const ACTOR: Record<CaseStep["actor"], string> = {
-  agent: "Agent",
-  test: "Guardrail test",
-  you: "You",
-  airwallex: "Airwallex",
-  visa: "Visa",
-  supplier: "Supplier",
-  tessera: "Tessera",
-};
-
-/** What a step was, as a colour: red is stopped or failed, amber a person's part, blue the agent acting, green money landed. */
-function pillTone(step: CaseStep): string {
-  switch (step.kind) {
-    case "refused":
-    case "fail":
-      return "bg-bad/12 text-bad ring-bad/35";
-    case "handoff":
-    case "draft":
-    case "sign":
-    case "release":
-    case "send":
-    case "resolve":
-      return "bg-warn/12 text-warn ring-warn/35";
-    case "paid":
-    case "cleared":
-    case "certify":
-      return "bg-ok/14 text-ok ring-ok/40";
-    case "act":
-      return "bg-accent/14 text-accent ring-accent/35";
-    default:
-      return "bg-fg/[0.06] text-fg/80 ring-fg/12";
-  }
-}
-
-/** Who made the move, as a mark small enough to sit inside a pill. */
-function Who({ step, lane, size = 12 }: { step: Pick<CaseStep, "actor">; lane: Lane; size?: 11 | 12 }) {
-  const box = size === 11 ? "size-[11px] shrink-0" : "size-3 shrink-0";
-  switch (step.actor) {
-    case "agent":
-      return <AgentMark size={size} className="shrink-0 rounded-[3px]" />;
-    case "test":
-      return <Icon name="shield" className={box} />;
-    case "you":
-      return <Icon name="hand" className={box} />;
-    case "airwallex":
-      return <Icon name="wallet" className={box} />;
-    case "visa":
-      return <span className="shrink-0 font-sans text-[8.5px] font-black italic leading-none tracking-[-0.02em]">VISA</span>;
-    case "supplier":
-      return lane.supplier ? <SupplierMark supplier={lane.supplier} size={size + 2} /> : <Icon name="mail" className={box} />;
-    case "tessera":
-      return <Icon name="badge" className={box} />;
-  }
-}
 
 /** One move as a node on the lane's rail: who made it, coloured by what it was. Hover for the sentence. */
 function Node({ step, lane, fresh }: { step: CaseStep; lane: Lane; fresh: boolean }) {
@@ -258,16 +205,23 @@ function Trail({ lane }: { lane: Lane }) {
   );
 }
 
-/** The counts the header shows, in the order a case travels: red, blue, amber, green. */
-function tally(lanes: Lane[]) {
-  const count = (states: State[]) => lanes.filter((l) => states.includes(l.case.outcome.state)).length;
-  return { open: count(["open"]), working: count(["working"]), yours: count(["yours"]), solved: count(["solved", "certified"]), certified: count(["certified"]) };
-}
+/** This morning's suppliers, before their issues are opened: the pins the case map shows while they wait. */
+const WAITING: GlobePin[] = MORNING.flatMap((c) => {
+  const supplier = supplierById(c.supplierId);
+  const place = SUPPLIER_PLACES[c.supplierId];
+  return supplier && place ? [{ id: c.supplierId, supplier: { id: supplier.id, name: supplier.name, tile: supplier.tile }, place, state: "pending" as const, working: false }] : [];
+});
+
+type View = "map" | "lanes";
+
+/** "We have 1 supplier issue that needs resolving", "We have 4 supplier issues that need resolving". */
+const needs = (n: number) => `We have ${n} supplier ${n === 1 ? "issue that needs" : "issues that need"} resolving`;
 
 /**
- * Step two, when there are cases: every supplier whose payment is stuck, one lane each, read left to right. The problem
- * starts red; each move lands as it is chained (the agent's tool calls and the policy's answers, a person's signature,
- * Airwallex, Visa); where it ends turns green. Everything but the problem's wording is read from the ledger.
+ * Step two: the supplier issues. As a case map, every supplier is pinned at its headquarters on a globe and coloured by
+ * where its issue stands; a pin opens the supplier's case, and the latest moves stream beside it. As lanes, each issue
+ * reads left to right: the problem, every move as it is chained, where it landed. Only the problem's wording is
+ * authored; the rest is read from the ledger.
  */
 export function CasesPanel({
   items,
@@ -283,104 +237,143 @@ export function CasesPanel({
   loadingMorning: boolean;
 }) {
   const agent = useAgentRun();
+  const [view, setView] = useState<View>("map");
   const [open, setOpen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [history, setHistory] = useState(false);
   const lanes = useMemo(
     () => items.filter((i): i is Lane => Boolean(i.case)).sort((a, b) => a.case.openedSeq - b.case.openedSeq),
     [items],
   );
   const t = tally(lanes);
+  const unresolved = lanes.length - t.solved;
   const owed = lanes.reduce((sum, l) => sum + (l.currency === "USD" ? l.amountMinor : 0), 0);
   // The lane the agent is on right now: the invoice its latest tool call names.
   const lastCall = agent.running ? agent.state.steps.findLast((s) => s.kind === "tool" && s.incident !== null) : undefined;
   const workingOn = lastCall?.kind === "tool" ? lastCall.incident : null;
   const canSeed = Boolean(health && (health.offline || health.sandbox));
-  const where = health?.offline ? "the offline simulator" : "the Airwallex sandbox";
+  const pins: GlobePin[] = useMemo(
+    () =>
+      lanes.length === 0
+        ? WAITING
+        : lanes.flatMap((lane) => {
+            const place = lane.supplier ? SUPPLIER_PLACES[lane.supplier.id] : undefined;
+            return lane.supplier && place ? [{ id: lane.id, supplier: lane.supplier, place, state: lane.case.outcome.state, working: workingOn === lane.reference }] : [];
+          }),
+    [lanes, workingOn],
+  );
+  const selected = lanes.find((l) => l.id === picked) ?? null;
 
   return (
     <Tile invert as="section" className="flex h-full min-h-0 flex-col rounded-[30px]! p-5 xl:p-6">
       <header className="flex shrink-0 items-start justify-between gap-4">
         <div className="min-w-0">
           <Kicker>
-            02 · This morning
+            02 · Supplier issues
             {lanes.length > 0 ? (
               <span className="normal-case tracking-normal">
                 {" "}
-                · {money(owed, "USD")} owed to {lanes.length} suppliers{t.certified > 0 ? ` · ${t.certified} certified` : ""}
+                · {money(owed, "USD")} across {lanes.length} suppliers{t.certified > 0 ? ` · ${t.certified} certified` : ""}
               </span>
             ) : null}
           </Kicker>
+          <h2 className="mt-2 text-[clamp(22px,1.9vw,30px)] font-semibold leading-tight tracking-[-0.035em]">Supplier issues</h2>
           {lanes.length > 0 ? (
-            <p className="mt-2 text-[clamp(24px,2.1vw,34px)] font-semibold leading-none tracking-[-0.04em]">
-              <span className="text-bad">{lanes.length} stuck</span>
-              <span className="mx-2 text-fg/25">→</span>
-              <span className="text-ok">{t.solved} solved</span>
+            <p className="mt-1 text-[14px] font-medium leading-snug">
+              {unresolved === 0 ? (
+                <span className="text-ok">Every supplier issue is resolved.</span>
+              ) : (
+                <>
+                  <span className="text-bad">{needs(unresolved)}</span>
+                  {t.solved > 0 ? <span className="text-ok"> · {t.solved} resolved</span> : null}
+                </>
+              )}
             </p>
-          ) : (
-            <p className="mt-2 text-[clamp(22px,1.9vw,30px)] font-semibold leading-none tracking-[-0.04em]">Nothing stuck yet</p>
-          )}
+          ) : null}
         </div>
         <Toggle
           label="View"
-          value="cases"
-          onChange={(v) => v === "board" && onBoard()}
+          value={view}
+          onChange={(v) => (v === "board" ? onBoard() : setView(v))}
           options={[
-            { id: "cases", label: "Cases" },
-            { id: "board", label: "Board" },
+            { id: "map" as const, label: "Map" },
+            { id: "lanes" as const, label: "Lanes" },
+            { id: "board" as const, label: "Board" },
           ]}
         />
       </header>
 
-      {lanes.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-          <span className="flex size-14 items-center justify-center rounded-[18px] bg-bad/12 text-bad ring-1 ring-inset ring-bad/30">
-            <Icon name="bolt" className="size-6" />
-          </span>
-          <div className="max-w-[520px] space-y-2">
-            <p className="text-[18px] font-semibold tracking-[-0.02em]">Six supplier payments went out on the last run. This morning, each one is stuck.</p>
-            <p className="text-[13px] leading-relaxed text-fg/60">
-              Bounced at the bank, still in transit, returned as a duplicate, unseen by the supplier, and one email from an impostor. Each was approved and paid
-              {canSeed ? ` on ${where}` : ""}; the agent works them under policy, and you sign what it cannot.
-            </p>
+      {lanes.length > 0 ? (
+        // Where the issues stand at a glance: one segment per issue, coloured by where it is now.
+        <div className="mt-3 flex shrink-0 items-center gap-4">
+          <div className="flex h-1.5 min-w-0 flex-1 gap-1 overflow-hidden rounded-full" role="img" aria-label={`${t.open} unresolved, ${t.working} in progress, ${t.yours} waiting on you, ${t.solved} resolved`}>
+            {(
+              [
+                [t.solved, "bg-ok"],
+                [t.yours, "bg-warn"],
+                [t.working, "bg-accent"],
+                [t.open, "bg-bad"],
+              ] as const
+            ).map(([n, fill]) => (n > 0 ? <span key={fill} className={`h-full rounded-full transition-[flex-grow] duration-700 ${fill}`} style={{ flexGrow: n }} /> : null))}
           </div>
-          {canSeed ? (
-            <Btn busy={loadingMorning} onClick={onMorning} icon={<Icon name="bolt" className="size-4" />}>
-              {loadingMorning ? `Setting them up on ${health?.offline ? "the simulator" : "Airwallex"}…` : "Load this morning"}
-            </Btn>
+          <div className="flex shrink-0 gap-3 text-[11.5px] text-fg/55 short:gap-2.5">
+            {(
+              [
+                [t.open, "unresolved", "bg-bad"],
+                [t.working, "in progress", "bg-accent"],
+                [t.yours, "yours", "bg-warn"],
+                [t.solved, "resolved", "bg-ok"],
+              ] as const
+            ).map(([n, word, dot]) => (
+              <span key={word} className="flex items-center gap-1.5">
+                <span aria-hidden className={`size-2 rounded-full ${dot}`} />
+                <span className="readout font-medium text-fg/80">{n}</span>
+                <span>{word}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {view === "map" || lanes.length === 0 ? (
+        <div className="relative mt-3 min-h-[360px] flex-1">
+          <CaseGlobe pins={pins} selected={selected?.id ?? null} onSelect={lanes.length > 0 ? (id) => setPicked((current) => (current === id ? null : id)) : undefined} />
+
+          {lanes.length === 0 ? (
+            // Before the issues are opened: one sentence and one button over the globe; each supplier's details come with its pin.
+            <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center px-4">
+              <div className="tile pointer-events-auto flex max-w-[520px] flex-col items-center gap-3.5 rounded-[24px]! px-7 py-5 text-center">
+                <p className="text-[17px] font-semibold leading-snug tracking-[-0.02em]">
+                  {needs(WAITING.length)}.
+                </p>
+                {canSeed ? (
+                  <Btn busy={loadingMorning} onClick={onMorning}>
+                    {loadingMorning ? "Investigating…" : "Investigate supplier issues"}
+                  </Btn>
+                ) : (
+                  <p className="text-[12.5px] text-fg/50">Supplier issues appear here when a payment runs into trouble.</p>
+                )}
+              </div>
+            </div>
           ) : (
-            <p className="text-[12.5px] text-fg/45">Cases appear here when a supplier payment runs into trouble.</p>
+            <>
+              <p className="pointer-events-none absolute left-1 top-0 text-[11.5px] text-fg/40">{selected ? "Drag to spin" : "Click a supplier to open its case · drag to spin"}</p>
+              {selected ? (
+                <SupplierCard key={selected.id} lane={selected} onClose={() => setPicked(null)} className="absolute bottom-0 right-0 top-0 z-20 w-[min(320px,52%)]" />
+              ) : null}
+              <LiveActivity
+                lanes={lanes}
+                running={agent.running}
+                onPick={setPicked}
+                onAll={() => setHistory(true)}
+                className={`absolute bottom-0 z-10 w-[min(300px,48%)] ${selected ? "left-0" : "right-0"}`}
+              />
+              {history ? <ActivityHistory lanes={lanes} onPick={setPicked} onClose={() => setHistory(false)} /> : null}
+            </>
           )}
         </div>
       ) : (
         <>
-          {/* Where the morning stands at a glance: one segment per case, coloured by where it is now. */}
-          <div className="mt-3.5 shrink-0">
-            <div className="flex h-1.5 gap-1 overflow-hidden rounded-full" role="img" aria-label={`${t.open} unsolved, ${t.working} in progress, ${t.yours} yours, ${t.solved} solved`}>
-              {(
-                [
-                  [t.solved, "bg-ok"],
-                  [t.yours, "bg-warn"],
-                  [t.working, "bg-accent"],
-                  [t.open, "bg-bad"],
-                ] as const
-              ).map(([n, fill]) => (n > 0 ? <span key={fill} className={`h-full rounded-full transition-[flex-grow] duration-700 ${fill}`} style={{ flexGrow: n }} /> : null))}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-fg/55">
-              {(
-                [
-                  [t.open, "unsolved", "bg-bad"],
-                  [t.working, "in progress", "bg-accent"],
-                  [t.yours, "waiting on you", "bg-warn"],
-                  [t.solved, "solved", "bg-ok"],
-                ] as const
-              ).map(([n, word, dot]) => (
-                <span key={word} className="flex items-center gap-1.5">
-                  <span aria-hidden className={`size-2 rounded-full ${dot}`} />
-                  <span className="readout font-medium text-fg/80">{n}</span> {word}
-                </span>
-              ))}
-            </div>
-          </div>
-
           <div className="mt-3 grid shrink-0 grid-cols-[minmax(0,1.2fr)_minmax(0,1.15fr)_minmax(0,0.95fr)] gap-2.5 px-1.5 pb-1.5">
             <Kicker className="pl-3 text-bad!">The problem</Kicker>
             <Kicker className="pl-1">The agent, step by step</Kicker>
