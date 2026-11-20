@@ -12,7 +12,7 @@
   TESSERA · SPEC 01                       the layer between agents and money
 ──────────────────────────────────────────────────────────────────────────────
   57/57  attacks held by policy         100/100  safeguards, each proven
-    639  automated tests passing             32  failure codes, all mapped
+    694  automated tests passing             32  failure codes, all mapped
      15  typed tools, and no more             1  live payment per invoice, max
 ──────────────────────────────────────────────────────────────────────────────
 ```
@@ -22,7 +22,7 @@
 <p align="center">
   <a href="https://github.com/AXRoux/tessera/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AXRoux/tessera/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="attacks held 57/57" src="https://img.shields.io/badge/attacks_held-57%2F57-2b74ff">
-  <img alt="639 tests passing" src="https://img.shields.io/badge/tests-639_passing-0b0d12">
+  <img alt="694 tests passing" src="https://img.shields.io/badge/tests-694_passing-0b0d12">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-2b74ff">
   <img alt="Airwallex sandbox" src="https://img.shields.io/badge/Airwallex-sandbox-0b0d12">
   <img alt="Bun and TypeScript" src="https://img.shields.io/badge/Bun_%C2%B7_TypeScript-strict-2b74ff?logo=bun&logoColor=white">
@@ -30,7 +30,7 @@
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-2b74ff"></a>
 </p>
 
-<p align="center"><b>Works with any MCP agent.</b> Same thirteen tools, same refusals, whichever client drives them.</p>
+<p align="center"><b>Works with any MCP agent.</b> Same fifteen tools, same refusals, whichever client drives them.</p>
 
 <table align="center">
   <tr>
@@ -46,14 +46,34 @@
 <p align="center"><sub>Every logo opens that client's MCP setup docs, and every one of them reaches the same server, <code>bun run mcp</code>. The built-in agent and reader run on Claude or on any OpenAI-compatible model. To show the door truly opens: Hermes Agent worked all seven sandbox incidents through this server on 2026-11-06, funding one replacement with a currency conversion and paying two, with nothing refused.</sub></p>
 
 <p align="center">
-  <a href="https://youtu.be/Iz5EH9jfTSQ">The film</a> ·
+  <a href="#watch-it">Watch it</a> ·
   <a href="https://18-224-26-250.sslip.io">Live site</a> ·
+  <a href="#two-minutes-no-keys">Try it</a> ·
+  <a href="docs/WALKTHROUGH.md">Walkthrough</a> ·
   <a href="SPEC.md">Spec</a> ·
   <a href="docs/DEPLOY.md">Deploy</a> ·
   <a href="#01-a-supplier-writes-at-nine">Start here</a> ·
   <a href="#04-the-guarantee">How it holds</a> ·
   <a href="#06-prove-it">Proof</a>
 </p>
+
+---
+
+## Watch it
+
+Six supplier payments are stuck, each a different way. The agent works them through Airwallex and Visa while policy code
+decides what it may do, a person signs what only a person may, and every move lands on the ledger. 4:30, recorded from
+the real console.
+
+<p align="center">
+  <a href="https://github.com/AXRoux/tessera/releases/download/v0.1.0/tessera-supplier-issues-1080p.mp4"><img src="docs/img/film-supplier-issues.jpg" alt="Play the film: Tessera working six stuck supplier payments (4:30)" width="100%"></a>
+</p>
+
+<p align="center"><sub>
+  <a href="https://github.com/AXRoux/tessera/releases/download/v0.1.0/tessera-supplier-issues-1080p.mp4"><b>Play (1080p, 60 MB)</b></a> ·
+  <a href="https://github.com/AXRoux/tessera/releases/download/v0.1.0/tessera-supplier-issues-4k.mp4">4K original (374 MB)</a> ·
+  <a href="https://youtu.be/Iz5EH9jfTSQ">The earlier overview film on YouTube (3:42)</a>
+</sub></p>
 
 ---
 
@@ -69,17 +89,17 @@ Every wrong answer costs. Send it again too soon and the first payment may still
 git clone https://github.com/AXRoux/tessera && cd tessera && bun install && (cd web && bun install)
 
 bun run demo      # no keys, no network: the whole console on a simulated Airwallex, opens your browser
-bun run redteam   # no keys: 50 attacks on the invariants, with a scoreboard
+bun run redteam   # no keys: 57 attacks on the invariants, with a scoreboard
 ```
 
 | | |
 |---|---|
 | **An agent that is genuinely useful** | An agent works seven real incidents on the Airwallex sandbox in 21 tool calls (2026-11-06): waits, replaces, converts the exact €26.74 a short EUR wallet was missing and pays from it, escalates a phishing email, drafts a proof-of-payment reply for a person to send. An earlier six-incident run, with the hold window passed, also certified the settled payment. |
 | **An agent that cannot hurt you** | Told to get a supplier paid twice, the same agent was refused seven times in the recorded run and could not. The database, the playbook, the draft guard and the Closer all said no. |
-| **Plugs into anything** | A zero-dependency [MCP server](#05-the-agent-surface) exposes thirteen typed tools over stdio, so any MCP client can hold them: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or a loop of your own. The protocol was checked end to end with the official MCP Inspector, and Hermes Agent has worked a full sandbox run through it. |
+| **Plugs into anything** | A zero-dependency [MCP server](#05-the-agent-surface) exposes fifteen typed tools over stdio, so any MCP client can hold them: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or a loop of your own. The protocol was checked end to end with the official MCP Inspector, and Hermes Agent has worked a full sandbox run through it. |
 | **Visa, on Airwallex** | Agents can buy, but only what a person signed for. Each purchase gets its own **single-use Visa virtual card issued by Airwallex**, with the signed terms as the card's controls. The agent pays through **Visa's Trusted Agent Protocol**, signing every checkout with the workspace's key for the merchant to verify. [Ten minutes down](#03-cards-on-visa). |
-| **One click in the console** | **Let the agent work them all** streams the run live. **Try to break it** gives the same agent a hostile brief and shows every refusal in black. |
-| **Proof, not claims** | 57 adversarial attacks held, 639 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 100 guards removed one at a time from a private copy, every single one caught. |
+| **One click in the console** | **Let the agent work** streams the run live. **Test the guardrails** gives the same agent a hostile brief and shows every refusal in black. |
+| **Proof, not claims** | 57 adversarial attacks held, 694 tests, `kill -9` mid-payment and mid-conversion on the real sandbox, and `bun run mutate`: 100 guards removed one at a time from a private copy, every single one caught. |
 
 ### Why this is worth building
 
@@ -93,7 +113,7 @@ Two doors, and both lead to the same policy, the same ledger and the same refusa
 
 | The door | Who walks through it |
 |---|---|
-| **MCP over stdio** | Any MCP client: Claude Code and Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or your own loop. It brings its own model and its own credentials, and the thirteen tools never change shape. |
+| **MCP over stdio** | Any MCP client: Claude Code and Claude Desktop, Codex, Cursor, Gemini CLI, Copilot in VS Code, Hermes Agent, or your own loop. It brings its own model and its own credentials, and the fifteen tools never change shape. |
 | **The built-in agent** | The console button, the terminal demos, and the agent that wakes on a bank event. It runs on Claude through Anthropic, or on any model behind an OpenAI-compatible chat endpoint: Hermes through Nous Portal or OpenRouter, a local model through Ollama, LM Studio or vLLM, or OpenAI itself. One environment variable switches it. |
 
 Whichever you pick, the division of labor holds: **the model proposes and explains, policy decides and records.** Change the model and you change how fluently the agent talks about an incident, never what it is allowed to do about one. A weaker model finishes fewer incidents and hears more refusals, and the refusals sit in code that has no idea which model is calling.
@@ -105,11 +125,11 @@ bun run doctor   # optional: one screen saying what works, and the exact command
 bun run demo     # API on :4010, site on http://127.0.0.1:3100, opens your browser
 ```
 
-**Supplier issues, in five minutes** ([docs/DEMO.md](docs/DEMO.md)): press **Investigate supplier issues** in the control room and six supplier payments are already stuck, each its own way (bounced, in transit and asked to pay again, returned as a duplicate, unseen, an impostor). A case map pins each supplier at its headquarters; a pin opens its case: the problem in red, every move the agent and people make as it lands on the ledger, and where it ends in green. The agent pays a supplier by single-use Visa card through Visa TAP only after a person has authorized that card.
+**Supplier issues, in five minutes** ([docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)): press **Investigate supplier issues** in the control room and six supplier payments are already stuck, each its own way (bounced, in transit and asked to pay again, returned as a duplicate, unseen, an impostor). A case map pins each supplier at its headquarters; a pin opens its case: the problem in red, every move the agent and people make as it lands on the ledger, and where it ends in green. The agent pays a supplier by single-use Visa card through Visa TAP only after a person has authorized that card.
 
 The site opens on the front page. **Start here** opens the control room at `/dashboard`: one screen for every payout, with the standing of each invoice across the top (**yours, in flight, to certify, certified**) and **Next on your payouts**, one key per invoice waiting for a move, most urgent first, each with a sentence and a button that acts on that invoice only. Below sit the wallets and their reserve floors, what is at stake per invoice, the agent, the **Waiting on you** queue, and the invoice table whose **Next** column says who makes each invoice's next move. All of it is read from the ledger on every poll.
 
-The agent never works the board blindly. Before a run it lists the invoices it will touch, each with its move, and the ones it leaves alone with the reason (yours to decide, with the bank, paid and holding); the run is then held to exactly that list, and a tool call on any other invoice is refused. **Test the guardrails** runs a hostile pass on one invoice you pick, and each row of **Waiting on you** shows what the agent last did there. **Reset demo** starts it all over.
+The agent never works the board blindly. Before a run it lists the invoices it will touch, each with its move, and the ones it leaves alone with the reason (yours to decide, with the bank, paid and holding); the run is then held to exactly that list, and a tool call on any other invoice is refused. **Test the guardrails** runs a hostile pass on one invoice you pick, and each row of **Waiting on you** shows what the agent last did there. Your avatar (top right) > **Reset control room** starts it all over.
 
 Offline, the agent is a deterministic script, labelled "not a model" wherever it appears, and the paid invoice certifies after a 6-second hold, so press the agent button a second time. Add a model to `.env` and the same buttons drive that model against the same simulator. Nothing in this mode can move money. `bun run scale` runs 100 mixed incidents through the same path and ends with `INVARIANT HELD: at most one live payout per invoice`. Want it on a URL for someone else? [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
@@ -160,13 +180,13 @@ The agent's work lands in the same ledger a person uses, and you can start it fr
   <img src="docs/img/board.png" alt="Tessera console after the agent worked the seven demo incidents: the metrics (waiting on you, replaced, stopped, certified), the treasury with its Visa card pocket, the chart of money in motion, the invoice table, and the agent panel with its last guardrail test" width="100%">
 </p>
 
-**Let the agent work them all** streams the run into the page as it happens: what it said, each tool it reached for, and what the code answered, with the board updating underneath as incidents change state. The run is scoped and bounded: a single-incident toolbox cannot even see other incidents, there is one run at a time, a step limit stops a runaway, and closing the tab cancels the run at its next step.
+**Let the agent work** streams the run into the page as it happens: what it said, each tool it reached for, and what the code answered, with the board updating underneath as incidents change state. The run is scoped and bounded: a single-incident toolbox cannot even see other incidents, there is one run at a time, a step limit stops a runaway, and closing the tab cancels the run at its next step.
 
 <p align="center">
   <img src="docs/img/console-agent.png" alt="Console: the agent panel after a finished run, showing the run summary, the incidents it leaves alone, the guardrail picker, and the Waiting on you queue underneath" width="56%">
 </p>
 
-**Try to break it** gives the same agent a hostile brief on the sandbox or in the offline demo, and every refusal becomes the loudest thing on the page.
+**Test the guardrails** gives the same agent a hostile brief on the sandbox or offline, and every refusal becomes the loudest thing on the page.
 
 <p align="center">
   <img src="docs/img/agent-adversary-ui.png" alt="Console: the guardrail test stopping an adversarial agent, each refusal in black with the policy's own words, and the Waiting on you queue underneath" width="56%">
@@ -372,7 +392,7 @@ Six small rules make this safe to hand to any model:
 
 ### Use it from any MCP client
 
-`bun run mcp` serves the same toolbox over stdio. It is written against the MCP spec with **no SDK**, so there is no new dependency, and it was checked end to end with the official `@modelcontextprotocol/inspector`. Any client that can launch a stdio server works the same way, and the thirteen tools and their refusals do not change with it. The command is always `bun run --silent --cwd /absolute/path/to/tessera mcp`.
+`bun run mcp` serves the same toolbox over stdio. It is written against the MCP spec with **no SDK**, so there is no new dependency, and it was checked end to end with the official `@modelcontextprotocol/inspector`. Any client that can launch a stdio server works the same way, and the fifteen tools and their refusals do not change with it. The command is always `bun run --silent --cwd /absolute/path/to/tessera mcp`.
 
 **No keys? Run it offline.** Run `bun install` once, then set `TESSERA_OFFLINE=1` in the server's environment: the server runs on the simulated Airwallex with no keys and no network, and starts with the seven ACME demo incidents already in its ledger, so any client has something to work (`TESSERA_MCP_SEED=0` starts it empty). Without that flag it is live and needs the `.env` that `bun run setup` writes.
 
@@ -452,7 +472,7 @@ The loop is about 60 lines and holds no authority of its own: no gateway, no sec
 ### The agent development lifecycle, run on money
 
 <p align="center">
-  <img src="docs/img/adlc.png" alt="LangChain's agent development lifecycle as Tessera runs it: a loop of Build (fourteen typed tools, policy as code, a quarantined reader), Test (639 tests, 57 red-team attacks, 100 mutations, end-to-end simulation), Deploy (durable intents, human signatures, sandboxed runtimes on EC2 and App Runner) and Monitor (a hash-chained ledger of every call, refusal and charge), with Iterate closing the loop around one invariant: one live payment per invoice. Below it, one real lap: Kit 03's Visa card rail, built, attacked, deployed, corrected by what the live sandbox showed, and certified." width="100%">
+  <img src="docs/img/adlc.png" alt="LangChain's agent development lifecycle as Tessera runs it: a loop of Build (fourteen typed tools, policy as code, a quarantined reader), Test (694 tests, 57 red-team attacks, 100 mutations, end-to-end simulation), Deploy (durable intents, human signatures, sandboxed runtimes on EC2 and App Runner) and Monitor (a hash-chained ledger of every call, refusal and charge), with Iterate closing the loop around one invariant: one live payment per invoice. Below it, one real lap: Kit 03's Visa card rail, built, attacked, deployed, corrected by what the live sandbox showed, and certified." width="100%">
 </p>
 
 LangChain describes shipping agents as a loop: **Build → Test → Deploy → Monitor**, then iterate ([*The Agent Development Lifecycle*](https://www.langchain.com/blog/the-agent-development-lifecycle), Harrison Chase). Tessera is that loop with money in it, so each stage has a stricter job than usual:
@@ -460,7 +480,7 @@ LangChain describes shipping agents as a loop: **Build → Test → Deploy → M
 | Stage | In the ADLC | In Tessera |
 |---|---|---|
 | **Build** | Frameworks, runtimes and harnesses: prompts, tools, MCP, middleware | Any model or MCP client works through **fifteen typed tools** (`src/agent/toolbox.ts`); the Commander's policy is code the model never sees, and supplier mail reaches the agent only as booleans |
-| **Test** | Datasets, metrics, experiments, multi-turn simulation | **639 tests**, a red team of **57 attacks** that each try to pay twice (`bun run redteam`), **100 mutations** that remove one guard at a time (`bun run mutate`), and a simulated Airwallex the agent works end to end (`bun run smoke:offline`, `bun run scale`) |
+| **Test** | Datasets, metrics, experiments, multi-turn simulation | **694 tests**, a red team of **57 attacks** that each try to pay twice (`bun run redteam`), **100 mutations** that remove one guard at a time (`bun run mutate`), and a simulated Airwallex the agent works end to end (`bun run smoke:offline`, `bun run scale`) |
 | **Deploy** | Durable execution, human in the loop, sandboxes, a context hub | The intent is sealed before every network call and resumed by request ID after a crash (`kill -9` tested); risky money and every card wait for a person's signature; the offline simulator and the Airwallex sandbox are the sandboxes; Tessera Live seals each workspace's keys |
 | **Monitor** | Traces, signals, feedback, dashboards | The trace is a **hash-chained ledger** of every tool call, refusal, bank event and card charge (`verifyChain`); refusals and reassessments are the signals; the queue is where people answer the agent; outcomes end in a certificate checked against Airwallex |
 | **Iterate** | Hard examples become evals | Every way a lap could have failed becomes an attack or a mutation before the next lap ships |
@@ -473,7 +493,7 @@ One real lap, from the day Kit 03's card rail shipped: the card rail was **built
 
 ```sh
 bun test                     # 623 tests on in-memory SQLite and a fake Airwallex that behaves like the sandbox
-bun run redteam              # 50 attacks, offline, with a scoreboard
+bun run redteam              # 57 attacks, offline, with a scoreboard
 bun run mutate               # 94 guard removals on a private copy; fails unless each is caught (about a minute)
 bun run typecheck && (cd web && bun run typecheck)
 bun run smoke:offline        # no keys: seed, scripted agent run, invariant and hash chain (CI runs this)
@@ -492,7 +512,7 @@ bun run agent -- --adversary
 </p>
 
 <details>
-<summary><b>All 50 attacks, and what stopped each</b></summary>
+<summary><b>Attacks 1 to 50, and what stopped each</b> (51 to 57 are in <a href="#03-cards-on-visa">Cards on Visa</a>)</summary>
 
 <br>
 
@@ -692,7 +712,7 @@ bun install && (cd web && bun install)
 bun run demo                     # offline: API + console at http://127.0.0.1:3100, no keys, no money
 ```
 
-Offline, the ledger, gateway, Commander, Closer and toolbox all run against an in-process simulation of Airwallex (`TESSERA_OFFLINE=1`) with a 6-second hold window so certification can be shown. Without a model the agent is a deterministic **scripted agent** and the reader a keyword reader, both labelled "not a model", and the ledger names it `agent:scripted`. **Seed demo incidents** creates the seven ACME incidents, the seventh staged short on purpose.
+Offline, the ledger, gateway, Commander, Closer and toolbox all run against an in-process simulation of Airwallex (`TESSERA_OFFLINE=1`) with a 6-second hold window so certification can be shown. Without a model the agent is a deterministic **scripted agent** and the reader a keyword reader, both labelled "not a model", and the ledger names it `agent:scripted`. **Investigate supplier issues** opens six stuck supplier payments ([docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)); the seven ACME incidents, the seventh staged short on purpose, are what `bun run agent -- --seed-only`, the MCP server and `bun run smoke:offline` start from.
 
 For the sandbox:
 
@@ -713,7 +733,7 @@ bun run agent -- --seed-only                        # writes .data/agent-demo.db
 TESSERA_DB=.data/agent-demo.db bun run dev
 ```
 
-**Public demo container:** `docker build -t tessera-demo . && docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera-demo`. Offline only (`TESSERA_PUBLIC_DEMO=1` refuses to start without `TESSERA_OFFLINE=1`), and a public demo ignores any configured model, so a stranger can never spend your key. Hosting it: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+**Offline sandbox container:** `docker build -t tessera . && docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera`. Offline only (`TESSERA_PUBLIC_DEMO=1` refuses to start without `TESSERA_OFFLINE=1`), and a public instance ignores any configured model, so a stranger can never spend your key. Hosting it: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 **Webhooks (optional, since the sweep does the same job a minute later).** With `AWX_WEBHOOK_SECRET` set, the live API opens a second listener on `TESSERA_WEBHOOK_PORT` that serves one route, so the operator API never faces the internet. Airwallex can only reach a public URL, so:
 
@@ -756,15 +776,15 @@ TESSERA_MODEL=qwen3                # any local model that supports tool calling
 
 Two recorded runs on 2026-11-06 drove the console agent and reader through the seven ACME incidents with the same decisions each time (wait, replace, escalate twice, fund then replace, draft proof, certify), one on Claude through Anthropic's OpenAI-compatible endpoint and one on `z-ai/glm-5.2` through Nous Portal. In both, the at-most-one-live-payout check and the hash chain held. The `hermes` tool format follows the [Hermes function-calling format](https://github.com/NousResearch/Hermes-Function-Calling), with tool signatures in the system prompt and calls answered as `<tool_call>` in text, and the console names the agent by its label in the agent panel.
 
-### The 3-minute console demo
+### Try it by hand
 
 1. **Send a test invoice.** The ledger records the intent, then the transfer is created.
 2. **Add a supplier email** asking to change bank details, then press **Read**. The recommendation flips to *Hand to a person*, marked critical.
 3. On another invoice, **fail the transfer** with *Duplication return*. Try to release it with the reason "ok": refused. Give a real reason, and it goes out under a new request ID, recorded under your name.
 4. On an invoice whose supplier has not asked to change bank details, **fail the transfer** with *Channel timeout*. The simulated Airwallex sends signed `payout.transfer.failed` and `.cancelled` webhooks, the history shows the reaction (*wait* to *replace the payment*), the agent waking for that one incident, and the replacement it asked for.
 5. On another, **mark paid** and try **Reconcile and certify**: refused inside the hold window, then signed once it passes.
-6. Press **Let the agent work them all** on the board and watch the steps stream in while incidents change state underneath.
-7. Press **Try to break it** on an in-flight incident, and watch the same agent get refused.
+6. Press **Let the agent work** on the board and watch the steps stream in while incidents change state underneath.
+7. Press **Test the guardrails** on an in-flight incident, and watch the same agent get refused.
 
 ### Environment
 
@@ -803,7 +823,7 @@ Two recorded runs on 2026-11-06 drove the console agent and reader through the s
 ## 08 The shape of the code
 
 ```
-src/agent        the agent surface: toolbox (13 typed tools), tool-use loop, MCP server, step summaries
+src/agent        the agent surface: toolbox (15 typed tools), tool-use loop, MCP server, step summaries
 src/cards        Visa virtual cards on Airwallex Issuing: card desk, card policy, Visa TAP signer and verifier, sandbox merchant
 src/airwallex    REST client (429-aware, single-flight login, paged lists), webhook verifier, the simulated Airwallex used offline and in tests
 src/demo         the seven ACME incidents, sandbox wallet staging, the scripted agent and adversary, the keyword reader
@@ -816,7 +836,7 @@ src/approval     HMAC approvals bound to amount, currency, beneficiary, evidence
 src/closer       reconciliation of payouts and funding conversions, signed certificates
 src/server       HTTP API, shared runtime wiring, the wire contract the web app parses with, the webhook-only public listener, reactions to bank events, event-driven agent runs
 web              Next.js 16 console: board, incident page, same-origin proxy with a loopback guard
-tests            behavior tests (on the fake Airwallex in src/airwallex/fake.ts) and tests/redteam (the 50 attacks)
+tests            behavior tests (on the fake Airwallex in src/airwallex/fake.ts) and tests/redteam (the 57 attacks)
 scripts          demo/dev runner (with --tunnel), setup, scale, offline smoke, smoke, chaos, commander demo, live evidence, agent demo, red team, webhook register/ping
 fixtures         the 32 failure codes captured from the sandbox; real webhook deliveries (fixtures/webhooks)
 ```
@@ -836,14 +856,14 @@ About 6,100 lines of core (including 650 for the offline demo), 4,400 of tests, 
 ---
 
 <p align="center">
-  <sub>Built for the <b>Airwallex Agentic Banking Hackathon</b>, starter kit 3: Payment Ops Incident Commander.<br>
+  <sub>Started at the <b>Airwallex Agentic Banking Hackathon</b> (starter kit 3: Payment Ops Incident Commander).<br>
   Sandbox only, so no real money moves. MIT licensed.</sub>
 </p>
 
 <p align="center">
-  <a href="https://youtu.be/Iz5EH9jfTSQ">The film</a> ·
+  <a href="#watch-it">Watch it</a> ·
   <a href="https://18-224-26-250.sslip.io">Live site</a> ·
+  <a href="docs/WALKTHROUGH.md">Walkthrough</a> ·
   <a href="SPEC.md">Spec</a> ·
-  <a href="docs/DEPLOY.md">Deploy</a> ·
-  <a href="docs/VIDEO.md">Video plan</a>
+  <a href="docs/DEPLOY.md">Deploy</a>
 </p>

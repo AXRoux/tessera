@@ -645,7 +645,7 @@ export const MUTATIONS: Mutation[] = [
   {
     id: "openai-extract-unvalidated",
     describe: "Accept an OpenAI-compatible model's extraction without checking it against the schema",
-    edits: [{ file: "src/commander/openai.ts", find: "    const result = request.schema.safeParse(call.input);\n    if (!result.success) throw new ModelError(`model output failed validation: ${result.error.message}`, null);\n    return result.data;", replace: "    return call.input as T;" }],
+    edits: [{ file: "src/commander/openai.ts", find: "    const result = request.schema.safeParse(input);\n    if (!result.success) throw new ModelError(`model output failed validation: ${result.error.message}`, null);\n    return result.data;", replace: "    return input as T;" }],
     expect: { tests: [T("openai.test.ts", "accepts only a call to the offered tool whose arguments pass the schema")] },
   },
   {

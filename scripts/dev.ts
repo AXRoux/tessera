@@ -274,7 +274,7 @@ for (const { name, proc } of children) {
 }
 
 console.log(
-  `tessera ${offline ? "offline demo (simulated Airwallex, no money moves)" : "dev"}: console http://${webHost === "0.0.0.0" ? "localhost" : webHost}:${webPort}  ·  api http://127.0.0.1:${apiPort}  ·  Ctrl-C stops both`,
+  `tessera ${offline ? "offline sandbox (simulated Airwallex, no money moves)" : "dev"}: console http://${webHost === "0.0.0.0" ? "localhost" : webHost}:${webPort}  ·  api http://127.0.0.1:${apiPort}  ·  Ctrl-C stops both`,
 );
 
 /**

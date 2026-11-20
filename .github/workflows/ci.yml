@@ -23,7 +23,7 @@ jobs:
       - run: bun run redteam
       # Removes each guard from a private copy and fails unless the red team or a named test notices. Offline, about a minute.
       - run: bun run mutate
-      # The offline demo end to end in-process: seed, scripted agent run, invariant and hash chain.
+      # The offline sandbox end to end in-process: seed, scripted agent run, invariant and hash chain.
       - run: bun run scripts/offline-smoke.ts
 
   web:
@@ -45,30 +45,15 @@ jobs:
       - run: bun run build
       - run: bun run typecheck
 
-  video:
-    name: video · typecheck
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: video
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - run: bun audit
-      - run: bun run typecheck
-
   docker:
-    name: docker · the offline demo image builds and serves
+    name: docker · the offline sandbox image builds and serves
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t tessera-demo .
-      # The image is the public demo: no keys, simulated Airwallex. It must come up and render the console.
+      - run: docker build -t tessera .
+      # The default image is the offline sandbox: no keys, simulated Airwallex. It must come up and render the console.
       - run: |
-          docker run -d --name demo -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera-demo
+          docker run -d --name tessera -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera
           for i in $(seq 1 60); do curl -fsS http://localhost:3100/ >/dev/null 2>&1 && break; sleep 2; done
           curl -fsS http://localhost:3100/ | grep -q "Tessera"
-          docker logs demo 2>&1 | tail -20
+          docker logs tessera 2>&1 | tail -20

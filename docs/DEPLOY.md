@@ -1,149 +1,108 @@
-# Hosting the public demo
+# Hosting Tessera
 
-The image in the repo root is the **offline demo**: the console and the API in one container, running on a simulated
-Airwallex with a scripted agent (labelled *not Claude* everywhere it appears). It needs no keys, can move no money, and
-is safe to put on a public URL so a judge can try it without cloning anything.
+The `Dockerfile` in the repo root builds two images from one build stage:
 
-> **What I verified, and what I did not.** The image builds, starts as a non-root user, serves the console, refuses a
-> `Host` header that is not allowed, seeds the incidents and runs the scripted agent end to end, on a local Docker
-> daemon, and CI repeats the build-and-serve check on every push. It is also deployed on AWS App Runner (see
-> [AWS](#aws-app-runner-the-deployment-that-is-live)): TLS, the seed and the scripted agent were checked on that URL.
-> The Fly.io commands below are the standard ones, not something I ran.
+| Target | What it is | Keys | State |
+|---|---|---|---|
+| default (`docker build .`) | The **offline sandbox**: console and API in one container, on a simulated Airwallex with the scripted agent. Safe on a public URL | none | in memory |
+| `--target live` | The **multi-tenant host**: people sign in (Better Auth) and bring their own Airwallex sandbox and model keys | server secrets at run time | a volume at `/data` |
 
-## Run it locally
+Both run as the unprivileged `bun` user, publish only the console on port **3100** (the API stays on `127.0.0.1` inside
+the container), and have a health check on the console. CI builds the default image and checks it serves on every push.
+
+## The offline sandbox
 
 ```sh
-docker build -t tessera-demo .
-docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera-demo
+docker build -t tessera .
+docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera
 # http://localhost:3100
 ```
 
-## Put it on a URL
+### Put it on a URL
 
-Any host that runs a container and exposes **port 3100** works. The one setting that is easy to forget is the hostname
+Any host that runs a container and exposes port 3100 works. The one setting that is easy to forget is the hostname
 visitors will use: the console refuses every `Host` header that is not `localhost` or on the allowlist, which is what
 stops a DNS-rebinding page from reading it.
 
 ```sh
--e TESSERA_ALLOWED_HOSTS=tessera-demo.fly.dev        # comma-separated; a name without a port matches on any port
+-e TESSERA_ALLOWED_HOSTS=tessera.example.com        # comma-separated; a name without a port matches on any port
 ```
 
-**Fly.io**
+On Fly.io, for example:
 
 ```sh
-fly launch --no-deploy --name tessera-demo           # accept the Dockerfile; set the internal port to 3100
-fly deploy --env TESSERA_ALLOWED_HOSTS=tessera-demo.fly.dev
+fly launch --no-deploy --name <app>                 # accept the Dockerfile; set the internal port to 3100
+fly deploy --env TESSERA_ALLOWED_HOSTS=<app>.fly.dev
 ```
 
-**AWS (App Runner)**: see [the section below](#aws-app-runner-the-deployment-that-is-live), which records exactly what is deployed.
+On a platform whose health checks send their own `Host` header (AWS App Runner, some load balancers), use a TCP health
+check on 3100: an HTTP check would be refused by the host guard.
 
-**Anywhere else**: run the image, publish 3100, set `TESSERA_ALLOWED_HOSTS`.
+### One shared ledger, by design
 
-## One shared demo, by design
+Every visitor works on the same in-memory ledger, so the image needs no database or volume. (It is about 1.1 GB, almost
+all of it the Next.js runtime; pull time matters on a cold start.) It means:
 
-Every visitor works on the same in-memory ledger, so the image holds no state and needs no database or volume. (It is not small: about 1.1 GB, almost all of it the Next.js runtime and its compiler binaries. Pull time matters on a cold start.) It means:
-
-- **Reset demo** on the board clears every incident for everyone and starts the walkthrough over.
-- The demo also resets itself after 15 idle minutes (`TESSERA_DEMO_IDLE_RESET_MS=900000`, set in the Dockerfile), so the next
+- **Reset control room** (avatar menu) clears every incident for everyone.
+- It also resets itself after 15 idle minutes (`TESSERA_DEMO_IDLE_RESET_MS=900000`, set in the Dockerfile), so the next
   visitor does not inherit a stranger's half-finished session. Set it to `0` to turn that off.
-- If two people use it at the same moment they will see each other's incidents. For a judged demo, prefer a video plus the
-  link, not a link alone.
+- Two people using it at the same moment see each other's incidents.
 
-## What a public deployment must not have
+### What a public offline deployment must not have
 
 | Do not set | Why |
 |---|---|
-| `ANTHROPIC_API_KEY` | A public demo ignores it on purpose (it warns at startup) and runs the scripted agent, so a stranger can never spend your tokens. |
+| `ANTHROPIC_API_KEY` / `TESSERA_MODEL_API_KEY` | A public sandbox ignores any model on purpose (it warns at startup) and runs the scripted agent, so a stranger can never spend your tokens. |
 | `AWX_CLIENT_ID` / `AWX_API_KEY` | The image is offline: it never calls Airwallex. `TESSERA_PUBLIC_DEMO=1` is refused unless `TESSERA_OFFLINE=1` is also set. |
-| a login | There is none by design. The only thing behind the URL is a simulator. |
 
-The API listens on `127.0.0.1` inside the container; only the console port is published. The container runs as the
-unprivileged `bun` user and has a health check on the console.
+Nothing in it can move money or reach a model, so it can run with no outbound network at all.
 
-## Seeing real Claude instead
+To try a real model against the simulator, run it on your own machine with a key in `.env` (`bun run demo`); `bun run dev`
+drives it against the real Airwallex sandbox. Never put that key on a public host.
 
-Run the demo on your own machine with a key in `.env` (`bun run demo`): the same buttons then drive Claude against the
-simulated Airwallex, and `bun run dev` drives it against the real Airwallex sandbox. Never put that key on a public host.
+## The multi-tenant host (`--target live`)
 
-## AWS App Runner: the deployment that is live
-
-Region `us-east-2`, CLI profile `tylavx`. One service, `tessera-demo`, serving the offline demo at
-`https://fjd5brcvcy.us-east-2.awsapprunner.com`. Nothing in it can move money or reach a model: it holds no secrets.
-
-| Piece | Setting | Why |
-|---|---|---|
-| ECR `tessera-demo` | immutable tags, scan on push, AES-256, keep the last 2 images | a tag cannot be silently replaced; storage stays pennies |
-| Image | `linux/amd64`, tag `YYYY-MM-DD-<git sha>` | App Runner runs x86; build with `--provenance=false --sbom=false` so ECR gets a single manifest |
-| Pull role `tessera-apprunner-ecr-pull` | read on that one repo only | the service can pull and do nothing else |
-| Instance role | none | the container has no AWS access to abuse |
-| Size | 0.25 vCPU, 0.5 GB, min 1 / max 1 | one shared in-memory ledger needs exactly one instance; measured ~330 MB under a 512 MB cap |
-| Egress | VPC connector into a security group with **no outbound rules** | the offline demo needs no network, so a compromised process cannot call out |
-| Health check | TCP on 3100 | an HTTP check sends a `Host` header the console would refuse |
-| Env | `TESSERA_ALLOWED_HOSTS=<service host>` | the DNS-rebinding guard; plain HTTP is redirected to HTTPS by App Runner |
-| Logs | CloudWatch, 7-day retention | |
-| Budget `tessera-monthly` | $10, email at 80% actual and at 100% forecast, filtered on tag `Project=tessera` | the tag filter only counts once AWS has the tag in billing data (up to 24 h) |
-
-Cost: about $2.6 a month for the idle memory plus a few cents of CPU while someone is using it, against a hard ceiling
-near $14 a month (one instance, always busy). `pause-service` stops compute billing entirely.
+People create an account (email and password, optionally Google or Apple) and get a private workspace. It opens on the
+offline sandbox; on *Workspace and keys* they can connect their own **Airwallex sandbox** keys (the workspace goes live,
+with a ledger file of its own) and their own **model** key (Anthropic or any OpenAI-compatible endpoint). Every approval
+is signed with the signed-in person's email.
 
 ```sh
-export AWS_PROFILE=tylavx AWS_REGION=us-east-2
-ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='tessera-demo'].ServiceArn" --output text)
-
-aws apprunner pause-service --service-arn $ARN      # stop paying for compute between demos
-aws apprunner resume-service --service-arn $ARN
-
-# Ship a new build (tags are immutable, so use a new one).
-docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load -t tessera-demo:NEW .
-aws ecr get-login-password | docker login --username AWS --password-stdin 237083715820.dkr.ecr.us-east-2.amazonaws.com
-docker tag tessera-demo:NEW 237083715820.dkr.ecr.us-east-2.amazonaws.com/tessera-demo:NEW
-docker push 237083715820.dkr.ecr.us-east-2.amazonaws.com/tessera-demo:NEW
-# then update-service with the new ImageIdentifier (keep TESSERA_ALLOWED_HOSTS in RuntimeEnvironmentVariables).
+docker build --target live -t tessera-live .
+docker run -d -p 3100:3100 -v tessera-data:/data \
+  -e TESSERA_API_TOKEN=... -e TESSERA_MASTER_KEY=... -e BETTER_AUTH_SECRET=... \
+  -e BETTER_AUTH_URL=https://tessera.example.com -e TESSERA_ALLOWED_HOSTS=tessera.example.com \
+  tessera-live
 ```
 
-Tear it all down (nothing else in the account depends on these): delete the App Runner service `tessera-demo`, then its
-auto scaling configuration `tessera-demo-asc` and VPC connector `tessera-demo-no-egress`, the security group
-`tessera-demo-no-egress`, the ECR repository `tessera-demo`, the role `tessera-apprunner-ecr-pull` and the budget.
+| Variable | |
+|---|---|
+| `TESSERA_API_TOKEN` | the console's token for the API inside the container (`openssl rand -hex 32`) |
+| `TESSERA_MASTER_KEY` | seals the keys people bring (`openssl rand -hex 32`). Losing it makes every stored key unreadable (people reconnect); never rotate it without re-sealing |
+| `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | session signing, and the public URL people sign in on |
+| `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `APPLE_CLIENT_ID`/`APPLE_CLIENT_SECRET` | optional; each pair turns on that sign-in |
 
-`.dockerignore` excludes `video/` and every nested `.env`: the root-only `.env` pattern let a local key file into the
-first build of this image, caught by scanning the image before it was pushed.
-
-## Tessera Live: sign-in, bring your own keys (the deployment that is live)
-
-`https://18-224-26-250.sslip.io`. People create an account (Better Auth, email and password) and get a private workspace.
-It opens in **offline rehearsal** (simulated Airwallex, scripted agent). On *Workspace and keys* they can connect their
-own **Airwallex sandbox** keys (the workspace goes live, with a ledger file of its own) and their own **model** key
-(Anthropic or any OpenAI-compatible endpoint). Every approval is signed with the signed-in person's email.
-
-| Piece | Setting | Why |
-|---|---|---|
-| Image | `Dockerfile --target live`, ECR `tessera-live` (immutable, scan on push, keep 3), arm64 | the same app, multi-tenant (`TESSERA_AUTH=1`) |
-| Host | EC2 `tessera-live`, t4g.small, Amazon Linux 2023, Elastic IP `18.224.26.250` | SQLite ledgers need a disk, and Airwallex webhooks a fixed address |
-| Disk | 20 GB gp3, encrypted, kept on termination; DLM policy: daily snapshot at 07:00 UTC, keep 7 | accounts, sealed keys and live ledgers |
-| TLS | Caddy (Let's Encrypt) in front; HTTP redirects to HTTPS; HSTS | `X-Forwarded-For` is overwritten by Caddy, so rate limits see the real client |
-| Network | security group `tessera-live-web`: 80 and 443 only. **No SSH**: SSM Session Manager | |
-| Secrets | Secrets Manager `tessera/live`: `TESSERA_API_TOKEN`, `TESSERA_MASTER_KEY`, `BETTER_AUTH_SECRET`; optional `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and `APPLE_CLIENT_ID`/`APPLE_CLIENT_SECRET` turn on those sign-ins | read at start by the instance role, written root-only for `docker run`, deleted |
-| Role | `tessera-live-ec2`: that one secret, that one repository, SSM core | nothing else in the account |
-| Data | `/var/lib/tessera`, mode 700, files 600 | |
+Put TLS in front of it (Caddy, a load balancer) and make sure the proxy **overwrites** `X-Forwarded-For` rather than
+appending to it: the console takes the client address from that header for rate limits.
 
 **Keys people bring** are checked with the provider before saving, sealed with AES-256-GCM under a key derived per
 workspace (HKDF from `TESSERA_MASTER_KEY`, authenticated data binding user and field), and only ever shown as their last
-four characters. The host accepts the Airwallex **sandbox** only. Losing `TESSERA_MASTER_KEY` makes every stored key
-unreadable (people reconnect); never rotate it without re-sealing.
+four characters. The host accepts the Airwallex **sandbox** only.
 
-**What persists:** accounts, sealed keys, and the ledgers of *live* workspaces. An offline rehearsal keeps its simulated
-Airwallex in memory, so its board starts fresh after a restart or 30 idle minutes.
+**What persists** in `/data`: accounts, sealed keys, and the ledgers of live workspaces. Back the volume up. An offline
+workspace keeps its simulated Airwallex in memory, so its board starts fresh after a restart or 30 idle minutes.
 
-Ship a new build:
+### A single host on AWS
 
-```sh
-export AWS_PROFILE=tylavx AWS_REGION=us-east-2
-TAG=$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)-live; REG=237083715820.dkr.ecr.us-east-2.amazonaws.com
-docker buildx build --platform linux/arm64 --target live --provenance=false --sbom=false --load -t $REG/tessera-live:$TAG .
-aws ecr get-login-password | docker login --username AWS --password-stdin $REG && docker push $REG/tessera-live:$TAG
-aws ssm send-command --instance-ids <id> --document-name AWS-RunShellScript --parameters \
-  "commands=[\"sed -i 's#^IMAGE=.*#IMAGE=$REG/tessera-live:$TAG#' /opt/tessera/config\",\"/opt/tessera/up.sh\"]"
-```
+`deploy/live/` holds a working recipe for one EC2 instance (Amazon Linux 2023) running the live image behind Caddy:
 
-Shell on the host: `aws ssm start-session --target <id>`. Stop paying for compute: `aws ec2 stop-instances` (the Elastic IP
-then costs about $3.60 a month). Cost running: about $15 a month (instance, disk, IP, snapshots).
+- `user-data.sh`: first boot. Installs Docker and writes `/opt/tessera/config` (`IMAGE=`, `HOST=`) and `up.sh`; the
+  launch command substitutes `__IMAGE__`, `__HOST__` and `__UP_SH__` (base64 of `up.sh`).
+- `up.sh`: starts or restarts the app. Pulls the image from ECR, reads the secrets above from Secrets Manager
+  (`tessera/live`, a JSON object) through the instance role, writes them root-only for `docker run` and deletes them,
+  then starts the app and Caddy (Let's Encrypt, HSTS, `X-Forwarded-For` overwritten). Re-run it to ship a new image.
+
+Give the instance role read on that one secret and that one repository (plus SSM core for a shell without SSH), open
+80 and 443 only, use an Elastic IP (Airwallex webhooks want a fixed address), and snapshot the root volume.
+
+`.dockerignore` excludes every nested `.env`, so a local key file never ends up in an image.

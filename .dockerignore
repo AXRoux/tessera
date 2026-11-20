@@ -12,7 +12,8 @@ web/.env*
 *.db-shm
 *.tsbuildinfo
 docs
-# The Remotion video project: not part of the demo, and it holds a local .env with an API key.
+# Local-only material that is not part of the app (the film project, design references).
 video
+.art
 # Local design screenshots.
 .shots

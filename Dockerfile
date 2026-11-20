@@ -1,12 +1,12 @@
-# The public offline demo: API and console in one container. Airwallex is the in-process simulator and the agent is the
-# scripted one (not Claude), so the image needs no keys and can move no money. The API stays on 127.0.0.1 inside the
+# The offline sandbox: API and console in one container. Airwallex is the in-process simulator and the agent is the
+# scripted one (not a model), so the image needs no keys and can move no money. The API stays on 127.0.0.1 inside the
 # container; only the console (port 3100) is published.
 #
-#   docker build -t tessera-demo .
-#   docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera-demo
+#   docker build -t tessera .
+#   docker run --rm -p 3100:3100 -e TESSERA_ALLOWED_HOSTS=localhost tessera
 #
-# For a public URL, list the hostname visitors use: -e TESSERA_ALLOWED_HOSTS=localhost,demo.example.com (docs/DEPLOY.md).
-# Every visitor shares one in-memory demo. "Reset demo" in the console clears it, and it clears itself after 15 idle minutes.
+# For a public URL, list the hostname visitors use: -e TESSERA_ALLOWED_HOSTS=localhost,tessera.example.com (docs/DEPLOY.md).
+# Every visitor shares one in-memory ledger. "Reset control room" clears it, and it clears itself after 15 idle minutes.
 FROM oven/bun:1 AS build
 WORKDIR /app
 COPY package.json bun.lock ./
@@ -21,7 +21,7 @@ RUN rm -rf node_modules web/node_modules && bun install --production --frozen-lo
 # The multi-tenant host (docker build --target live): people sign in with Better Auth and bring their own Airwallex sandbox
 # and model keys. It needs TESSERA_API_TOKEN, TESSERA_MASTER_KEY, BETTER_AUTH_SECRET, BETTER_AUTH_URL and
 # TESSERA_ALLOWED_HOSTS at run time (never baked in), and a volume at /data for accounts, sealed keys and ledgers.
-# See docs/DEPLOY.md. Built before the demo stage so that a plain `docker build` still produces the public demo.
+# See docs/DEPLOY.md. Built before the default stage so that a plain `docker build` still produces the offline sandbox.
 FROM oven/bun:1 AS live
 WORKDIR /app
 COPY --from=build --chown=bun:bun /app /app

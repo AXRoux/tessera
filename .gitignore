@@ -9,3 +9,7 @@ node_modules/
 .data/
 .next/
 *.tsbuildinfo
+
+# The Remotion film project, kept locally only (the film itself is a release asset)
+video/
+.art/
